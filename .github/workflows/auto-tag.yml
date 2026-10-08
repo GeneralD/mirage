@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Auto Tag
+
+# version.txt is the single source of truth: every push to main whose version
+# has no tag yet gets one. Building, signing, notarizing and attaching the DMG
+# is the release workflow's job (added with the Xcode shell; it needs the
+# Developer ID certificate and the two provisioning profiles as secrets).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Extract version
+        run: |
+          VERSION=$(tr -d '[:space:]' < version.txt)
+          if ! printf '%s\n' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Error: Invalid version in version.txt: '$VERSION'" >&2
+            exit 1
+          fi
+          echo "TAG=v${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Create tag if new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh api "repos/${REPO}/git/refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on remote"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi

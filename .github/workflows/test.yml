@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Mechanical guards (import boundaries, physical symbols, thin lives,
+    # service-name triple, product-name confinement). Runs before any build so a
+    # boundary violation fails fast.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ast-grep and xcodegen
+        run: brew install ast-grep xcodegen
+
+      # Entitlements and Info.plists are xcodegen output; the service-name
+      # check reads them, so they must exist before `make check`.
+      - name: Generate the Xcode shell
+        run: make generate
+
+      - name: Boundary checks
+        run: make check
+
+  lint:
+    runs-on: macos-latest
+    if: ${{ hashFiles('Package.swift') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint (swift-format)
+        run: make lint
+
+  release-build:
+    # Builds the shipped product exactly as the release pipeline will, on the
+    # same runner, so a release-toolchain compile error fails the PR rather
+    # than the release.
+    runs-on: macos-15
+    if: ${{ hashFiles('Package.swift') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release binary
+        run: make build
+
+  test:
+    runs-on: macos-latest
+    if: ${{ hashFiles('Package.swift') != '' }}
+    # Outer bound for anything a Swift Testing `.timeLimit` cannot reach (a test
+    # blocked on a thread); turns a hang into a failure instead of a six-hour default.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and check for warnings
+        run: |
+          swift build 2>&1 | tee "$RUNNER_TEMP/build.log"
+          WARNINGS=$(grep "warning:" "$RUNNER_TEMP/build.log" | grep -v ".build/" || true)
+          if [ -n "$WARNINGS" ]; then
+            echo "::error::Build produced warnings in project sources"
+            echo "$WARNINGS"
+            exit 1
+          fi
+
+      - name: Run tests with coverage
+        id: run_tests
+        run: |
+          BIN=$(swift build --show-bin-path)
+          PROFDATA="$BIN/codecov/default.profdata"
+          COVERAGE_DIR="$RUNNER_TEMP/coverage"
+          mkdir -p "$COVERAGE_DIR"
+          # GPU suites need a Metal device and their own process (.claude/rules/gpu-testing.md);
+          # they are not part of the CI run until the runner probe proves a device exists.
+          swift test --enable-code-coverage --skip GPUSmokeTests
+          if [[ ! -f "$PROFDATA" ]]; then
+            echo "Coverage profile not found: $PROFDATA"
+            exit 1
+          fi
+          cp "$PROFDATA" "$COVERAGE_DIR/main.profdata"
+          echo "coverage_dir=$COVERAGE_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Generate lcov report
+        id: generate_lcov
+        if: always()
+        env:
+          COVERAGE_DIR: ${{ steps.run_tests.outputs.coverage_dir }}
+        run: |
+          BIN=$(swift build --show-bin-path)
+          # The xctest bundle is named after the package, which is role-named in
+          # Package.swift (see docs/ARCHITECTURE.md → Rename-safe naming).
+          TEST_BIN=$(find "$BIN" -path '*PackageTests.xctest/Contents/MacOS/*PackageTests' -type f | head -1)
+          MERGED_PROFDATA="$COVERAGE_DIR/merged.profdata"
+          COVERAGE_FILE="$GITHUB_WORKSPACE/coverage.lcov"
+          if [[ -z "$COVERAGE_DIR" || ! -d "$COVERAGE_DIR" ]]; then
+            echo "Coverage directory not found: $COVERAGE_DIR"
+            exit 1
+          fi
+          if [[ -z "$TEST_BIN" || ! -x "$TEST_BIN" ]]; then
+            echo "Test binary not found under $BIN"
+            exit 1
+          fi
+          xcrun llvm-profdata merge -sparse "$COVERAGE_DIR"/*.profdata -o "$MERGED_PROFDATA"
+          xcrun llvm-cov export \
+            "$TEST_BIN" \
+            -instr-profile "$MERGED_PROFDATA" \
+            -format lcov \
+            -ignore-filename-regex '.build|Tests/' \
+            > "$COVERAGE_FILE"
+          echo "coverage_file=$COVERAGE_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.generate_lcov.outputs.coverage_file }}
+          fail_ci_if_error: false

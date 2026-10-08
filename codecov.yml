@@ -1,0 +1,26 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+
+# Every entry here is bound by .claude/rules/coverage-ignored-modules.md:
+# contracts, wiring, declarative views, shells, and thin-live Gateways that
+# cannot run in CI. The list is fixed — never conditional on the environment.
+ignore:
+  - "Sources/Domain/**"
+  - "Sources/CommonDependencyInjection/**"
+  - "Sources/HostDependencyInjection/**"
+  - "Sources/ExtensionDependencyInjection/**"
+  - "Sources/Views/**"
+  - "Sources/MachGateway/**"
+  - "Sources/SystemExtensionGateway/**"
+  - "Sources/CMIOExtensionGateway/**"
+  - "Sources/AVFoundationGateway/**"
+  - "Sources/MetalGateway/**"
+  - "Sources/MetalKitPreviewGateway/**"
+  - "Apps/**"
