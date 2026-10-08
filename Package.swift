@@ -75,6 +75,7 @@ let package = Package(
         .target(name: "IOSurfaceGateway", dependencies: dependencies),
         .testTarget(name: "IOSurfaceGatewayTests", dependencies: ["IOSurfaceGateway"] + testDependencies),
         .target(name: "MachGateway", dependencies: dependencies),
+        .testTarget(name: "MachGatewayTests", dependencies: ["MachGateway", "IOSurfaceGateway"] + testDependencies),
         .target(name: "SystemExtensionGateway", dependencies: dependencies),
         .target(name: "CMIOExtensionGateway", dependencies: dependencies),
         .target(name: "DispatchExecutorGateway", dependencies: dependencies),

@@ -1,8 +1,15 @@
-/// An opaque reference to pixel storage. The live `IOSurfaceGateway` wraps an
-/// `IOSurface`; the CMIO gateway and the Metal gateway downcast to that wrapper.
-/// Everything between the Gateways passes the handle through untouched, and
-/// the pool keeps it alive for the lease's lifetime.
-public protocol SurfaceHandle: AnyObject, Sendable {}
+/// An opaque reference to pixel storage. Everything between the Gateways
+/// passes the handle through untouched, and the pool keeps it alive for the
+/// lease's lifetime.
+///
+/// `backing` is the OS object itself — the `IOSurface` — typed as `AnyObject`
+/// so that the gateway that produced the handle (AVFoundation, IOSurface, Mach)
+/// and the gateway that consumes it (IOSurface, CMIO, Metal) need not import
+/// each other: each casts `backing` to the type it knows and throws
+/// `SurfaceError.foreignHandle` otherwise. Fakes return `self`.
+public protocol SurfaceHandle: AnyObject, Sendable {
+    var backing: AnyObject { get }
+}
 
 /// Failures at the surface boundary; the raw codes are kernel returns.
 public enum SurfaceError: Error, Sendable, Hashable {

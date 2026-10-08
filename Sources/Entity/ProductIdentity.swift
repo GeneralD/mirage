@@ -16,4 +16,7 @@ public enum ProductIdentity {
     public static let machServiceName = "com.generald.mirage.frames"
     /// `os.Logger` subsystem for both processes.
     public static let logSubsystem = "com.generald.mirage"
+    /// Stable identity of the virtual camera device as clients (Zoom, Meet,
+    /// OBS) see it. Fixed so a reinstall does not show up as a new camera.
+    public static let virtualDeviceID = "0D276BAE-C1C8-4F3D-98FF-4E3DEDD36363"
 }

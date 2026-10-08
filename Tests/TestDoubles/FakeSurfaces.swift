@@ -12,6 +12,8 @@ public final class FakeSurfaceHandle: SurfaceHandle, Sendable {
         self.descriptor = descriptor
     }
 
+    public var backing: AnyObject { self }
+
     public var lastFill: UInt8? { fillByte.current }
 
     func fill(with byte: UInt8) {

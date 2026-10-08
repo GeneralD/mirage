@@ -20,7 +20,7 @@ public final class FakeCameraExtensionInstaller: CameraExtensionInstaller, Exten
         script.set(statuses)
     }
 
-    public func install() -> AsyncStream<InstallStatus> {
+    public func install() async -> AsyncStream<InstallStatus> {
         installs.append(())
         let statuses = script.current
         return AsyncStream { continuation in

@@ -4,8 +4,12 @@ import Dependencies
 /// tick → virtual camera sink, with the lease released after each send. M0 is
 /// pass-through only; effects slot in between the slot and the sink later.
 public protocol FramePipelineUseCase: Sendable {
-    /// Starts the camera and the scheduler. Throws when the camera cannot start.
-    func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) throws
+    /// Starts the camera and the scheduler, then connects the sink (retrying
+    /// per the transport's policy, so this suspends until the extension answers
+    /// or the task is cancelled). Frames captured meanwhile are dropped as
+    /// `.notConnected`. Throws only when the camera cannot start; a sink that
+    /// never connects is logged, not thrown.
+    func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws
     func stop()
     var stats: PipelineStats { get }
 }
@@ -22,7 +26,7 @@ extension DependencyValues {
 }
 
 private struct UnimplementedFramePipelineUseCase: FramePipelineUseCase {
-    func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) throws {
+    func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
         reportIssue("FramePipelineUseCase.start not implemented")
         throw CaptureSessionError.deviceUnavailable
     }

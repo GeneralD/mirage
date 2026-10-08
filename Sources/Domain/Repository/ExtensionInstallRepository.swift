@@ -3,8 +3,8 @@ import Dependencies
 /// Install state for the UseCase layer; a pass-through over the installer
 /// data source that keeps the adjacent-layer chain intact.
 public protocol ExtensionInstallRepository: Sendable {
-    var status: InstallStatus { get }
-    func install() -> AsyncStream<InstallStatus>
+    var status: InstallStatus { get async }
+    func install() async -> AsyncStream<InstallStatus>
 }
 
 public enum ExtensionInstallRepositoryKey: TestDependencyKey {
@@ -20,11 +20,13 @@ extension DependencyValues {
 
 private struct UnimplementedExtensionInstallRepository: ExtensionInstallRepository {
     var status: InstallStatus {
-        reportIssue("ExtensionInstallRepository.status not implemented")
-        return .notInstalled
+        get async {
+            reportIssue("ExtensionInstallRepository.status not implemented")
+            return .notInstalled
+        }
     }
 
-    func install() -> AsyncStream<InstallStatus> {
+    func install() async -> AsyncStream<InstallStatus> {
         reportIssue("ExtensionInstallRepository.install not implemented")
         return AsyncStream { $0.finish() }
     }
