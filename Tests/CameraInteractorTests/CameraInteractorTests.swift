@@ -10,7 +10,11 @@ private struct StartFailure: Error {}
 
 @Suite("CameraInteractorImpl", .timeLimit(.minutes(1)))
 struct CameraInteractorTests {
-    private let log = RecordingLog()
+    // Separate sinks so the error/developer routing is observable, not just the text.
+    private let errorLog = RecordingLog()
+    private let developerLog = RecordingLog()
+    // Call order shared by the three use-case fakes.
+    private let order = Collector<String>()
 
     private struct Rig {
         let install: FakeInstallUseCase
@@ -20,15 +24,15 @@ struct CameraInteractorTests {
     }
 
     private func makeRig(install: InstallStatus, authorization: CameraAuthorizationStatus, startFails: Bool = false) -> Rig {
-        let installUseCase = FakeInstallUseCase(script: [.installing, install], outcome: install)
-        let camera = FakeCameraControlUseCase(decision: authorization)
-        let pipeline = FakeFramePipelineUseCase(failure: startFails ? StartFailure() : nil)
+        let installUseCase = FakeInstallUseCase(script: [.installing, install], outcome: install, order: order)
+        let camera = FakeCameraControlUseCase(decision: authorization, order: order)
+        let pipeline = FakeFramePipelineUseCase(failure: startFails ? StartFailure() : nil, order: order)
         let subject = withDependencies {
             $0.extensionInstallUseCase = installUseCase
             $0.cameraControlUseCase = camera
             $0.framePipelineUseCase = pipeline
-            $0.errorLog = log
-            $0.developerLog = log
+            $0.errorLog = errorLog
+            $0.developerLog = developerLog
         } operation: {
             CameraInteractorImpl()
         }
@@ -70,45 +74,66 @@ struct CameraInteractorTests {
         #expect(rig.pipeline.starts.count == 0)
     }
 
-    @Test("every install status reaches the developer log and a failure reaches the error log")
+    @Test("launch runs install, then authorization, then the pipeline start")
+    func launchOrder() async {
+        let rig = makeRig(install: .installed, authorization: .authorized)
+        _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
+        #expect(order.values == ["install", "authorize", "start"])
+    }
+
+    @Test("a failed install still authorizes but never starts")
+    func launchOrderAfterFailedInstall() async {
+        let rig = makeRig(install: .failed(reason: "denied"), authorization: .authorized)
+        _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
+        #expect(order.values == ["install", "authorize"])
+    }
+
+    @Test("every install status reaches the developer log and only a failure reaches the error log")
     func logsInstallProgress() async {
         let rig = makeRig(install: .failed(reason: "denied"), authorization: .denied)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
-        let messages = log.messages(in: .install)
-        #expect(messages.contains { $0.contains("installing") })
-        #expect(messages.contains { $0.contains("extension install failed: denied") })
+        let progress = developerLog.messages(in: .install)
+        #expect(progress.count == 2)
+        #expect(progress.contains { $0.contains("installing") })
+        #expect(errorLog.messages(in: .install).count == 1)
+        #expect(errorLog.messages(in: .install).first?.contains("extension install failed: denied") == true)
+        #expect(!developerLog.contains("extension install failed"))
     }
 
-    @Test("a successful install logs no failure")
+    @Test("a successful run logs nothing to the error log")
     func successLogsNoFailure() async {
         let rig = makeRig(install: .installed, authorization: .authorized)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
-        #expect(!log.contains("extension install failed"))
-        #expect(log.contains("pipeline started"))
+        #expect(errorLog.entries.count == 0)
+        #expect(developerLog.contains("pipeline started"))
     }
 
-    @Test("the authorization decision is logged")
+    @Test("the authorization decision is logged for developers only")
     func logsAuthorization() async {
         let rig = makeRig(install: .installed, authorization: .restricted)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
-        #expect(log.messages(in: .camera).contains { $0.contains("restricted") })
+        #expect(developerLog.messages(in: .camera).contains { $0.contains("restricted") })
+        #expect(errorLog.messages(in: .camera).isEmpty)
     }
 
-    @Test("a skipped pipeline logs why")
+    @Test("a skipped pipeline logs why, for developers only")
     func logsSkipReason() async {
         let rig = makeRig(install: .failed(reason: "denied"), authorization: .denied)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
-        let skip = log.messages(in: .pipeline)
+        let skip = developerLog.messages(in: .pipeline)
         #expect(skip.count == 1)
         #expect(skip.first?.contains("pipeline not started") == true)
         #expect(skip.first?.contains("denied") == true)
+        #expect(errorLog.messages(in: .pipeline).isEmpty)
     }
 
-    @Test("a pipeline start failure goes to the error log")
+    @Test("a pipeline start failure goes to the error log only")
     func logsStartFailure() async {
         let rig = makeRig(install: .installed, authorization: .authorized, startFails: true)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
-        #expect(log.contains("pipeline failed to start"))
+        #expect(errorLog.messages(in: .pipeline).contains { $0.contains("pipeline failed to start") })
+        #expect(!developerLog.contains("pipeline failed to start"))
+        #expect(!developerLog.contains("pipeline started"))
     }
 
     @Test("shutDown stops the pipeline")

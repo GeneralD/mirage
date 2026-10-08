@@ -7,16 +7,19 @@ final class FakeInstallUseCase: ExtensionInstallUseCase, Sendable {
     private let script: [InstallStatus]
     private let outcome: InstallStatus
     let installs = Collector<Void>()
+    private let order: Collector<String>
 
-    init(script: [InstallStatus], outcome: InstallStatus) {
+    init(script: [InstallStatus], outcome: InstallStatus, order: Collector<String> = Collector()) {
         self.script = script
         self.outcome = outcome
+        self.order = order
     }
 
     var status: InstallStatus { outcome }
 
     func install(onStatus: @escaping @Sendable (InstallStatus) -> Void) async -> InstallStatus {
         installs.append(())
+        order.append("install")
         for status in script { onStatus(status) }
         return outcome
     }
@@ -26,13 +29,16 @@ final class FakeInstallUseCase: ExtensionInstallUseCase, Sendable {
 final class FakeCameraControlUseCase: CameraControlUseCase, Sendable {
     private let decision: CameraAuthorizationStatus
     let asks = Collector<Void>()
+    private let order: Collector<String>
 
-    init(decision: CameraAuthorizationStatus) {
+    init(decision: CameraAuthorizationStatus, order: Collector<String> = Collector()) {
         self.decision = decision
+        self.order = order
     }
 
     func ensureAuthorized() async -> CameraAuthorizationStatus {
         asks.append(())
+        order.append("authorize")
         return decision
     }
 }
@@ -43,14 +49,17 @@ final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     let starts = Collector<SurfaceDescriptor>()
     let rates = Collector<FrameRate>()
     let stops = Collector<Void>()
+    private let order: Collector<String>
 
-    init(failure: (any Error)? = nil) {
+    init(failure: (any Error)? = nil, order: Collector<String> = Collector()) {
         self.failure = failure
+        self.order = order
     }
 
     var stats: PipelineStats { .empty }
 
     func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
+        order.append("start")
         starts.append(descriptor)
         rates.append(frameRate)
         try failure.map { throw $0 }

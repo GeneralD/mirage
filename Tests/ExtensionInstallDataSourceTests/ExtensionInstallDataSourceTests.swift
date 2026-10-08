@@ -163,6 +163,33 @@ struct ExtensionInstallDataSourceTests {
         #expect(gateway.activations.count == 1)
     }
 
+    @Test("a consumer that stops reading is detached and the activation still reaches the others")
+    func cancelledConsumerIsDetached() async {
+        let subject = makeSubject()
+        let survivor = await subject.install()
+        await gateway.activated.waitForCount(1)
+        do {
+            var abandoned = await subject.install().makeAsyncIterator()
+            #expect(await abandoned.next() == .installing)
+            #expect(await subject.subscriberCount == 2)
+        }
+        #expect(await pollUntilSubscribers(subject, equal: 1))
+        gateway.emit(.completed)
+        #expect(await drain(survivor) == [.installing, .installed])
+        #expect(await subject.status == .installed)
+        #expect(gateway.activations.count == 1)
+    }
+
+    private func pollUntilSubscribers(_ subject: ExtensionInstallDataSourceImpl, equal target: Int) async -> Bool {
+        // The count lives on the actor and is only readable, never announced, so yielding
+        // between reads is the sole way to observe the detach hop.
+        while !Task.isCancelled {
+            guard await subject.subscriberCount != target else { return true }
+            await Task.yield()
+        }
+        return false
+    }
+
     @Test("every transition is logged for developers")
     func logsTransitions() async {
         let subject = makeSubject()

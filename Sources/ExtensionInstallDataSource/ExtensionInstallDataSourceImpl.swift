@@ -12,8 +12,11 @@ public actor ExtensionInstallDataSourceImpl {
 
     // Mutated on every transition; the actor is what makes that safe.
     private var current: InstallStatus = .notInstalled
-    // Every caller of a pending request; emptied (and finished) at the terminal status.
-    private var subscribers: [AsyncStream<InstallStatus>.Continuation] = []
+    // Every caller of a pending request, keyed so a consumer that stops early can be dropped;
+    // emptied (and finished) at the terminal status.
+    private var subscribers: [Int: AsyncStream<InstallStatus>.Continuation] = [:]
+    // Source of subscriber keys; bumped once per subscription.
+    private var nextSubscriberID = 0
 
     public init() {}
 }
@@ -28,7 +31,7 @@ extension ExtensionInstallDataSourceImpl: CameraExtensionInstaller {
             continuation.finish()
             return stream
         }
-        subscribers.append(continuation)
+        subscribe(continuation)
         guard !isPending else {
             // Joined an in-flight request: replay where it stands, then forward the rest.
             continuation.yield(current)
@@ -41,6 +44,9 @@ extension ExtensionInstallDataSourceImpl: CameraExtensionInstaller {
 }
 
 extension ExtensionInstallDataSourceImpl {
+    /// Number of callers still attached to the pending request.
+    var subscriberCount: Int { subscribers.count }
+
     private var isPending: Bool { current == .installing || current == .needsApproval }
 
     /// Relays gateway events until one is terminal. A stream that ends first
@@ -53,18 +59,35 @@ extension ExtensionInstallDataSourceImpl {
         transition(to: .failed(reason: "activation ended without a result"))
     }
 
+    /// A consumer that stops reading must not stay in the fan-out until the
+    /// terminal status, so termination detaches it; the activation itself is unaffected.
+    private func subscribe(_ continuation: AsyncStream<InstallStatus>.Continuation) {
+        let id = nextSubscriberID
+        nextSubscriberID += 1
+        subscribers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.unsubscribe(id) }
+        }
+    }
+
+    private func unsubscribe(_ id: Int) {
+        subscribers[id] = nil
+    }
+
     private func transition(to next: InstallStatus) {
         current = next
         developerLog.record(.install, "extension install status: \(next)")
-        for subscriber in subscribers { subscriber.yield(next) }
+        for subscriber in subscribers.values { subscriber.yield(next) }
         guard next.isTerminal else { return }
-        for subscriber in subscribers { subscriber.finish() }
-        subscribers = []
+        for subscriber in subscribers.values { subscriber.finish() }
+        subscribers = [:]
     }
 
     private static func status(for event: SystemExtensionEvent) -> InstallStatus {
         switch event {
         case .needsApproval: .needsApproval
+        // A reboot-pending activation only takes effect after the restart, but M0 has no
+        // reboot-required state in `InstallStatus`, so it is reported as installed.
         case .completed, .completesAfterReboot: .installed
         case .failed(let reason): .failed(reason: reason)
         }
