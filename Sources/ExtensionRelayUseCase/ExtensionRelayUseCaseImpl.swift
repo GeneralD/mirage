@@ -25,12 +25,15 @@ extension ExtensionRelayUseCaseImpl: ExtensionRelayUseCase {
     public var stats: PipelineStats { snapshot.value }
 
     public func run(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
-        snapshot.value = .empty
         try streamOutputRepository.start(
             descriptor: descriptor,
             frameRate: frameRate,
             onEvent: { [developerLog] event in developerLog.record(.stream, "\(event)") }
         )
+        // On the executor like every other write; queued before the receiver
+        // starts, so it precedes the first frame of this run. After the stream
+        // start so that a failed start leaves nothing queued.
+        frameExecutor.run { [self] in snapshot.value = .empty }
         // Whatever ends the receiver, no lease may outlive this run.
         defer { frameExecutor.run { [surfaceRepository] in surfaceRepository.releaseAll() } }
         try await frameReceiverRepository.start(
