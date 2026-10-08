@@ -8,7 +8,7 @@ import Testing
 
 @Suite("ExtensionInstallDataSourceImpl", .timeLimit(.minutes(1)))
 struct ExtensionInstallDataSourceTests {
-    private let gateway = AnnouncingGateway()
+    private let gateway = FakeSystemExtensionGateway()
     private let log = RecordingLog()
 
     private func makeSubject() -> ExtensionInstallDataSourceImpl {
@@ -34,7 +34,7 @@ struct ExtensionInstallDataSourceTests {
         let subject = makeSubject()
         let stream = await subject.install()
         #expect(await subject.status == .installing)
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.completed)
         #expect(await drain(stream) == [.installing, .installed])
         #expect(await subject.status == .installed)
@@ -45,7 +45,7 @@ struct ExtensionInstallDataSourceTests {
     func completesAfterReboot() async {
         let subject = makeSubject()
         let stream = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.completesAfterReboot)
         #expect(await drain(stream) == [.installing, .installed])
     }
@@ -55,7 +55,7 @@ struct ExtensionInstallDataSourceTests {
         let subject = makeSubject()
         var iterator = await subject.install().makeAsyncIterator()
         #expect(await iterator.next() == .installing)
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.needsApproval)
         #expect(await iterator.next() == .needsApproval)
         #expect(await subject.status == .needsApproval)
@@ -69,7 +69,7 @@ struct ExtensionInstallDataSourceTests {
     func failurePath() async {
         let subject = makeSubject()
         let stream = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.failed(reason: "denied"))
         #expect(await drain(stream) == [.installing, .failed(reason: "denied")])
         #expect(await subject.status == .failed(reason: "denied"))
@@ -79,7 +79,7 @@ struct ExtensionInstallDataSourceTests {
     func endedWithoutResult() async {
         let subject = makeSubject()
         let stream = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.finish()
         let reason = "activation ended without a result"
         #expect(await drain(stream) == [.installing, .failed(reason: reason)])
@@ -90,7 +90,7 @@ struct ExtensionInstallDataSourceTests {
     func endedWhileAwaitingApproval() async {
         let subject = makeSubject()
         let stream = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.needsApproval)
         gateway.finish()
         #expect(await drain(stream).last == .failed(reason: "activation ended without a result"))
@@ -100,7 +100,7 @@ struct ExtensionInstallDataSourceTests {
     func ignoresEventsAfterTerminal() async {
         let subject = makeSubject()
         let stream = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.completed)
         gateway.emit(.failed(reason: "late"))
         #expect(await drain(stream) == [.installing, .installed])
@@ -111,7 +111,7 @@ struct ExtensionInstallDataSourceTests {
     func installedIsSticky() async {
         let subject = makeSubject()
         let first = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.completed)
         _ = await drain(first)
         #expect(await drain(await subject.install()) == [.installed])
@@ -122,12 +122,12 @@ struct ExtensionInstallDataSourceTests {
     func retryAfterFailure() async {
         let subject = makeSubject()
         let first = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.failed(reason: "boom"))
         _ = await drain(first)
 
         let second = await subject.install()
-        await gateway.activated.waitForCount(2)
+        await gateway.activations.waitForCount(2)
         gateway.emit(.completed)
         #expect(await drain(second) == [.installing, .installed])
         #expect(gateway.activations.count == 2)
@@ -137,7 +137,7 @@ struct ExtensionInstallDataSourceTests {
     func concurrentInstallsShareOneActivation() async {
         let subject = makeSubject()
         var first = await subject.install().makeAsyncIterator()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.needsApproval)
         #expect(await first.next() == .installing)
         #expect(await first.next() == .needsApproval)
@@ -156,7 +156,7 @@ struct ExtensionInstallDataSourceTests {
         let subject = makeSubject()
         let first = await subject.install()
         let second = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.completed)
         #expect(await drain(first) == [.installing, .installed])
         #expect(await drain(second) == [.installing, .installed])
@@ -167,7 +167,7 @@ struct ExtensionInstallDataSourceTests {
     func cancelledConsumerIsDetached() async {
         let subject = makeSubject()
         let survivor = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         do {
             var abandoned = await subject.install().makeAsyncIterator()
             #expect(await abandoned.next() == .installing)
@@ -194,7 +194,7 @@ struct ExtensionInstallDataSourceTests {
     func logsTransitions() async {
         let subject = makeSubject()
         let stream = await subject.install()
-        await gateway.activated.waitForCount(1)
+        await gateway.activations.waitForCount(1)
         gateway.emit(.needsApproval)
         gateway.emit(.completed)
         _ = await drain(stream)

@@ -9,10 +9,13 @@ public final class FakeSystemExtensionGateway: SystemExtensionGateway, Sendable 
 
     public init() {}
 
+    /// The continuation is stored before the activation is recorded, so a test
+    /// that waited on `activations` can `emit` straight away without the event
+    /// falling into the gap.
     public func activate(extensionBundleID: String) -> AsyncStream<SystemExtensionEvent> {
-        activations.append(extensionBundleID)
         let (stream, continuation) = AsyncStream<SystemExtensionEvent>.makeStream()
         self.continuation.set(continuation)
+        activations.append(extensionBundleID)
         return stream
     }
 
