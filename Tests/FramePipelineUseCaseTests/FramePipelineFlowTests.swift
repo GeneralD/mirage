@@ -95,10 +95,11 @@ struct FramePipelineFlowTests {
         try await started(rig, frameRate: FrameRate(framesPerSecond: 3))
         rig.emit(at: 1_000_000)
         rig.scheduler.tick(times: 2)
-        #expect(rig.log.messages(in: .pipeline).isEmpty)
+        #expect(rig.developer.messages(in: .pipeline).isEmpty)
         rig.scheduler.tick()
-        #expect(rig.log.messages(in: .pipeline) == [rig.subject.stats.summary])
+        #expect(rig.developer.messages(in: .pipeline) == [rig.subject.stats.summary])
         rig.scheduler.tick(times: 3)
-        #expect(rig.log.messages(in: .pipeline).count == 2)
+        #expect(rig.developer.messages(in: .pipeline).count == 2)
+        #expect(rig.errors.entries.count == 0)
     }
 }

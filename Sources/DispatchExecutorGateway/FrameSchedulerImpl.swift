@@ -7,14 +7,18 @@ import Domain
 ///
 /// The timer handle is guarded by the queue itself: `start` / `stop` use
 /// `queue.sync`, which also means that once `stop()` returns, no further tick
-/// is delivered. They must therefore never be called from that queue.
+/// is delivered. Called from the queue itself (a `queue.sync` there would
+/// deadlock), they run inline instead: a cancelled timer never fires again, so
+/// the guarantee still holds.
 public final class FrameSchedulerImpl: FrameScheduler, @unchecked Sendable {
     private let queue: DispatchQueue
+    private let onQueueKey = DispatchSpecificKey<Void>()
     // Guarded by `queue`: only touched inside `queue.sync`.
     private var timer: DispatchSourceTimer?
 
     public init(queue: DispatchQueue) {
         self.queue = queue
+        queue.setSpecific(key: onQueueKey, value: ())
     }
 
     deinit {
@@ -22,7 +26,7 @@ public final class FrameSchedulerImpl: FrameScheduler, @unchecked Sendable {
     }
 
     public func start(frameRate: FrameRate, onTick: @escaping @Sendable () -> Void) {
-        queue.sync {
+        onQueue {
             timer?.cancel()
             let source = DispatchSource.makeTimerSource(queue: queue)
             source.schedule(
@@ -37,9 +41,13 @@ public final class FrameSchedulerImpl: FrameScheduler, @unchecked Sendable {
     }
 
     public func stop() {
-        queue.sync {
+        onQueue {
             timer?.cancel()
             timer = nil
         }
+    }
+
+    private func onQueue(_ body: () -> Void) {
+        DispatchQueue.getSpecific(key: onQueueKey) == nil ? queue.sync(execute: body) : body()
     }
 }

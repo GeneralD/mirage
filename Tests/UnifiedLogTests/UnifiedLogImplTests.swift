@@ -11,6 +11,19 @@ struct UnifiedLogImplTests {
         #expect(Set(log.loggers.keys) == Set(LogSubsystem.allCases))
     }
 
+    @Test("each subsystem is filed under its own raw-value category", arguments: LogSubsystem.allCases)
+    func categoryIsTheRawValue(subsystem: LogSubsystem) {
+        #expect(UnifiedLogImpl.category(for: subsystem) == subsystem.rawValue)
+    }
+
+    @Test("categories are distinct so a filter selects one slice")
+    func categoriesAreDistinct() {
+        let categories = LogSubsystem.allCases.map(UnifiedLogImpl.category(for:))
+        #expect(Set(categories).count == categories.count)
+    }
+
+    // The severity is fixed by the `switch` over the closed `Level` enum; the OS
+    // log store cannot be redirected in a unit test, so it is not asserted here.
     @Test("recording to every subsystem at every level does not crash", arguments: UnifiedLogImpl.Level.allCases)
     func recordingEverySubsystem(level: UnifiedLogImpl.Level) {
         let log = UnifiedLogImpl(level: level)

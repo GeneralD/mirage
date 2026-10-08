@@ -37,6 +37,10 @@ struct FramePipelinePropertyTests {
         for _ in 0..<60 {
             let step = Step.allCases[Int(generator.next() % UInt64(Step.allCases.count))]
             apply(step, to: &model, on: rig)
+            // Release exactly once, at every step: the pool holds the one pending
+            // frame (and nothing else) until the subject lets it go.
+            #expect(rig.surfaces.liveCount == (model.pending ? 1 : 0))
+            #expect(rig.surfaces.refusedReleases == 0)
         }
         rig.subject.stop()
         rig.executor.drain()
@@ -65,6 +69,9 @@ struct FramePipelinePropertyTests {
             model.pending = false
         case .drain:
             rig.executor.drain()
+            // `stop()` releases the pending frame on the executor, so it is only
+            // gone once that work has run.
+            model.pending = model.pending && model.running
         case .toggleDrops where model.running:
             model.dropping.toggle()
             rig.sink.dropSends(with: model.dropping ? .sendFailed(code: 7) : nil)

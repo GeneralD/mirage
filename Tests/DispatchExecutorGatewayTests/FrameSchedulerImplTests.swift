@@ -11,10 +11,32 @@ private enum Event: Sendable, Equatable {
     case tick
     case secondTick
     case marker
-    case sentinel
 }
 
 private let fast = FrameRate(framesPerSecond: 200)
+
+/// How many ticks of an independent timer must be seen before "nothing else
+/// fired" is believed: at 200 fps that is ~20 ms, several periods of any timer
+/// that failed to stop.
+private let enoughTicks = 5
+
+/// Starts a scheduler and drops it without `stop()`, so only its `deinit` can
+/// cancel the timer.
+private func startAndRelease(on queue: DispatchQueue, into events: Collector<Event>) async {
+    let scheduler = FrameSchedulerImpl(queue: queue)
+    scheduler.start(frameRate: fast) { events.append(.tick) }
+    await events.waitForCount(1)
+}
+
+/// Runs a second, independent timer on the same queue until it has ticked
+/// `enoughTicks` times. The wait is on that timer's real elapsed periods, not
+/// on a sleep, so a timer that was supposed to be dead has had time to fire.
+private func letAnotherTimerRun(on executor: FrameExecutorImpl, into events: Collector<Event>) async {
+    let witness = FrameSchedulerImpl(queue: executor.queue)
+    witness.start(frameRate: fast) { events.append(.secondTick) }
+    await events.settle { $0.filter { $0 == .secondTick }.count >= enoughTicks }
+    witness.stop()
+}
 
 @Suite("FrameSchedulerImpl", .timeLimit(.minutes(1)))
 struct FrameSchedulerImplTests {
@@ -50,11 +72,9 @@ struct FrameSchedulerImplTests {
         scheduler.start(frameRate: fast) { events.append(.tick) }
         await events.waitForCount(1)
         scheduler.stop()
-        executor.run { events.append(.sentinel) }
-        executor.run { events.append(.sentinel) }
-        await events.settle { $0.filter { $0 == .sentinel }.count >= 2 }
-        let afterStop = events.values.drop { $0 != .sentinel }
-        #expect(afterStop.allSatisfy { $0 == .sentinel })
+        events.append(.marker)
+        await letAnotherTimerRun(on: executor, into: events)
+        #expect(!events.values.drop { $0 != .marker }.contains(.tick))
     }
 
     @Test("starting again replaces the previous timer")
@@ -65,14 +85,37 @@ struct FrameSchedulerImplTests {
         scheduler.start(frameRate: fast) { events.append(.tick) }
         await events.waitForCount(1)
         scheduler.start(frameRate: fast) { events.append(.secondTick) }
-        executor.run { events.append(.marker) }
-        await events.waitFor { $0 == .marker }
-        await events.settle { $0.contains(.secondTick) }
+        events.append(.marker)
+        // Several periods of the replacement elapse; a leaked old timer would
+        // have fired at least once in that time.
+        await events.settle { $0.filter { $0 == .secondTick }.count >= enoughTicks }
         scheduler.stop()
-        executor.run { events.append(.sentinel) }
-        await events.waitFor { $0 == .sentinel }
-        let afterMarker = events.values.drop { $0 != .marker }
-        #expect(!afterMarker.contains(.tick))
+        #expect(!events.values.drop { $0 != .marker }.contains(.tick))
+    }
+
+    @Test("a scheduler released while running stops ticking")
+    func releaseCancelsTheTimer() async {
+        let executor = FrameExecutorImpl()
+        let events = Collector<Event>()
+        await startAndRelease(on: executor.queue, into: events)
+        events.append(.marker)
+        await letAnotherTimerRun(on: executor, into: events)
+        #expect(!events.values.drop { $0 != .marker }.contains(.tick))
+    }
+
+    @Test("start and stop called from the scheduler's own queue do not deadlock")
+    func reentrantCallsRunInline() async {
+        let executor = FrameExecutorImpl()
+        let scheduler = FrameSchedulerImpl(queue: executor.queue)
+        let events = Collector<Event>()
+        executor.run {
+            scheduler.start(frameRate: fast) { events.append(.tick) }
+            scheduler.stop()
+            events.append(.marker)
+        }
+        await events.waitFor { $0 == .marker }
+        await letAnotherTimerRun(on: executor, into: events)
+        #expect(!events.values.drop { $0 != .marker }.contains(.tick))
     }
 
     @Test("stop on a scheduler that never started is harmless")

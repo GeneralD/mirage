@@ -52,7 +52,10 @@ struct Rig {
     let surfaces = SpySurfaceRepository()
     let executor = ManualFrameExecutor()
     let scheduler = ManualFrameScheduler()
-    let log = RecordingLog()
+    /// Separate sinks so a test can tell which channel a line went to: operational
+    /// failures belong to `errors`, state transitions and statistics to `developer`.
+    let errors = RecordingLog()
+    let developer = RecordingLog()
     let subject: FramePipelineUseCaseImpl
 
     init(sink override: (any VirtualCameraSink)? = nil) {
@@ -61,15 +64,16 @@ struct Rig {
         let surfaces = surfaces
         let executor = executor
         let scheduler = scheduler
-        let log = log
+        let errors = errors
+        let developer = developer
         subject = withDependencies {
             $0.cameraRepository = camera
             $0.virtualCameraSink = override ?? sink
             $0.surfaceRepository = surfaces
             $0.frameExecutor = executor
             $0.frameScheduler = scheduler
-            $0.errorLog = log
-            $0.developerLog = log
+            $0.errorLog = errors
+            $0.developerLog = developer
         } operation: {
             FramePipelineUseCaseImpl()
         }

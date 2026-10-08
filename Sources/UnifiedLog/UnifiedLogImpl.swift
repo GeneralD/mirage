@@ -20,18 +20,23 @@ public struct UnifiedLogImpl: ErrorLog, DeveloperLog {
 
     public init(level: Level) {
         self.level = level
-        loggers = Dictionary(
-            uniqueKeysWithValues: LogSubsystem.allCases.map {
-                ($0, Logger(subsystem: ProductIdentity.logSubsystem, category: $0.rawValue))
-            }
-        )
+        loggers = Dictionary(uniqueKeysWithValues: LogSubsystem.allCases.map { ($0, Self.logger(for: $0)) })
     }
 
+    /// The category a subsystem's lines are filed under. `os.Logger` does not
+    /// expose its category, so this is the testable half of the mapping.
+    static func category(for subsystem: LogSubsystem) -> String { subsystem.rawValue }
+
+    private static func logger(for subsystem: LogSubsystem) -> Logger {
+        Logger(subsystem: ProductIdentity.logSubsystem, category: category(for: subsystem))
+    }
+
+    /// `init` builds a logger for every `LogSubsystem` case, so the lookup
+    /// cannot miss; optional chaining only avoids a force unwrap.
     public func record(_ subsystem: LogSubsystem, _ message: String) {
-        let logger = loggers[subsystem, default: Logger(subsystem: ProductIdentity.logSubsystem, category: subsystem.rawValue)]
         switch level {
-        case .error: logger.error("\(message, privacy: .public)")
-        case .debug: logger.debug("\(message, privacy: .public)")
+        case .error: loggers[subsystem]?.error("\(message, privacy: .public)")
+        case .debug: loggers[subsystem]?.debug("\(message, privacy: .public)")
         }
     }
 }

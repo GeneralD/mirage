@@ -22,6 +22,7 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     private var latest: FrameRef?
     private var counters = PipelineStats.empty
     private var tickCount = 0
+    private var lastDropReason: FrameDropReason?
 
     public init() {}
 
@@ -94,12 +95,23 @@ extension FramePipelineUseCaseImpl {
     private func observed(_ event: FrameTransportEvent) {
         frameExecutor.run { [self] in
             switch event {
-            case .connected: developerLog.record(.transport, "connected to the extension")
+            case .connected:
+                lastDropReason = nil
+                developerLog.record(.transport, "connected to the extension")
             case .disconnected(.explicit): developerLog.record(.transport, "disconnected")
             case .disconnected(let reason): errorLog.record(.transport, "disconnected: \(reason)")
-            case .frameDropped(let reason): developerLog.record(.transport, "frame dropped: \(reason)")
+            case .frameDropped(let reason): noteDrop(reason)
             }
         }
+    }
+
+    /// A stalled link drops every frame for the same reason at the camera's
+    /// pace; logging each one would flood the log, and the per-second summary
+    /// already carries the totals. Only a change of reason is a news item.
+    private func noteDrop(_ reason: FrameDropReason) {
+        guard reason != lastDropReason else { return }
+        lastDropReason = reason
+        developerLog.record(.transport, "frame dropped: \(reason)")
     }
 
     private func captureEnded(_ end: CaptureEnd) {
