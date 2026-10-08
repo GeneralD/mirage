@@ -14,7 +14,12 @@ import Combine
 ///
 /// A value that never arrives is a hang, not a flake — every suite that waits
 /// this way carries `.timeLimit` so a regression is reported, not waited on.
+///
+/// `Value: Sendable` is the one departure from lyra's text: the release
+/// toolchain (Swift 6.1, macos-15 runner) rejects awaiting a non-Sendable
+/// element from `AsyncPublisher`, and every `@Published` value waited on here
+/// is a value type anyway.
 @MainActor
-public func settle<Value>(_ publisher: Published<Value>.Publisher, until condition: (Value) -> Bool) async {
+public func settle<Value: Sendable>(_ publisher: Published<Value>.Publisher, until condition: (Value) -> Bool) async {
     for await value in publisher.values where condition(value) { return }
 }
