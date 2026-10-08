@@ -44,13 +44,13 @@ struct MachLoopbackTests {
     func destinationLost() throws {
         let loopback = try MachLoopback()
         defer { loopback.bootstrap.deallocate(loopback.send) }
-        let message = try TestSurface().message()
-        let before = sendRefs(message.surface.name)
+        let fixture = try TestSurface()
+        let message = fixture.message()
         loopback.bootstrap.destroyReceiveRight(loopback.receive)
 
         #expect(throws: MachError.destinationLost) { try loopback.messaging.send(message, to: loopback.send) }
 
-        #expect(sendRefs(message.surface.name) == before - 1)
+        #expect(fixture.heldRights == 0)
     }
 
     @Test("a full queue fails the send at once instead of blocking, and the surface right is released")
@@ -60,11 +60,10 @@ struct MachLoopbackTests {
         let fixture = try TestSurface()
         for _ in 0..<Int(MACH_PORT_QLIMIT_DEFAULT) { try loopback.messaging.send(fixture.message(), to: loopback.send) }
         let overflow = fixture.message()
-        let before = sendRefs(overflow.surface.name)
 
         #expect(throws: MachError.sendFailed(code: Int(MACH_SEND_TIMED_OUT))) { try loopback.messaging.send(overflow, to: loopback.send) }
 
-        #expect(sendRefs(overflow.surface.name) == before - 1)
+        #expect(fixture.heldRights == 0)
     }
 
     @Test("destroying the receive right ends a pending receive with portDied")

@@ -27,6 +27,16 @@ struct TestSurface {
 
     var identifier: UInt32 { IOSurfaceGetID(surface) }
 
+    /// Send rights this task still holds on the surface's ports. Every
+    /// `IOSurfaceCreateMachPort` makes a new port, and the kernel hands a refused
+    /// message's right back under a name that may differ from the one sent, so the
+    /// only reliable count walks the task's names and keeps those that resolve to
+    /// this surface.
+    var heldRights: UInt32 {
+        sendNames().filter { name in IOSurfaceLookupFromMachPort(name).map { IOSurfaceGetID($0) == identifier } ?? false }
+            .reduce(0) { $0 + sendRefs($1) }
+    }
+
     func message(at nanoseconds: UInt64 = 42) -> FrameMessage {
         FrameMessage(
             surface: MachSendRight(name: IOSurfaceCreateMachPort(surface)), descriptor: Self.descriptor,
@@ -94,4 +104,23 @@ extension mach_msg_header_t {
             msgh_bits: bits ?? msgh_bits, msgh_size: size ?? msgh_size, msgh_remote_port: msgh_remote_port,
             msgh_local_port: msgh_local_port, msgh_voucher_port: msgh_voucher_port, msgh_id: id ?? msgh_id)
     }
+}
+
+/// `MACH_PORT_TYPE(MACH_PORT_RIGHT_SEND)`: that C macro is not imported.
+private let sendRightType = mach_port_type_t(1) << (mach_port_type_t(MACH_PORT_RIGHT_SEND) + 16)
+
+/// Every name in this task that holds a send right.
+func sendNames() -> [mach_port_name_t] {
+    var names: mach_port_name_array_t?
+    var nameCount: mach_msg_type_number_t = 0
+    var types: mach_port_type_array_t?
+    var typeCount: mach_msg_type_number_t = 0
+    guard mach_port_names(mach_task_self_, &names, &nameCount, &types, &typeCount) == KERN_SUCCESS, let names, let types else { return [] }
+    defer {
+        _ = vm_deallocate(mach_task_self_, vm_address_t(bitPattern: names), vm_size_t(nameCount) * vm_size_t(MemoryLayout<mach_port_name_t>.stride))
+        _ = vm_deallocate(mach_task_self_, vm_address_t(bitPattern: types), vm_size_t(typeCount) * vm_size_t(MemoryLayout<mach_port_type_t>.stride))
+    }
+    return zip(UnsafeBufferPointer(start: names, count: Int(nameCount)), UnsafeBufferPointer(start: types, count: Int(typeCount)))
+        .filter { $0.1 & sendRightType != 0 }
+        .map(\.0)
 }
