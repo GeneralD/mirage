@@ -1,12 +1,10 @@
+/// Implements `StreamOutputGateway` and `StreamOutputHandle`.
+/// Wraps `CMIOExtensionProvider.startService` and `CMIOExtensionStream.send`.
+/// Stateless: each start is one `StreamSession`, handed back as the handle.
 import Domain
 import IOSurface
 
-/// Adapter for `StreamOutputGateway`; wraps `CMIOExtensionStream.send`.
-/// `current` is written once by `start` (extension launch) and only read
-/// afterwards from the frame executor, so the box needs no lock.
-public final class StreamOutputGatewayImpl: @unchecked Sendable {
-    private let current = CurrentSession()
-
+public struct StreamOutputGatewayImpl: Sendable {
     public init() {}
 }
 
@@ -16,22 +14,19 @@ extension StreamOutputGatewayImpl: StreamOutputGateway {
         descriptor: SurfaceDescriptor,
         frameRate: FrameRate,
         onEvent: @escaping @Sendable (StreamOutputEvent) -> Void
-    ) throws {
-        current.session = try Result {
+    ) throws -> any StreamOutputHandle {
+        try Result {
             try StreamAssembly.start(deviceName: deviceName, descriptor: descriptor, frameRate: frameRate, onEvent: onEvent)
         }
         .mapError { ($0 as? StreamOutputError) ?? .providerSetupFailed(String(describing: $0)) }
         .get()
     }
-
-    public func send(_ surface: any SurfaceHandle, presentationTime: HostTimestamp) throws {
-        let session = try current.session.orThrow(StreamOutputError.notStarted)
-        let ioSurface = try (surface.backing as? IOSurface).orThrow(SurfaceError.foreignHandle)
-        let buffer = try SampleBufferFactory.make(ioSurface, presentationTime: presentationTime, session: session)
-        session.stream.send(buffer, discontinuity: [], hostTimeInNanoseconds: presentationTime.nanoseconds)
-    }
 }
 
-private final class CurrentSession: @unchecked Sendable {
-    public var session: StreamSession?
+extension StreamSession: StreamOutputHandle {
+    public func send(_ surface: any SurfaceHandle, presentationTime: HostTimestamp) throws {
+        let ioSurface = try (surface.backing as? IOSurface).orThrow(SurfaceError.foreignHandle)
+        let buffer = try SampleBufferFactory.make(ioSurface, presentationTime: presentationTime, session: self)
+        stream.send(buffer, discontinuity: [], hostTimeInNanoseconds: presentationTime.nanoseconds)
+    }
 }

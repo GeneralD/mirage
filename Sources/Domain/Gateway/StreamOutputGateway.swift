@@ -1,17 +1,24 @@
 import Dependencies
 
+/// The started CMIO stream, as `StreamOutputGateway.start` handed it out:
+/// `send` wraps the surface in a `CMSampleBuffer` whose PTS and
+/// `hostTimeInNanoseconds` are both `presentationTime`. Whoever started the
+/// stream owns the handle; the gateway keeps no record of it.
+public protocol StreamOutputHandle: Sendable {
+    func send(_ surface: any SurfaceHandle, presentationTime: HostTimestamp) throws
+}
+
 /// Thin pass-through to the CMIO extension objects: one provider, one device,
 /// one source stream declared with `descriptor` / `frameRate` and the
-/// `.hostTime` clock. `send` wraps the surface in a `CMSampleBuffer` whose PTS
-/// and `hostTimeInNanoseconds` are both `presentationTime`.
+/// `.hostTime` clock. Stateless: the running stream lives in the returned
+/// handle, so which stream is current is decided one layer up, where it is tested.
 public protocol StreamOutputGateway: Sendable {
     func start(
         deviceName: String,
         descriptor: SurfaceDescriptor,
         frameRate: FrameRate,
         onEvent: @escaping @Sendable (StreamOutputEvent) -> Void
-    ) throws
-    func send(_ surface: any SurfaceHandle, presentationTime: HostTimestamp) throws
+    ) throws -> any StreamOutputHandle
 }
 
 public enum StreamOutputError: Error, Sendable, Hashable {
@@ -37,13 +44,8 @@ private struct UnimplementedStreamOutputGateway: StreamOutputGateway {
         descriptor: SurfaceDescriptor,
         frameRate: FrameRate,
         onEvent: @escaping @Sendable (StreamOutputEvent) -> Void
-    ) throws {
+    ) throws -> any StreamOutputHandle {
         reportIssue("StreamOutputGateway.start not implemented")
-        throw StreamOutputError.notStarted
-    }
-
-    func send(_ surface: any SurfaceHandle, presentationTime: HostTimestamp) throws {
-        reportIssue("StreamOutputGateway.send not implemented")
         throw StreamOutputError.notStarted
     }
 }

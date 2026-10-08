@@ -2,7 +2,8 @@ import Domain
 import TestSupport
 
 /// The CMIO stream as the test sees it: records the declared format and every
-/// sent surface; `emit` relays a client start/stop to the subject.
+/// surface sent through the handle `start` returned; `emit` relays a client
+/// start/stop to the subject.
 public final class FakeStreamOutputGateway: StreamOutputGateway, Sendable {
     public struct Started: Sendable {
         public let deviceName: String
@@ -15,6 +16,14 @@ public final class FakeStreamOutputGateway: StreamOutputGateway, Sendable {
         var onEvent: (@Sendable (StreamOutputEvent) -> Void)?
         var startError: StreamOutputError?
         var sendError: StreamOutputError?
+    }
+
+    private struct Handle: StreamOutputHandle {
+        let gateway: FakeStreamOutputGateway
+
+        func send(_ surface: any SurfaceHandle, presentationTime: HostTimestamp) throws {
+            try gateway.record(surface, presentationTime: presentationTime)
+        }
     }
 
     private let state = Locked(State())
@@ -37,15 +46,16 @@ public final class FakeStreamOutputGateway: StreamOutputGateway, Sendable {
         descriptor: SurfaceDescriptor,
         frameRate: FrameRate,
         onEvent: @escaping @Sendable (StreamOutputEvent) -> Void
-    ) throws {
+    ) throws -> any StreamOutputHandle {
         try state.withLock { state in
             if let error = state.startError { throw error }
             state.started = Started(deviceName: deviceName, descriptor: descriptor, frameRate: frameRate)
             state.onEvent = onEvent
         }
+        return Handle(gateway: self)
     }
 
-    public func send(_ surface: any SurfaceHandle, presentationTime: HostTimestamp) throws {
+    private func record(_ surface: any SurfaceHandle, presentationTime: HostTimestamp) throws {
         try state.withLock { state in
             if let error = state.sendError { throw error }
         }

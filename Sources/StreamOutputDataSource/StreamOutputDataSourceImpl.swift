@@ -11,6 +11,10 @@ public final class StreamOutputDataSourceImpl: @unchecked Sendable {
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
+    /// The started stream, owned here rather than in the gateway. Written once
+    /// by `start` (extension launch, off the executor) and read by `send` on the
+    /// executor; a subject so that hand-over needs no lock of its own.
+    private let handle = CurrentValueSubject<(any StreamOutputHandle)?, Never>(nil)
     /// The declared format while at least one client is streaming, `nil`
     /// otherwise. One optional instead of a flag plus a descriptor, so
     /// "streaming without a declared format" cannot be represented. A subject
@@ -30,13 +34,14 @@ extension StreamOutputDataSourceImpl: StreamOutput {
         frameRate: FrameRate,
         onEvent: @escaping @Sendable (StreamOutputEvent) -> Void
     ) throws {
-        try gateway.start(deviceName: ProductIdentity.displayName, descriptor: descriptor, frameRate: frameRate) { [weak self] event in
+        handle.value = try gateway.start(deviceName: ProductIdentity.displayName, descriptor: descriptor, frameRate: frameRate) {
+            [weak self] event in
             guard let self else { return }
-            frameExecutor.run {
-                self.streamingClients = max(0, self.streamingClients + (event == .streamStarted ? 1 : -1))
-                self.streamingFormat.value = self.streamingClients > 0 ? descriptor : nil
-                self.developerLog.record(
-                    .stream, "client stream \(event == .streamStarted ? "started" : "stopped"); \(self.streamingClients) streaming")
+            // The executor block runs once and is gone; the strong capture lasts only that long.
+            frameExecutor.run { [self] in
+                streamingClients = max(0, streamingClients + (event == .streamStarted ? 1 : -1))
+                streamingFormat.value = streamingClients > 0 ? descriptor : nil
+                developerLog.record(.stream, "client stream \(event == .streamStarted ? "started" : "stopped"); \(streamingClients) streaming")
                 onEvent(event)
             }
         }
@@ -53,7 +58,7 @@ extension StreamOutputDataSourceImpl: StreamOutput {
             return .dropped(.formatMismatch)
         }
         do {
-            try gateway.send(surface, presentationTime: presentationTime)
+            try handle.value.orThrow(StreamOutputError.notStarted).send(surface, presentationTime: presentationTime)
             return .sent
         } catch {
             let code = Self.code(of: error)
