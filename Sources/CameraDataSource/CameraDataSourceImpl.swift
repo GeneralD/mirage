@@ -45,11 +45,17 @@ extension CameraDataSourceImpl {
     /// Runs on the executor. Accepts the frame only when its PTS is newer than the last accepted one.
     private func deliver(_ captured: CapturedSurface, to onFrame: @Sendable (IncomingSurface) -> Void) {
         let time = HostTimestamp.seconds(captured.presentationSeconds)
-        guard lastPresentation.map({ time > $0 }) ?? true else {
-            developerLog.record(.camera, "dropped non-monotonic frame: pts \(time.nanoseconds)ns after \(lastPresentation?.nanoseconds ?? 0)ns")
+        let incoming = IncomingSurface(handle: captured.handle, descriptor: captured.descriptor, presentationTime: time)
+        guard let floor = lastPresentation else { return accept(incoming, to: onFrame) }
+        guard time > floor else {
+            developerLog.record(.camera, "dropped non-monotonic frame: pts \(time.nanoseconds)ns after \(floor.nanoseconds)ns")
             return
         }
-        lastPresentation = time
-        onFrame(IncomingSurface(handle: captured.handle, descriptor: captured.descriptor, presentationTime: time))
+        accept(incoming, to: onFrame)
+    }
+
+    private func accept(_ incoming: IncomingSurface, to onFrame: @Sendable (IncomingSurface) -> Void) {
+        lastPresentation = incoming.presentationTime
+        onFrame(incoming)
     }
 }
