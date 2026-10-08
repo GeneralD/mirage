@@ -10,6 +10,23 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    # `hashFiles` is a step-level function, so the "is there a Package.swift
+    # yet?" decision is computed here and consumed by the jobs below.
+    runs-on: ubuntu-latest
+    outputs:
+      has_package: ${{ steps.probe.outputs.has_package }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: probe
+        run: |
+          if [ -f Package.swift ]; then
+            echo "has_package=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_package=false" >> "$GITHUB_OUTPUT"
+          fi
+
   check:
     # Mechanical guards (import boundaries, physical symbols, thin lives,
     # service-name triple, product-name confinement). Runs before any build so a
@@ -31,7 +48,8 @@ jobs:
 
   lint:
     runs-on: macos-latest
-    if: ${{ hashFiles('Package.swift') != '' }}
+    needs: preflight
+    if: needs.preflight.outputs.has_package == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +61,8 @@ jobs:
     # same runner, so a release-toolchain compile error fails the PR rather
     # than the release.
     runs-on: macos-15
-    if: ${{ hashFiles('Package.swift') != '' }}
+    needs: preflight
+    if: needs.preflight.outputs.has_package == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +71,8 @@ jobs:
 
   test:
     runs-on: macos-latest
-    if: ${{ hashFiles('Package.swift') != '' }}
+    needs: preflight
+    if: needs.preflight.outputs.has_package == 'true'
     # Outer bound for anything a Swift Testing `.timeLimit` cannot reach (a test
     # blocked on a thread); turns a hang into a failure instead of a six-hour default.
     timeout-minutes: 30
