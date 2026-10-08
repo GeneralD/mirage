@@ -2,11 +2,12 @@ import CameraPermissionDataSource
 import Dependencies
 import Domain
 import TestDoubles
+import TestSupport
 import Testing
 
 @Suite("CameraPermissionDataSource", .timeLimit(.minutes(1)))
 struct CameraPermissionDataSourceTests {
-    private func makeSubject(_ gateway: ScriptedCameraAuthorization) -> CameraPermissionDataSourceImpl {
+    private func makeSubject(_ gateway: any CameraAuthorizationGateway) -> CameraPermissionDataSourceImpl {
         withDependencies {
             $0.cameraAuthorizationGateway = gateway
         } operation: {
@@ -44,6 +45,17 @@ struct CameraPermissionDataSourceTests {
         #expect(gateway.requests.count == 0)
     }
 
+    @Test(
+        "the result is the re-read status, not the answer to the prompt",
+        arguments: [(true, CameraAuthorizationStatus.restricted), (false, .authorized)]
+    )
+    func resultIsReReadStatus(answer: Bool, statusAfter: CameraAuthorizationStatus) async {
+        let gateway = DisagreeingAuthorization(answer: answer, statusAfter: statusAfter)
+        let status = await makeSubject(gateway).request()
+        #expect(status == statusAfter)
+        #expect(gateway.requests.count == 1)
+    }
+
     @Test("requesting twice prompts only the first time")
     func secondRequestDoesNotPrompt() async {
         let gateway = ScriptedCameraAuthorization(status: .notDetermined, grantsOnRequest: false)
@@ -52,5 +64,28 @@ struct CameraPermissionDataSourceTests {
         let second = await subject.request()
         #expect(second == .denied)
         #expect(gateway.requests.count == 1)
+    }
+}
+
+/// A gateway whose prompt answer and post-prompt status disagree (a policy
+/// change landing while the dialog is up), to prove the status is re-read.
+private final class DisagreeingAuthorization: CameraAuthorizationGateway, Sendable {
+    private let current: Locked<CameraAuthorizationStatus>
+    private let answer: Bool
+    private let statusAfter: CameraAuthorizationStatus
+    let requests = Collector<Void>()
+
+    init(answer: Bool, statusAfter: CameraAuthorizationStatus) {
+        current = Locked(.notDetermined)
+        self.answer = answer
+        self.statusAfter = statusAfter
+    }
+
+    func status() -> CameraAuthorizationStatus { current.current }
+
+    func requestAccess() async -> Bool {
+        requests.append(())
+        current.set(statusAfter)
+        return answer
     }
 }

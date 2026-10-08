@@ -1,6 +1,6 @@
 /// Implements `CaptureSessionGateway`.
 /// Wraps `AVCaptureSession` (default video device, BGRA 1280x720 output).
-/// Starting replaces any running rig; every decision lives in CameraDataSource.
+/// Starting stops any running rig first; every decision lives in CameraDataSource.
 import Domain
 import Foundation
 
@@ -25,6 +25,8 @@ extension CaptureSessionGatewayImpl: CaptureSessionGateway {
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws {
+        // Stop the old rig first: two sessions on one camera must never overlap.
+        replace(with: nil)
         replace(with: try CaptureRig(descriptor: descriptor, onFrame: onFrame, onEnd: onEnd))
     }
 

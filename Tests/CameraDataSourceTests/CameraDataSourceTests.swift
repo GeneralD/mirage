@@ -32,6 +32,8 @@ struct CameraDataSourceTests {
             let frames = frames
             let ends = ends
             try subject.start(descriptor: .hd720, onFrame: { frames.append($0) }, onEnd: { ends.append($0) })
+            // Starting queues the session bookkeeping on the executor; settle it so tests count frames only.
+            executor.drain()
         }
 
         func emit(_ id: UInt32, seconds: Double) {
@@ -71,17 +73,25 @@ struct CameraDataSourceTests {
         #expect(frame.descriptor == descriptor)
     }
 
-    @Test("seconds convert to host-time nanoseconds without drifting", arguments: standardSeeds)
+    @Test("whole nanoseconds survive the seconds round trip exactly", arguments: standardSeeds)
     func convertsSecondsToNanoseconds(seed: UInt64) throws {
         let rig = Rig()
         try rig.start()
         var generator = SeededGenerator(seed: seed)
-        let seconds = Double.random(in: 0.001...100_000, using: &generator)
-        rig.emit(1, seconds: seconds)
+        let nanoseconds = UInt64.random(in: 1_000_000...100_000_000_000_000, using: &generator)
+        rig.emit(1, seconds: Double(nanoseconds) / 1_000_000_000)
         rig.executor.drain()
-        let frame = try #require(rig.frames.last)
-        #expect(frame.presentationTime == HostTimestamp.seconds(seconds))
-        #expect(abs(frame.presentationTime.seconds - seconds) < 0.000_001)
+        #expect(rig.frames.last?.presentationTime.nanoseconds == nanoseconds)
+    }
+
+    @Test("sub-nanosecond remainders round to the nearest nanosecond")
+    func roundsToNearestNanosecond() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.emit(1, seconds: 1.000_000_000_7)
+        rig.emit(2, seconds: 1.000_000_001_3)
+        rig.executor.drain()
+        #expect(rig.frames.values.map(\.presentationTime.nanoseconds) == [1_000_000_001])
     }
 
     @Test("a PTS of 1.5 seconds maps to exactly 1_500_000_000 ns")
@@ -136,21 +146,125 @@ struct CameraDataSourceTests {
         #expect(rig.frames.last?.presentationTime == .zero)
     }
 
-    @Test("end is delivered on the executor and resets the monotonic floor")
-    func endResetsFloor() throws {
+    @Test(
+        "end is delivered on the executor and resets the monotonic floor for every reason",
+        arguments: [CaptureEnd.stopped, .deviceDisconnected, .runtimeError("boom")]
+    )
+    func endResetsFloor(reason: CaptureEnd) throws {
         let rig = Rig()
         try rig.start()
         rig.emit(1, seconds: 10.0)
         rig.executor.drain()
-        rig.gateway.end(.deviceDisconnected)
+        rig.gateway.end(reason)
         #expect(rig.ends.count == 0)
         rig.executor.drain()
-        #expect(rig.ends.values == [.deviceDisconnected])
+        #expect(rig.ends.values == [reason])
+        // No restart: the very next frame, older than the last one, is accepted.
+        rig.emit(2, seconds: 1.0)
+        rig.executor.drain()
+        #expect(rig.frames.count == 2)
+        #expect(rig.log.entries.count == 0)
+    }
+
+    @Test("a descriptor other than the M0 format is refused before the gateway is touched")
+    func rejectsUnsupportedDescriptor() {
+        let rig = Rig()
+        let other = SurfaceDescriptor.bgra(width: 1920, height: 1080)
+        #expect(throws: CaptureSessionError.configurationFailed("unsupported descriptor 1920x1080")) {
+            try rig.subject.start(descriptor: other, onFrame: { _ in }, onEnd: { _ in })
+        }
+        #expect(rig.gateway.startCount == 0)
+    }
+
+    @Test("a padded row stride is still the M0 format")
+    func acceptsPaddedStride() throws {
+        let rig = Rig()
+        let padded = SurfaceDescriptor(width: 1280, height: 720, pixelFormat: .bgra32, bytesPerRow: 5_120 + 64)
+        try rig.subject.start(descriptor: padded, onFrame: { _ in }, onEnd: { _ in })
+        #expect(rig.gateway.startCount == 1)
+    }
+
+    @Test("stop retires the session: a frame the gateway still delivers afterwards is dropped")
+    func stopDropsLateFrames() throws {
+        let gateway = LingeringCaptureGateway()
+        let executor = ManualFrameExecutor()
+        let frames = Collector<IncomingSurface>()
+        let subject = withDependencies {
+            $0.captureSessionGateway = gateway
+            $0.frameExecutor = executor
+            $0.developerLog = RecordingLog()
+        } operation: {
+            CameraDataSourceImpl()
+        }
+        try subject.start(descriptor: .hd720, onFrame: { frames.append($0) }, onEnd: { _ in })
+        executor.drain()
+        gateway.emit(FakeSurfaceHandle(id: 1), seconds: 1.0)
+        subject.stop()
+        gateway.emit(FakeSurfaceHandle(id: 2), seconds: 2.0)
+        executor.drain()
+        #expect(frames.values.map(\.presentationTime.nanoseconds) == [1_000_000_000])
+    }
+
+    @Test("stop clears the monotonic floor for the next session")
+    func stopResetsFloor() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.emit(1, seconds: 10.0)
+        rig.executor.drain()
+        rig.subject.stop()
+        rig.executor.drain()
         try rig.start()
         rig.emit(2, seconds: 1.0)
         rig.executor.drain()
         #expect(rig.frames.count == 2)
         #expect(rig.log.entries.count == 0)
+    }
+
+    @Test("a second start replaces the session: the new floor applies and the old end is ignored")
+    func doubleStartReplacesSession() throws {
+        let gateway = LingeringCaptureGateway()
+        let executor = ManualFrameExecutor()
+        let frames = Collector<IncomingSurface>()
+        let ends = Collector<CaptureEnd>()
+        let subject = withDependencies {
+            $0.captureSessionGateway = gateway
+            $0.frameExecutor = executor
+            $0.developerLog = RecordingLog()
+        } operation: {
+            CameraDataSourceImpl()
+        }
+        try subject.start(descriptor: .hd720, onFrame: { frames.append($0) }, onEnd: { ends.append($0) })
+        gateway.emit(FakeSurfaceHandle(id: 1), seconds: 10.0)
+        executor.drain()
+        try subject.start(descriptor: .hd720, onFrame: { frames.append($0) }, onEnd: { ends.append($0) })
+        gateway.emitFirstSession(FakeSurfaceHandle(id: 2), seconds: 20.0)
+        gateway.endFirstSession(.deviceDisconnected)
+        gateway.emit(FakeSurfaceHandle(id: 3), seconds: 1.0)
+        executor.drain()
+        #expect(gateway.startCount == 2)
+        #expect(frames.values.map(\.presentationTime.nanoseconds) == [10_000_000_000, 1_000_000_000])
+        #expect(ends.count == 0)
+    }
+
+    @Test("a failed start leaves no session behind")
+    func failedStartRetiresSession() {
+        let gateway = LingeringCaptureGateway()
+        gateway.failNextStart()
+        let executor = ManualFrameExecutor()
+        let frames = Collector<IncomingSurface>()
+        let subject = withDependencies {
+            $0.captureSessionGateway = gateway
+            $0.frameExecutor = executor
+            $0.developerLog = RecordingLog()
+        } operation: {
+            CameraDataSourceImpl()
+        }
+        #expect(throws: CaptureSessionError.deviceUnavailable) {
+            try subject.start(descriptor: .hd720, onFrame: { frames.append($0) }, onEnd: { _ in })
+        }
+        gateway.emitFirstSession(FakeSurfaceHandle(id: 1), seconds: 1.0)
+        executor.drain()
+        #expect(frames.count == 0)
     }
 
     @Test("a start error from the gateway propagates")
