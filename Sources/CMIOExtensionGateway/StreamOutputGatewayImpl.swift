@@ -20,7 +20,7 @@ extension StreamOutputGatewayImpl: StreamOutputGateway {
         current.session = try Result {
             try StreamAssembly.start(deviceName: deviceName, descriptor: descriptor, frameRate: frameRate, onEvent: onEvent)
         }
-        .mapError { StreamOutputError.providerSetupFailed(String(describing: $0)) }
+        .mapError { ($0 as? StreamOutputError) ?? .providerSetupFailed(String(describing: $0)) }
         .get()
     }
 

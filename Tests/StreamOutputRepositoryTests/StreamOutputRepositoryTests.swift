@@ -27,10 +27,10 @@ struct StreamOutputRepositoryTests {
             }
         }
 
-        func adopt(at nanoseconds: UInt64) throws -> (frame: FrameRef, surface: FakeSurfaceHandle) {
+        func adopt(at nanoseconds: UInt64, descriptor: SurfaceDescriptor = .hd720) throws -> (frame: FrameRef, surface: FakeSurfaceHandle) {
             let surface = FakeSurfaceHandle(id: 1)
-            let token = try #require(pool.adopt(surface, descriptor: .hd720))
-            return (FrameRef(token: token, descriptor: .hd720, presentationTime: HostTimestamp(nanoseconds: nanoseconds)), surface)
+            let token = try #require(pool.adopt(surface, descriptor: descriptor))
+            return (FrameRef(token: token, descriptor: descriptor, presentationTime: HostTimestamp(nanoseconds: nanoseconds)), surface)
         }
     }
 
@@ -68,11 +68,12 @@ struct StreamOutputRepositoryTests {
         let rig = Rig()
         try rig.subject.start(descriptor: .hd720, frameRate: .standard) { _ in }
         rig.output.setStreaming(true)
-        let (frame, surface) = try rig.adopt(at: 42_000)
+        let descriptor = SurfaceDescriptor.bgra(width: 640, height: 360)
+        let (frame, surface) = try rig.adopt(at: 42_000, descriptor: descriptor)
         #expect(rig.subject.send(frame) == .sent)
         let sent = try #require(rig.output.sent.last)
         #expect(sent.surface === surface)
-        #expect(sent.descriptor == .hd720)
+        #expect(sent.descriptor == descriptor)
         #expect(sent.presentationTime == HostTimestamp(nanoseconds: 42_000))
     }
 

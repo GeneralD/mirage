@@ -17,6 +17,9 @@ enum SampleBufferFactory {
             presentationTimeStamp: CMTime(value: Int64(clamping: presentationTime.nanoseconds), timescale: 1_000_000_000),
             decodeTimeStamp: .invalid
         )
-        return try CMSampleBuffer(imageBuffer: pixelBuffer, formatDescription: session.formatDescription, sampleTiming: timing)
+        // Keep the raw OSStatus: a bare CoreMedia error would be flattened to -1 upstream.
+        return try Result { try CMSampleBuffer(imageBuffer: pixelBuffer, formatDescription: session.formatDescription, sampleTiming: timing) }
+            .mapError { StreamOutputError.sampleBufferFailed(code: ($0 as NSError).code) }
+            .get()
     }
 }

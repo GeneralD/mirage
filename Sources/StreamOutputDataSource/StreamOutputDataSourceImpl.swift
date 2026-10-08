@@ -3,13 +3,13 @@ import Domain
 
 /// Puts the "only send while a client streams" decision on top of the CMIO
 /// gateway, so the gateway stays a pass-through the tests never need a device for.
+// Executor-confined: every mutation runs on FrameExecutor.
 public final class StreamOutputDataSourceImpl: @unchecked Sendable {
     @Dependency(\.streamOutputGateway) private var gateway
     @Dependency(\.frameExecutor) private var frameExecutor
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
-    // Executor-confined: every mutation runs on FrameExecutor.
     /// The declared format while a client is streaming, `nil` otherwise. One
     /// optional instead of a flag plus a descriptor, so "streaming without a
     /// declared format" cannot be represented.

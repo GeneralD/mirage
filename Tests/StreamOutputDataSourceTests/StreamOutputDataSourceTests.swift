@@ -11,19 +11,21 @@ struct StreamOutputDataSourceTests {
     private struct Rig {
         let gateway = FakeStreamOutputGateway()
         let executor = ManualFrameExecutor()
-        let log = RecordingLog()
+        let errorLog = RecordingLog()
+        let developerLog = RecordingLog()
         let events = Collector<StreamOutputEvent>()
         let subject: StreamOutputDataSourceImpl
 
         init() {
             let gateway = gateway
             let executor = executor
-            let log = log
+            let errorLog = errorLog
+            let developerLog = developerLog
             subject = withDependencies {
                 $0.streamOutputGateway = gateway
                 $0.frameExecutor = executor
-                $0.errorLog = log
-                $0.developerLog = log
+                $0.errorLog = errorLog
+                $0.developerLog = developerLog
             } operation: {
                 StreamOutputDataSourceImpl()
             }
@@ -114,6 +116,17 @@ struct StreamOutputDataSourceTests {
         #expect(rig.events.values == [.streamStarted, .streamStopped])
     }
 
+    @Test("the caller's callback sees the state already updated")
+    func callbackObservesUpdatedState() throws {
+        let rig = Rig()
+        let observed = Collector<Bool>()
+        let subject = rig.subject
+        try subject.start(descriptor: .hd720, frameRate: .standard) { _ in observed.append(subject.isStreaming) }
+        rig.clientStarts()
+        rig.clientStops()
+        #expect(observed.values == [true, false])
+    }
+
     @Test("an event that arrives after the data source is gone is ignored")
     func ignoresEventsAfterRelease() throws {
         let gateway = FakeStreamOutputGateway()
@@ -137,17 +150,26 @@ struct StreamOutputDataSourceTests {
         try rig.start()
         rig.clientStarts()
         rig.clientStops()
-        #expect(rig.log.messages(in: .stream) == ["client stream started", "client stream stopped"])
+        #expect(rig.developerLog.messages(in: .stream) == ["client stream started", "client stream stopped"])
+        #expect(rig.errorLog.entries.count == 0)
     }
 
-    @Test("a frame whose geometry differs from the declared format is dropped and logged")
-    func formatMismatch() throws {
+    // `PixelFormat` has a single case today, so the pixel format cannot differ; width and height are covered one at a time.
+    @Test(
+        "a frame whose width or height differs from the declared format is dropped and logged as an error",
+        arguments: [
+            SurfaceDescriptor.bgra(width: 640, height: 720),
+            SurfaceDescriptor.bgra(width: 1280, height: 360),
+            SurfaceDescriptor.bgra(width: 640, height: 360),
+        ])
+    func formatMismatch(mismatched: SurfaceDescriptor) throws {
         let rig = Rig()
         try rig.start()
         rig.clientStarts()
-        #expect(rig.send(descriptor: .bgra(width: 640, height: 360)) == .dropped(.formatMismatch))
+        #expect(rig.send(descriptor: mismatched) == .dropped(.formatMismatch))
         #expect(rig.gateway.sent.count == 0)
-        #expect(rig.log.contains("640x360"))
+        #expect(rig.errorLog.contains("\(mismatched.width)x\(mismatched.height)"))
+        #expect(!rig.developerLog.contains("\(mismatched.width)x\(mismatched.height)"))
     }
 
     @Test("a different row stride alone is not a mismatch")
@@ -166,7 +188,8 @@ struct StreamOutputDataSourceTests {
         rig.clientStarts()
         rig.gateway.failSend(with: .sampleBufferFailed(code: -6661))
         #expect(rig.send() == .dropped(.sendFailed(code: -6661)))
-        #expect(rig.log.contains("-6661"))
+        #expect(rig.errorLog.contains("-6661"))
+        #expect(!rig.developerLog.contains("-6661"))
     }
 
     @Test("any other gateway failure becomes sendFailed(-1)")
@@ -176,7 +199,8 @@ struct StreamOutputDataSourceTests {
         rig.clientStarts()
         rig.gateway.failSend(with: .notStarted)
         #expect(rig.send() == .dropped(.sendFailed(code: -1)))
-        #expect(rig.log.entries.count == 2)
+        #expect(rig.errorLog.entries.count == 1)
+        #expect(rig.developerLog.entries.count == 1)
     }
 
     @Test("a send failure does not stop later frames from going out", arguments: standardSeeds)

@@ -12,36 +12,32 @@ enum StreamAssembly {
         frameRate: FrameRate,
         onEvent: @escaping @Sendable (StreamOutputEvent) -> Void
     ) throws -> StreamSession {
-        let duration = CMTime(value: 1, timescale: Int32(clamping: frameRate.framesPerSecond))
-        let formatDescription = try CMVideoFormatDescription(
-            videoCodecType: CMFormatDescription.MediaSubType(rawValue: descriptor.pixelFormat.fourCC),
-            width: descriptor.width,
-            height: descriptor.height
-        )
-        let format = CMIOExtensionStreamFormat(
-            formatDescription: formatDescription,
-            maxFrameDuration: duration,
-            minFrameDuration: duration,
-            validFrameDurations: nil
-        )
+        let formats = try StreamFormatSet.make(descriptor: descriptor, frameRate: frameRate)
+        let streamSource = StreamSource(format: formats.format, frameDuration: formats.duration, onEvent: onEvent)
+        let deviceSource = DeviceSource(model: deviceName)
+        let providerSource = ProviderSource()
         let stream = CMIOExtensionStream(
             localizedName: deviceName,
             streamID: try identifier(String(ProductIdentity.virtualDeviceID.dropLast()) + "4"),
             direction: .source,
             clockType: .hostTime,
-            source: StreamSource(format: format, frameDuration: duration, onEvent: onEvent)
+            source: streamSource
         )
         let device = CMIOExtensionDevice(
             localizedName: deviceName,
             deviceID: try identifier(ProductIdentity.virtualDeviceID),
             legacyDeviceID: nil,
-            source: DeviceSource(model: deviceName)
+            source: deviceSource
         )
-        let provider = CMIOExtensionProvider(source: ProviderSource(), clientQueue: nil)
+        let provider = CMIOExtensionProvider(source: providerSource, clientQueue: nil)
         try device.addStream(stream)
         try provider.addDevice(device)
         CMIOExtensionProvider.startService(provider: provider)
-        return StreamSession(stream: stream, formatDescription: formatDescription, frameDuration: duration)
+        return StreamSession(
+            stream: stream, formatDescription: formats.formatDescription, frameDuration: formats.duration,
+            providerSource: providerSource, deviceSource: deviceSource, streamSource: streamSource,
+            device: device, provider: provider
+        )
     }
 
     private static func identifier(_ text: String) throws -> UUID {
