@@ -16,16 +16,24 @@ public struct CapturedSurface: Sendable {
     }
 }
 
+/// One running capture session, as `CaptureSessionGateway.start` handed it
+/// out. Whoever started the session owns the handle and stops it; the gateway
+/// keeps no record of it.
+public protocol CaptureSessionHandle: Sendable {
+    func stop()
+}
+
 /// Thin pass-through to `AVCaptureSession`: configure the default camera for
 /// `descriptor`, deliver each sample buffer's surface to `onFrame` on the
-/// session's own queue, report the end of the session to `onEnd`.
+/// session's own queue, report the end of the session to `onEnd`. Stateless:
+/// the running session lives in the returned handle, so which session is
+/// current is decided one layer up, where it is tested.
 public protocol CaptureSessionGateway: Sendable {
     func start(
         descriptor: SurfaceDescriptor,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
-    ) throws
-    func stop()
+    ) throws -> any CaptureSessionHandle
 }
 
 public enum CaptureSessionGatewayKey: TestDependencyKey {
@@ -44,12 +52,8 @@ private struct UnimplementedCaptureSessionGateway: CaptureSessionGateway {
         descriptor: SurfaceDescriptor,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
-    ) throws {
+    ) throws -> any CaptureSessionHandle {
         reportIssue("CaptureSessionGateway.start not implemented")
         throw CaptureSessionError.deviceUnavailable
-    }
-
-    func stop() {
-        reportIssue("CaptureSessionGateway.stop not implemented")
     }
 }

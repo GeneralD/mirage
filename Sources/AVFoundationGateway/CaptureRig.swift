@@ -1,4 +1,4 @@
-/// Implements the session wiring of `CaptureSessionGateway`.
+/// Implements `CaptureSessionHandle` (the session wiring of `CaptureSessionGateway`).
 /// Wraps `AVCaptureSession`, `AVCaptureDeviceInput` and `AVCaptureVideoDataOutput`.
 /// One rig is one running session; stopping it tears the whole thing down.
 import AVFoundation
@@ -33,7 +33,9 @@ final class CaptureRig: @unchecked Sendable {
         output.setSampleBufferDelegate(delegate, queue: queue)
         session.startRunning()
     }
+}
 
+extension CaptureRig: CaptureSessionHandle {
     func stop() {
         observers.removeAll()
         // Detach first so samples already queued never reach `onFrame` after stop.

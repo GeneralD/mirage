@@ -275,12 +275,59 @@ struct CameraDataSourceTests {
         #expect(rig.gateway.startCount == 1)
     }
 
-    @Test("stop forwards to the gateway")
+    @Test("stop ends the gateway session on the executor")
     func stopForwards() throws {
         let rig = Rig()
         try rig.start()
         rig.subject.stop()
+        #expect(rig.gateway.stopCount == 0)
+        rig.executor.drain()
         #expect(rig.gateway.stopCount == 1)
         #expect(!rig.gateway.isRunning)
+    }
+
+    @Test("a second start ends the session it replaces; stop afterwards ends only the new one")
+    func replacingStartStopsTheOldSession() throws {
+        let gateway = LingeringCaptureGateway()
+        let executor = ManualFrameExecutor()
+        let subject = withDependencies {
+            $0.captureSessionGateway = gateway
+            $0.frameExecutor = executor
+            $0.developerLog = RecordingLog()
+        } operation: {
+            CameraDataSourceImpl()
+        }
+        try subject.start(descriptor: .hd720, onFrame: { _ in }, onEnd: { _ in })
+        try subject.start(descriptor: .hd720, onFrame: { _ in }, onEnd: { _ in })
+        executor.drain()
+        #expect(gateway.stopCount == 1)
+        subject.stop()
+        executor.drain()
+        #expect(gateway.stopCount == 2)
+        subject.stop()
+        executor.drain()
+        #expect(gateway.stopCount == 2)
+    }
+
+    @Test("a stop that lands while the gateway is still starting ends the session once its handle arrives")
+    func stopDuringStart() throws {
+        let gateway = LingeringCaptureGateway()
+        let executor = ManualFrameExecutor()
+        let frames = Collector<IncomingSurface>()
+        let subject = withDependencies {
+            $0.captureSessionGateway = gateway
+            $0.frameExecutor = executor
+            $0.developerLog = RecordingLog()
+        } operation: {
+            CameraDataSourceImpl()
+        }
+        // Queued between the session's begin and the arrival of its handle.
+        gateway.whileStarting { subject.stop() }
+        try subject.start(descriptor: .hd720, onFrame: { frames.append($0) }, onEnd: { _ in })
+        executor.drain()
+        #expect(gateway.stopCount == 1)
+        gateway.emit(FakeSurfaceHandle(id: 1), seconds: 1.0)
+        executor.drain()
+        #expect(frames.count == 0)
     }
 }

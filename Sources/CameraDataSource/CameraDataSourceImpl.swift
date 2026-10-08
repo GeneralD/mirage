@@ -7,9 +7,11 @@ import Domain
 /// machine. A frame whose PTS does not advance past the previous one is dropped,
 /// so downstream stages can rely on strictly increasing presentation times.
 ///
-/// Each `start` mints a `Session`; the executor only accepts frames of the
-/// current one, so samples queued before a `stop` (or a restart) never surface
-/// afterwards and never occupy a pool slot.
+/// Each `start` mints a `Session` and owns the gateway's session handle; the
+/// executor only accepts frames of the current session, so samples queued
+/// before a `stop` (or a restart) never surface afterwards and never occupy a
+/// pool slot. The gateway itself keeps no state: which session is live, and
+/// when its handle is stopped, is decided here.
 public final class CameraDataSourceImpl: @unchecked Sendable {
     /// Identity token for one capture session; compared by reference.
     private final class Session: Sendable {}
@@ -20,6 +22,8 @@ public final class CameraDataSourceImpl: @unchecked Sendable {
 
     // Executor-confined: every mutation runs on FrameExecutor.
     private var current: Session?
+    // Executor-confined: the running gateway session of `current`, once `start` has it.
+    private var handle: (any CaptureSessionHandle)?
     // Executor-confined: every mutation runs on FrameExecutor.
     private var lastPresentation: HostTimestamp?
 
@@ -40,8 +44,9 @@ extension CameraDataSourceImpl: CameraSource {
         let session = Session()
         // Queued before the gateway starts, so it runs ahead of the session's first frame.
         frameExecutor.run { [self] in begin(session) }
+        let started: any CaptureSessionHandle
         do {
-            try captureSessionGateway.start(
+            started = try captureSessionGateway.start(
                 descriptor: descriptor,
                 onFrame: { [self] captured in frameExecutor.run { self.deliver(captured, from: session, to: onFrame) } },
                 onEnd: { [self] reason in frameExecutor.run { self.finish(reason, from: session, to: onEnd) } }
@@ -50,28 +55,43 @@ extension CameraDataSourceImpl: CameraSource {
             frameExecutor.run { [self] in close(session) }
             throw error
         }
+        frameExecutor.run { [self] in adopt(started, for: session) }
     }
 
-    /// Stops the gateway at once, then retires the session on the executor: frames
-    /// queued before this call still arrive in order, anything later is dropped.
+    /// Retires the session on the executor and stops its gateway session there:
+    /// frames queued before this call still arrive in order, anything later is dropped.
     public func stop() {
-        captureSessionGateway.stop()
         frameExecutor.run { [self] in close(current) }
     }
 }
 
 extension CameraDataSourceImpl {
-    /// Runs on the executor. A new session starts from a clean monotonic floor.
+    /// Runs on the executor. A new session starts from a clean monotonic floor
+    /// and ends whatever session was running, so two never overlap for long.
     private func begin(_ session: Session) {
+        retireHandle()
         current = session
         lastPresentation = nil
+    }
+
+    /// Runs on the executor. Keeps the handle only while its session is still
+    /// current; a session replaced or stopped before its start returned is ended here.
+    private func adopt(_ started: any CaptureSessionHandle, for session: Session) {
+        guard session === current else { return started.stop() }
+        handle = started
     }
 
     /// Runs on the executor. Retires `session` (or whatever is current when `nil`).
     private func close(_ session: Session?) {
         guard session === current else { return }
+        retireHandle()
         current = nil
         lastPresentation = nil
+    }
+
+    private func retireHandle() {
+        handle?.stop()
+        handle = nil
     }
 
     /// Runs on the executor. The end of a session starts the next one from a clean floor.

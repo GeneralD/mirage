@@ -3,6 +3,8 @@ import TestSupport
 
 /// The camera the test drives: `emit` delivers a frame to the subject's
 /// callback, `end` finishes the session. Set `startError` to make `start` throw.
+/// Stopping the handle `start` returned clears the callbacks like a real
+/// teardown does, so a frame emitted afterwards goes nowhere.
 public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
     private struct State {
         var descriptor: SurfaceDescriptor?
@@ -11,6 +13,12 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
         var startError: CaptureSessionError?
         var startCount = 0
         var stopCount = 0
+    }
+
+    private struct Handle: CaptureSessionHandle {
+        let gateway: FakeCaptureSessionGateway
+
+        func stop() { gateway.stopSession() }
     }
 
     private let state = Locked(State())
@@ -30,7 +38,7 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
         descriptor: SurfaceDescriptor,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
-    ) throws {
+    ) throws -> any CaptureSessionHandle {
         try state.withLock { state in
             state.startCount += 1
             if let error = state.startError { throw error }
@@ -38,9 +46,10 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
             state.onFrame = onFrame
             state.onEnd = onEnd
         }
+        return Handle(gateway: self)
     }
 
-    public func stop() {
+    private func stopSession() {
         state.withLock { state in
             state.stopCount += 1
             state.onFrame = nil
