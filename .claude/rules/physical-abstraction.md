@@ -42,7 +42,7 @@ rejects it anywhere else.
   (ticks). UseCase frame state is a single-threaded state machine.
 - **GPU** → `GPUGateway`, `ShaderLibraryGateway`, `TextureCacheGateway`; the
   Gateway returns raw completion data, the DataSource maps it.
-- **Surfaces** → `SurfaceLease` from `SurfaceRepository`; raw `IOSurface` is
+- **Surfaces** → `SurfaceToken` from `SurfaceRepository`; raw `IOSurface` is
   seen only by `IOSurfaceGateway` and `MetalGateway`.
 - **Files** → `FileSystemGateway` + `AppDirectoriesProvider` (paths are
   injected; never read from the environment).

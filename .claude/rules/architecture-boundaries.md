@@ -53,8 +53,12 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 - Protocols define what consumers need, not the mechanics of one backend.
 - Event enums are self-contained; `AsyncStream` ending is the cleanup signal
   (no redundant `.finished`).
-- Ports that hand out resources return scoped handles (`SurfaceLease`,
-  `MachPortToken`, `LibraryHandle`) — never OS types.
+- Ports that hand out resources return opaque handles (`SurfaceToken`,
+  `MachPortToken`, `LibraryHandle`, `CaptureSessionHandle`) — never OS types.
+  A handle is given back through the port that issued it (or, for a handle
+  that carries its own `stop()`, stopped by its owner), exactly once. Where a
+  stale handle can reach the port, it is detected rather than trusted:
+  `SurfaceToken` carries a generation for that.
 
 ## Testing Constraints
 
