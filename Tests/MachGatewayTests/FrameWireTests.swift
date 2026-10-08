@@ -78,15 +78,6 @@ struct FrameWireTests {
         #expect(wire.replacing(body: mach_msg_body_t(msgh_descriptor_count: 2)).carriedRight() == nil)
     }
 
-    @Test("only a receive disposition is released as a receive right")
-    func receiveKind() {
-        let send = CarriedRight(name: 7, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_PORT_SEND))
-        let once = CarriedRight(name: 7, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_PORT_SEND_ONCE))
-        let receive = CarriedRight(name: 7, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_PORT_RECEIVE))
-
-        #expect([send.isReceive(), once.isReceive(), receive.isReceive()] == [false, false, true])
-    }
-
     @Test("every deviation from the frame shape is malformedMessage")
     func malformed() {
         let wire = valid

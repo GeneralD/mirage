@@ -4,6 +4,12 @@
 import Darwin
 import Domain
 
+/// A port right found in a received message's descriptor.
+struct CarriedRight: Equatable {
+    let name: mach_port_t
+    let disposition: mach_msg_type_name_t
+}
+
 extension FrameWire {
     /// After a receive the kernel reports a moved send right as PORT_SEND; both spellings are accepted.
     private static let sendDispositions = [MACH_MSG_TYPE_MOVE_SEND, MACH_MSG_TYPE_PORT_SEND].map { mach_msg_type_name_t($0) }
@@ -16,6 +22,7 @@ extension FrameWire {
         return carries && isPort && header.msgh_size == Self.size ? CarriedRight(name: port.name, disposition: port.disposition) : nil
     }
 
+    /// The frame this message carries; the receiver destroys the message when this refuses it.
     func message() throws -> FrameMessage {
         let wellFormed = header.msgh_id == Self.messageID && carriedRight().map { Self.sendDispositions.contains($0.disposition) } == true
         try wellFormed.orThrow(MachError.malformedMessage)
@@ -25,14 +32,5 @@ extension FrameWire {
             descriptor: SurfaceDescriptor(
                 width: Int(payload.width), height: Int(payload.height), pixelFormat: format, bytesPerRow: Int(payload.bytesPerRow)),
             presentationTime: HostTimestamp(nanoseconds: payload.nanoseconds))
-    }
-
-    /// `message()`, but a message that is refused gives back whatever right it carried,
-    /// so a malformed frame never leaks a port into this process.
-    func decoded() throws -> FrameMessage {
-        try Result { try message() }.mapError { error in
-            carriedRight()?.release()
-            return error
-        }.get()
     }
 }

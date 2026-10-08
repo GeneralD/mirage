@@ -123,6 +123,9 @@ func sendNames() -> [mach_port_name_t] { names(holding: MACH_PORT_RIGHT_SEND) }
 /// Every name in this task that holds a receive right.
 func receiveNames() -> [mach_port_name_t] { names(holding: MACH_PORT_RIGHT_RECEIVE) }
 
+/// Every name in this task that is a dead name: a right whose port has been destroyed.
+func deadNames() -> [mach_port_name_t] { names(holding: MACH_PORT_RIGHT_DEAD_NAME) }
+
 private func names(holding right: mach_port_right_t) -> [mach_port_name_t] {
     var names: mach_port_name_array_t?
     var nameCount: mach_msg_type_number_t = 0

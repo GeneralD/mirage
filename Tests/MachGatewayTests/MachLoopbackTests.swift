@@ -137,8 +137,11 @@ struct MachLoopbackTests {
     func malformedReleasesReceiveRight() async throws {
         let loopback = try MachLoopback()
         defer { loopback.tearDown() }
-        let before = receiveNames().count
+        // Destroying the receive right kills the port, which turns the send right made
+        // alongside into a dead name under the same name: exact evidence, where a task-wide
+        // count would drift with the suites running alongside.
         let carried = try makeOwnedPort()
+        defer { loopback.bootstrap.deallocate(carried) }
         let message = FrameMessage(surface: MachSendRight(name: carried.name), descriptor: TestSurface.descriptor, presentationTime: .zero)
         let wire = FrameWire(message, to: loopback.send)
         let moved = mach_msg_port_descriptor_t(
@@ -147,7 +150,8 @@ struct MachLoopbackTests {
         #expect(sendRaw(wire.replacing(port: moved)) == MACH_MSG_SUCCESS)
         await #expect(throws: MachError.malformedMessage) { try await loopback.messaging.receive(on: loopback.receive) }
 
-        #expect(receiveNames().count == before)
+        #expect(!receiveNames().contains(carried.name))
+        #expect(deadNames().contains(carried.name))
     }
 
     @Test("a message with an out-of-line descriptor is malformedMessage and releases no unrelated name")
@@ -204,11 +208,13 @@ struct MachLoopbackTests {
     func failedRegisterLeavesNoRight() throws {
         let loopback = try MachLoopback()
         defer { loopback.tearDown() }
-        let before = receiveNames().count
+        let before = Set(receiveNames())
 
         #expect(throws: MachError.registerFailed(code: 1101)) { try loopback.bootstrap.register(serviceName: loopback.serviceName) }
 
-        #expect(receiveNames().count == before)
+        // No receive right that did not exist before may exist now; a bare count would also
+        // move when another suite tears a port down in the meantime and mask a leak.
+        #expect(Set(receiveNames()).subtracting(before).isEmpty)
     }
 
     @Test("a successful register keeps no send right of its own; look-up hands out one per call")
