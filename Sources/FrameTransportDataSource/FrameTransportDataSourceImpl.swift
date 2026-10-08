@@ -23,6 +23,10 @@ public final class FrameTransportDataSourceImpl: @unchecked Sendable {
     // a subject so `isConnected` reads a whole value from any context (the
     // subject synchronizes its `value`); the executor is its only writer.
     let connection = CurrentValueSubject<MachPortToken?, Never>(nil)
+    /// Bumped by every `disconnect`, so a look-up still in flight at that moment
+    /// cannot adopt the port it finds afterwards. Read once at the start of a
+    /// `connect` from any context; the executor is its only writer.
+    let generation = CurrentValueSubject<UInt64, Never>(0)
     var onEvent: (@Sendable (FrameTransportEvent) -> Void)?
 
     public init(policy: RetryPolicy = .serviceLookup) {
@@ -32,17 +36,20 @@ public final class FrameTransportDataSourceImpl: @unchecked Sendable {
 
 extension FrameTransportDataSourceImpl: FrameTransport {
     public func connect() async throws {
+        let epoch = generation.value
         let found = try await lookUp()
-        // A connect cancelled while its look-up was in flight must not come alive afterwards.
-        guard !Task.isCancelled else {
+        // A connect cancelled, or disconnected, while its look-up was in flight must not
+        // come alive afterwards; the port it found goes straight back.
+        guard !Task.isCancelled, generation.value == epoch else {
             bootstrap.deallocate(found)
             throw CancellationError()
         }
-        executor.run { [self] in adopt(found) }
+        executor.run { [self] in adopt(found, epoch: epoch) }
     }
 
     public func disconnect() {
         executor.run { [self] in
+            generation.value += 1
             release()
             developerLog.record(.transport, "disconnected on request")
             onEvent?(.disconnected(.explicit))
@@ -84,8 +91,15 @@ extension FrameTransportDataSourceImpl {
         return error
     }
 
-    /// Replaces any earlier port (a second `connect`) so no send right leaks.
-    private func adopt(_ found: MachPortToken) {
+    /// Replaces any earlier port (a second `connect`) so no send right leaks. A
+    /// result whose `connect` was overtaken by a `disconnect` on the executor is
+    /// given back instead: the caller has already said it no longer wants a link.
+    private func adopt(_ found: MachPortToken, epoch: UInt64) {
+        guard epoch == generation.value else {
+            bootstrap.deallocate(found)
+            developerLog.record(.transport, "look-up result discarded: disconnected meanwhile")
+            return
+        }
         release()
         connection.value = found
         developerLog.record(.transport, "connected to port \(found.name)")

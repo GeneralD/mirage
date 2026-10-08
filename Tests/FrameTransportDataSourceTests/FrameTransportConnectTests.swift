@@ -130,6 +130,41 @@ struct FrameTransportConnectTests {
         #expect(fixture.events.count == 0)
     }
 
+    @Test("a disconnect while the look-up is backing off ends that connect and gives back the port it then finds")
+    func disconnectDuringLookUp() async throws {
+        let clock = GatedClock()
+        let fixture = TransportFixture(clock: clock)
+        fixture.bootstrap.scriptLookUp([.failure(.lookupFailed(code: 1102))])
+        let connecting = Task { try await fixture.subject.connect() }
+        await clock.sleepers.waitForCount(1)
+
+        fixture.subject.disconnect()
+        fixture.executor.drain()
+        clock.advance(by: .milliseconds(250))
+        let result = await connecting.result
+
+        #expect(throws: CancellationError.self) { try result.get() }
+        fixture.executor.drain()
+        #expect(fixture.bootstrap.lookUps.count == 2)
+        #expect(fixture.bootstrap.deallocated.values == [MachPortToken(name: 0x2000)])
+        #expect(!fixture.subject.isConnected)
+        #expect(fixture.events.values == [.disconnected(.explicit)])
+    }
+
+    @Test("a disconnect queued after the look-up succeeded still wins once the executor runs")
+    func disconnectBeforeAdoptRuns() async throws {
+        let fixture = TransportFixture()
+
+        try await fixture.subject.connect()
+        fixture.subject.disconnect()
+        // The executor now holds adopt then disconnect: the port is adopted, then released.
+        fixture.executor.drain()
+
+        #expect(!fixture.subject.isConnected)
+        #expect(fixture.bootstrap.deallocated.values == [MachPortToken(name: 0x2000)])
+        #expect(fixture.events.values == [.connected, .disconnected(.explicit)])
+    }
+
     @Test("connecting again releases the earlier port instead of leaking it")
     func reconnect() async throws {
         let fixture = TransportFixture()
