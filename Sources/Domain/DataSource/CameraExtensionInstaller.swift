@@ -1,7 +1,8 @@
 import Dependencies
 
 /// `ExtensionInstallDataSource`: the install state machine over
-/// `SystemExtensionGateway` (`notInstalled → installing → needsApproval → installed`).
+/// `SystemExtensionGateway` (`notInstalled → installing → needsApproval → installed`,
+/// or `rebootRequired` when the activation only takes effect after a restart).
 /// Off the frame path and low-rate, so the live implementation is an actor
 /// and the accessors are `async`.
 public protocol CameraExtensionInstaller: Sendable {

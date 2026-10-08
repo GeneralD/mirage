@@ -2,7 +2,7 @@
 ///
 /// ```text
 /// notInstalled → installing → needsApproval → installed
-///                    │              │
+///                    │              │     └──▶ rebootRequired
 ///                    └── failed ◀───┘
 /// ```
 public enum InstallStatus: Sendable, Hashable {
@@ -12,14 +12,17 @@ public enum InstallStatus: Sendable, Hashable {
     /// Settings; the activation request stays pending until they do.
     case needsApproval
     case installed
+    /// The activation was accepted but takes effect only after the next restart;
+    /// the extension is not active until then, so nothing may be started on it.
+    case rebootRequired
     case failed(reason: String)
 }
 
 extension InstallStatus {
-    /// `installed` or `failed`: the activation request has finished.
+    /// `installed`, `rebootRequired` or `failed`: the activation request has finished.
     public var isTerminal: Bool {
         switch self {
-        case .installed, .failed: true
+        case .installed, .rebootRequired, .failed: true
         case .notInstalled, .installing, .needsApproval: false
         }
     }

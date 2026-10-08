@@ -45,7 +45,7 @@ struct CameraInteractorTests {
         let authorization: CameraAuthorizationStatus
         let startFails: Bool
 
-        static let all: [Scenario] = [InstallStatus.installed, .failed(reason: "denied")].flatMap { install in
+        static let all: [Scenario] = [InstallStatus.installed, .rebootRequired, .failed(reason: "denied")].flatMap { install in
             CameraAuthorizationStatus.allCases.flatMap { authorization in
                 [false, true].map { Scenario(install: install, authorization: authorization, startFails: $0) }
             }

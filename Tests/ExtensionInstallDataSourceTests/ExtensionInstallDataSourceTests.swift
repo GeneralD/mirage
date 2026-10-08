@@ -41,13 +41,13 @@ struct ExtensionInstallDataSourceTests {
         #expect(gateway.activations.values == [ProductIdentity.extensionBundleID])
     }
 
-    @Test("completing after a reboot still counts as installed")
+    @Test("completing after a reboot ends the install as reboot-required, not installed")
     func completesAfterReboot() async {
         let subject = makeSubject()
         let stream = await subject.install()
         await gateway.activations.waitForCount(1)
         gateway.emit(.completesAfterReboot)
-        #expect(await drain(stream) == [.installing, .installed])
+        #expect(await drain(stream) == [.installing, .rebootRequired])
     }
 
     @Test("approval path reports needsApproval before installed, and status follows each step")

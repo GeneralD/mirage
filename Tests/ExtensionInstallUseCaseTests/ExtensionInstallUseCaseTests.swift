@@ -36,6 +36,14 @@ struct ExtensionInstallUseCaseTests {
         #expect(reported == [.installing, .failed(reason: "denied")])
     }
 
+    @Test("reboot-required ends the install as its own terminal status, which is not installed")
+    func rebootRequired() async {
+        let (result, reported) = await run([.installing, .rebootRequired])
+        #expect(result == .rebootRequired)
+        #expect(!result.isInstalled)
+        #expect(reported == [.installing, .rebootRequired])
+    }
+
     @Test("an empty stream is a failure, not a stale status")
     func emptyStream() async {
         let (result, reported) = await run([])

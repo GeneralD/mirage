@@ -86,9 +86,10 @@ extension ExtensionInstallDataSourceImpl {
     private static func status(for event: SystemExtensionEvent) -> InstallStatus {
         switch event {
         case .needsApproval: .needsApproval
-        // A reboot-pending activation only takes effect after the restart, but M0 has no
-        // reboot-required state in `InstallStatus`, so it is reported as installed.
-        case .completed, .completesAfterReboot: .installed
+        case .completed: .installed
+        // Accepted, but not active until the next restart: terminal, yet not installed,
+        // so the host does not start a pipeline against an extension that is not there.
+        case .completesAfterReboot: .rebootRequired
         case .failed(let reason): .failed(reason: reason)
         }
     }
