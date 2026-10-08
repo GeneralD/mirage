@@ -43,7 +43,8 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 | Domain | Foundation, Combine, Dependencies, Entity |
 | UseCase / Repository / DataSource / DataStore / Interactor / Presenters / Support (non-live) | Foundation, Combine, Dependencies, Domain |
 | Gateway live, Support live | the one OS framework the module wraps (+ Foundation, Dependencies, Domain) |
-| Views / AppRouter / App / DevHarness | AppKit, SwiftUI, MetalKit (preview view only), Dependencies, Domain, Presenters |
+| Views / AppRouter / DevHarness | AppKit, SwiftUI, MetalKit (preview view only), Dependencies, Domain, Presenters |
+| App / ExtensionApp (composition roots) | the above plus the process's DI target (`HostDependencyInjection` / `ExtensionDependencyInjection`), so the `liveValue` registrations are linked into the shell |
 | DI targets | everything in their process |
 | Shells | only their SPM products |
 
@@ -52,8 +53,13 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 - Protocols define what consumers need, not the mechanics of one backend.
 - Event enums are self-contained; `AsyncStream` ending is the cleanup signal
   (no redundant `.finished`).
-- Ports that hand out resources return scoped handles (`SurfaceLease`,
-  `MachPortToken`, `LibraryHandle`) — never OS types.
+- Ports that hand out resources return opaque handles (`SurfaceToken`,
+  `MachPortToken`, `LibraryHandle`, `CaptureSessionHandle`, `StreamOutputHandle`)
+  — never OS types.
+  A handle is given back through the port that issued it (or, for a handle
+  that carries its own `stop()`, stopped by its owner), exactly once. Where a
+  stale handle can reach the port, it is detected rather than trusted:
+  `SurfaceToken` carries a generation for that.
 
 ## Testing Constraints
 

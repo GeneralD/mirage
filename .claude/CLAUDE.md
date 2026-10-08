@@ -19,7 +19,7 @@ make lint                  # swift-format lint --strict
 make format                # swift-format --in-place
 make check                 # import-boundary lint, physical-symbol lint, thin-live check, service-name check, product-name check
 make generate              # xcodegen → *.xcodeproj (gitignored thin shell for the .app + Camera Extension)
-swift run dev-harness      # camera → effects → preview window, no virtual camera (no System Extension needed)
+swift run dev-harness      # camera → effects → preview window, no virtual camera (arrives with MVP-A; not in M0)
 ```
 
 The System Extension (virtual camera) cannot be exercised from `swift run`;

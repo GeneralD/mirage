@@ -113,9 +113,14 @@ jobs:
           COVERAGE_DIR: ${{ steps.run_tests.outputs.coverage_dir }}
         run: |
           BIN=$(swift build --show-bin-path)
-          # The xctest bundle is named after the package, which is role-named in
-          # Package.swift (see docs/ARCHITECTURE.md → Rename-safe naming).
-          TEST_BIN=$(find "$BIN" -path '*PackageTests.xctest/Contents/MacOS/*PackageTests' -type f | head -1)
+          # The test host is named after the package, which is role-named in
+          # Package.swift (see docs/ARCHITECTURE.md → Rename-safe naming). Its
+          # layout depends on the toolchain: an .xctest bundle, or a bare
+          # executable next to the modules — so look for both.
+          TEST_BIN=$(find "$BIN" -type f -perm -u+x -path '*PackageTests.xctest/Contents/MacOS/*' ! -path '*.dSYM/*' | head -1)
+          if [[ -z "$TEST_BIN" ]]; then
+            TEST_BIN=$(find "$BIN" -maxdepth 1 -type f -perm -u+x -name '*PackageTests*' | head -1)
+          fi
           MERGED_PROFDATA="$COVERAGE_DIR/merged.profdata"
           COVERAGE_FILE="$GITHUB_WORKSPACE/coverage.lcov"
           if [[ -z "$COVERAGE_DIR" || ! -d "$COVERAGE_DIR" ]]; then
@@ -123,9 +128,11 @@ jobs:
             exit 1
           fi
           if [[ -z "$TEST_BIN" || ! -x "$TEST_BIN" ]]; then
-            echo "Test binary not found under $BIN"
+            echo "Test binary not found under $BIN; candidates:"
+            find "$BIN" -maxdepth 3 -name '*PackageTests*' -not -path '*/ModuleCache/*' | head -20
             exit 1
           fi
+          echo "Test host: $TEST_BIN"
           xcrun llvm-profdata merge -sparse "$COVERAGE_DIR"/*.profdata -o "$MERGED_PROFDATA"
           xcrun llvm-cov export \
             "$TEST_BIN" \

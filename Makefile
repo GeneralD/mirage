@@ -1,10 +1,11 @@
 .PHONY: build test test-gpu lint format check generate clean
 
-# Build only the shipped SPM products: a bare `swift build` also compiles the
-# test helper targets (TestSupport, TestDoubles), so a test-only diagnostic on
-# the release runner's older toolchain would block the release build.
+# Build the shipped SPM products, one invocation each: `--product` takes a
+# single value and a repeated flag is last-one-wins, so one command would
+# silently skip the host app.
 build:
-	swift build --disable-sandbox -c release --product dev-harness
+	swift build --disable-sandbox -c release --product App
+	swift build --disable-sandbox -c release --product ExtensionApp
 
 # The main run skips GPU suites; they need a Metal device and their own process.
 test:

@@ -3,7 +3,8 @@
 # (.claude/rules/coverage-ignored-modules.md, physical-abstraction.md).
 #
 # A Gateway that CI cannot exercise must be too simple to hide a bug: at most
-# MAX_LINES per file, no branching (if / guard / switch / for / while), no `var`.
+# MAX_LINES per file, no branching (if / guard / switch / for / while), no `var`
+# at any access level (`public var` on a box is still state the tests never see).
 # The module list is read from codecov.yml so the two never drift.
 
 # shellcheck source=scripts/lib.sh
@@ -25,7 +26,7 @@ for module in $modules; do
         while IFS=: read -r line_no text; do
             [ -n "$line_no" ] || continue
             fail "$file:$line_no" "live Gateway must not branch or hold state: ${text## }"
-        done < <(grep -nE '^[[:space:]]*(if|guard|switch|for|while|var)[[:space:]]' "$file" || true)
+        done < <(grep -nE '^[[:space:]]*((open|public|package|internal|fileprivate|private)[[:space:]]+)?(if|guard|switch|for|while|var)[[:space:]]' "$file" || true)
     done < <(swift_files "Sources/$module")
 done
 

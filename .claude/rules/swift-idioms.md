@@ -29,9 +29,13 @@ enums; adding a case is the only way to add a value.
 
 ## Scoped Resources
 
-A resource with a lifetime (surface, Mach port right, compiled library) is
-handed out as a scoped handle (`withLease { }`, `SurfaceLease`,
-`MachPortToken`). Never expose `retain`/`release` pairs to callers.
+A resource with a lifetime (surface, Mach port right, compiled library,
+capture session, CMIO stream) is handed out as an opaque handle (`SurfaceToken`,
+`MachPortToken`, `LibraryHandle`, `CaptureSessionHandle`, `StreamOutputHandle`) that its owner gives
+back exactly once — through the port that issued it, or through the handle's
+own `stop()`. Never expose `retain`/`release` pairs to callers. Where a handle
+can be given back twice, make that detectable: the generation tag on
+`SurfaceToken` turns a double release into a `false`, not a corrupted slot.
 
 ## No Actors on the Frame Path
 

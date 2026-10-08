@@ -38,7 +38,7 @@ make lint
 make format
 make check
 make generate
-swift run dev-harness
+swift run dev-harness   # MVP-A; not in M0
 ```
 
 ## Project Summary
@@ -66,9 +66,10 @@ Shared conventions:
 - OS boundaries are `*Gateway` modules consumed at the DataSource layer.
   Cross-cutting seams (`RandomSource`, `UnifiedLog`, `HostTime`,
   `AppDirectoriesProvider`) are Support modules.
-- Frames travel as `FrameRef` (dimensions, format, PTS) + `SurfaceLease`
-  (scoped, generation-tagged handle to a pooled IOSurface) — never as `Data`
-  copies and never as raw `IOSurface` across layers.
+- Frames travel as `FrameRef` (dimensions, format, PTS) + `SurfaceToken`
+  (a generation-tagged index into the surface pool; a stale token resolves
+  to nothing) — never as `Data` copies and never as raw `IOSurface` across
+  layers.
 - Product name appears only in `README.md`, `project.yml` and
   `Sources/Entity/ProductIdentity.swift`. Everything else is role-named.
 
@@ -94,9 +95,11 @@ Shared conventions:
   the host app nor the extension has a usable stderr. Never `print`.
 - Frame-path callbacks run on the `FrameExecutor` port. UseCase state on the
   frame path is a single-threaded state machine; no locks in UseCases.
-- Surface lifetime is owned by `SurfaceRepository` and expressed as
-  `SurfaceLease` (`withLease { }` scope). No layer above DataSource calls
-  `retain`/`release`.
+- Surface lifetime is owned by `SurfaceRepository`: `allocate` hands out a
+  `SurfaceToken`, `release(token)` gives the slot back and reports whether the
+  token was still live, `liveCount` is the invariant. A UseCase releases the
+  token it was given exactly once; it never sees an `IOSurface` or a
+  retain/release pair.
 - Shells (`Apps/**`) hold only `main.swift` and assets; `make check` bounds
   their size. `Info.plist` and entitlements are generated from `project.yml`
   by `make generate` (gitignored), never hand-written.

@@ -1,0 +1,186 @@
+// swift-tools-version: 6.0
+
+import PackageDescription
+
+// One SwiftPM target per layer slice (docs/ARCHITECTURE.md → Module Dependency
+// Graph). Implementation targets depend on `Domain` only; the three DI targets
+// are the only importers of implementation targets. Gateway modules are the
+// sole importers of OS frameworks (`make check` → scripts/check-imports.sh).
+//
+// M0 scope: the pass-through frame path host → Camera Extension, the
+// installer, and the three DI targets. Effects, preview and the GUI lane
+// arrive with MVP-A.
+
+let dependencies: [Target.Dependency] = [
+    "Domain",
+    .product(name: "Dependencies", package: "swift-dependencies"),
+]
+
+let testDependencies: [Target.Dependency] = [
+    "TestSupport",
+    "TestDoubles",
+    .product(name: "Dependencies", package: "swift-dependencies"),
+    .product(name: "Clocks", package: "swift-clocks"),
+]
+
+/// A layer-slice implementation target plus its test target.
+func slice(_ name: String, extraTests: [Target.Dependency] = []) -> [Target] {
+    [
+        .target(name: name, dependencies: dependencies),
+        .testTarget(name: "\(name)Tests", dependencies: [.target(name: name)] + testDependencies + extraTests),
+    ]
+}
+
+/// A Gateway / Support live target. CI-unreachable Gateways get no test target
+/// here; the ones that can run anywhere get a smoke suite.
+func live(_ name: String, smoke: Bool) -> [Target] {
+    let target = Target.target(name: name, dependencies: dependencies)
+    guard smoke else { return [target] }
+    return [target, .testTarget(name: "\(name)Tests", dependencies: [.target(name: name)] + testDependencies)]
+}
+
+let package = Package(
+    name: "VirtualCamera",
+    platforms: [.macOS(.v14)],
+    products: [
+        // Linked by the xcodegen shells (project.yml): the host `.app` and the
+        // Camera Extension bundle. Each shell's main.swift calls one entry point.
+        .library(name: "App", targets: ["App"]),
+        .library(name: "ExtensionApp", targets: ["ExtensionApp"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.9.0"),
+        .package(url: "https://github.com/pointfreeco/swift-clocks", from: "1.0.0"),
+    ],
+    targets: [
+        // ── Contract / Model ──
+        .target(name: "Entity"),
+        .testTarget(name: "EntityTests", dependencies: ["Entity", "TestSupport"]),
+        .target(
+            name: "Domain",
+            dependencies: [
+                "Entity",
+                .product(name: "Dependencies", package: "swift-dependencies"),
+            ]
+        ),
+
+        // ── Provider / Support ──
+        .target(name: "HostTime", dependencies: dependencies),
+        .testTarget(name: "HostTimeTests", dependencies: ["HostTime"] + testDependencies),
+        .target(name: "UnifiedLog", dependencies: dependencies),
+        .testTarget(name: "UnifiedLogTests", dependencies: ["UnifiedLog"] + testDependencies),
+
+        // ── Gateway (OS boundary) ──
+        .target(name: "AVFoundationGateway", dependencies: dependencies),
+        .target(name: "IOSurfaceGateway", dependencies: dependencies),
+        .testTarget(name: "IOSurfaceGatewayTests", dependencies: ["IOSurfaceGateway"] + testDependencies),
+        .target(name: "MachGateway", dependencies: dependencies),
+        .testTarget(name: "MachGatewayTests", dependencies: ["MachGateway", "IOSurfaceGateway"] + testDependencies),
+        .target(name: "SystemExtensionGateway", dependencies: dependencies),
+        .target(name: "CMIOExtensionGateway", dependencies: dependencies),
+        .target(name: "DispatchExecutorGateway", dependencies: dependencies),
+        .testTarget(name: "DispatchExecutorGatewayTests", dependencies: ["DispatchExecutorGateway"] + testDependencies),
+
+        // ── DataSource ──
+        .target(name: "CameraDataSource", dependencies: dependencies),
+        .testTarget(name: "CameraDataSourceTests", dependencies: ["CameraDataSource"] + testDependencies),
+        .target(name: "CameraPermissionDataSource", dependencies: dependencies),
+        .testTarget(name: "CameraPermissionDataSourceTests", dependencies: ["CameraPermissionDataSource"] + testDependencies),
+        .target(name: "SurfacePoolDataSource", dependencies: dependencies),
+        .testTarget(name: "SurfacePoolDataSourceTests", dependencies: ["SurfacePoolDataSource"] + testDependencies),
+        .target(name: "FrameTransportDataSource", dependencies: dependencies),
+        .testTarget(name: "FrameTransportDataSourceTests", dependencies: ["FrameTransportDataSource"] + testDependencies),
+        .target(name: "FrameReceiverDataSource", dependencies: dependencies),
+        .testTarget(name: "FrameReceiverDataSourceTests", dependencies: ["FrameReceiverDataSource"] + testDependencies),
+        .target(name: "StreamOutputDataSource", dependencies: dependencies),
+        .testTarget(name: "StreamOutputDataSourceTests", dependencies: ["StreamOutputDataSource"] + testDependencies),
+        .target(name: "ExtensionInstallDataSource", dependencies: dependencies),
+        .testTarget(name: "ExtensionInstallDataSourceTests", dependencies: ["ExtensionInstallDataSource"] + testDependencies),
+
+        // ── Repository ──
+        .target(name: "CameraRepository", dependencies: dependencies),
+        .testTarget(name: "CameraRepositoryTests", dependencies: ["CameraRepository"] + testDependencies),
+        .target(name: "VirtualCameraRepository", dependencies: dependencies),
+        .testTarget(name: "VirtualCameraRepositoryTests", dependencies: ["VirtualCameraRepository"] + testDependencies),
+        .target(name: "SurfaceRepository", dependencies: dependencies),
+        .testTarget(name: "SurfaceRepositoryTests", dependencies: ["SurfaceRepository"] + testDependencies),
+        .target(name: "FrameReceiverRepository", dependencies: dependencies),
+        .testTarget(name: "FrameReceiverRepositoryTests", dependencies: ["FrameReceiverRepository"] + testDependencies),
+        .target(name: "StreamOutputRepository", dependencies: dependencies),
+        .testTarget(name: "StreamOutputRepositoryTests", dependencies: ["StreamOutputRepository"] + testDependencies),
+        .target(name: "ExtensionInstallRepository", dependencies: dependencies),
+        .testTarget(name: "ExtensionInstallRepositoryTests", dependencies: ["ExtensionInstallRepository"] + testDependencies),
+
+        // ── UseCase ──
+        .target(name: "FramePipelineUseCase", dependencies: dependencies),
+        .testTarget(name: "FramePipelineUseCaseTests", dependencies: ["FramePipelineUseCase"] + testDependencies),
+        .target(name: "CameraControlUseCase", dependencies: dependencies),
+        .testTarget(name: "CameraControlUseCaseTests", dependencies: ["CameraControlUseCase"] + testDependencies),
+        .target(name: "ExtensionInstallUseCase", dependencies: dependencies),
+        .testTarget(name: "ExtensionInstallUseCaseTests", dependencies: ["ExtensionInstallUseCase"] + testDependencies),
+        .target(name: "ExtensionRelayUseCase", dependencies: dependencies),
+        .testTarget(name: "ExtensionRelayUseCaseTests", dependencies: ["ExtensionRelayUseCase"] + testDependencies),
+
+        // ── Interactor ──
+        .target(name: "CameraInteractor", dependencies: dependencies),
+        .testTarget(name: "CameraInteractorTests", dependencies: ["CameraInteractor"] + testDependencies),
+
+        // ── DependencyInjection (liveValue registrations only) ──
+        .target(
+            name: "CommonDependencyInjection",
+            dependencies: dependencies + [
+                "SurfaceRepository", "SurfacePoolDataSource", "IOSurfaceGateway", "MachGateway", "UnifiedLog", "HostTime",
+                "DispatchExecutorGateway",
+            ]
+        ),
+        .target(
+            name: "HostDependencyInjection",
+            dependencies: dependencies + [
+                "CommonDependencyInjection",
+                "CameraInteractor",
+                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase",
+                "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
+                "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
+                "AVFoundationGateway", "SystemExtensionGateway",
+            ]
+        ),
+        .target(
+            name: "ExtensionDependencyInjection",
+            dependencies: dependencies + [
+                "CommonDependencyInjection",
+                "ExtensionRelayUseCase",
+                "FrameReceiverRepository", "StreamOutputRepository",
+                "FrameReceiverDataSource", "StreamOutputDataSource",
+                "CMIOExtensionGateway",
+            ]
+        ),
+
+        // ── Entry ──
+        .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
+        .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
+
+        // ── Test support ──
+        .target(
+            name: "TestSupport",
+            dependencies: [],
+            path: "Tests/TestSupport"
+        ),
+        .target(
+            name: "TestDoubles",
+            dependencies: dependencies + ["TestSupport", .product(name: "Clocks", package: "swift-clocks")],
+            path: "Tests/TestDoubles"
+        ),
+        .testTarget(name: "TestSupportTests", dependencies: ["TestSupport", "TestDoubles"]),
+
+        // ── Integration (host → in-memory loopback → extension) ──
+        .testTarget(
+            name: "FramePathIntegrationTests",
+            dependencies: testDependencies + [
+                "FramePipelineUseCase", "CameraRepository", "VirtualCameraRepository", "SurfaceRepository",
+                "SurfacePoolDataSource", "CameraDataSource", "FrameTransportDataSource",
+                "ExtensionRelayUseCase", "FrameReceiverRepository", "StreamOutputRepository",
+                "FrameReceiverDataSource", "StreamOutputDataSource",
+            ]
+        ),
+    ]
+)

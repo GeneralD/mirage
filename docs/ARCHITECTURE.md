@@ -10,7 +10,7 @@ macOS menu-bar app: webcam → real-time Metal shader effects → virtual camera
 
 **Decision.** Clean Architecture with the lyra layer vocabulary (Entity → Domain → UseCase → Repository → DataSource/DataStore → Gateway, plus Interactor → Presenter → View/Router lanes for the GUI). swift-dependencies for DI with one wiring target per process. All physical elements (camera, GPU, compiler, IOSurface, Mach, System Extension, CMIO stream, files, watch, clocks, host time, randomness, defaults, logging, display link) are Domain ports with fake doubles in a shared `TestDoubles` target. No actors on the frame path; frame flow runs on an injected `FrameExecutor` and surfaces travel as pooled, generation-tagged leases. The Xcode project is a thin xcodegen shell that embeds the Camera Extension; all logic is SPM. Product name is confined to three files.
 
-**Consequences.** Tests are fully deterministic and run in parallel without a GPU; the module count is high (≈50 targets) and every new module touches `Package.swift`, DI and docs (the checklist is mandatory). The real GPU and the real extension are exercised only in a separate local test job and a manual verification lane. Zero-copy frame transport depends on the `SurfaceLease` + Mach-port design surviving the M0 spike; the fallback is one copy per frame. Renaming the product is a three-file change plus profile re-issue.
+**Consequences.** Tests are fully deterministic and run in parallel without a GPU; the module count is high (≈50 targets) and every new module touches `Package.swift`, DI and docs (the checklist is mandatory). The real GPU and the real extension are exercised only in a separate local test job and a manual verification lane. Zero-copy frame transport depends on the `SurfaceToken` + Mach-port design surviving the M0 spike; the fallback is one copy per frame. Renaming the product is a three-file change plus profile re-issue.
 
 ## Module Dependency Graph
 
@@ -55,6 +55,7 @@ flowchart TD
     SurfaceRepository
     FrameReceiverRepository
     StreamOutputRepository
+    ExtensionInstallRepository
   end
   subgraph L_DS["DataSource / DataStore"]
     CameraDataSource
@@ -104,10 +105,10 @@ flowchart TD
   HostDI --> CommonDI
   ExtDI --> CommonDI
   HostDI --> L_Inter & L_UC & L_Repo & L_DS
-  HostDI --> AVFoundationGateway & MetalGateway & MetalKitPreviewGateway & SystemExtensionGateway & FileSystemGateway & FileWatchGateway & UserDefaultsGateway & WorkspaceGateway & DispatchExecutorGateway
+  HostDI --> AVFoundationGateway & MetalGateway & MetalKitPreviewGateway & SystemExtensionGateway & FileSystemGateway & FileWatchGateway & UserDefaultsGateway & WorkspaceGateway
   HostDI --> RandomSource & AppDirectoriesProvider
   ExtDI --> ExtensionRelayUseCase & FrameReceiverRepository & StreamOutputRepository & FrameReceiverDataSource & StreamOutputDataSource & CMIOExtensionGateway
-  CommonDI --> SurfaceRepository & SurfacePoolDataSource & IOSurfaceGateway & MachGateway & UnifiedLog & HostTime
+  CommonDI --> SurfaceRepository & SurfacePoolDataSource & IOSurfaceGateway & MachGateway & DispatchExecutorGateway & UnifiedLog & HostTime
   L_Pres & L_Inter & L_UC & L_Repo & L_DS & L_GW & L_Sup --> Domain
 
   Presenters -.-> L_Inter
@@ -132,7 +133,7 @@ flowchart TD
 
 ```text
 AVCaptureSession ──(CaptureSessionGateway, serial queue)──▶ CameraDataSource ──▶ CameraRepository
-   ▼ FrameRef + SurfaceLease
+   ▼ FrameRef + SurfaceToken
 FramePipelineUseCase  (LatestFrameSlot → tick() on FrameExecutor; in-flight cap; pass-through on failure)
    ├─▶ EffectRuntimeRepository ──▶ ShaderCompilationDataSource ──▶ ShaderLibraryGateway (makeLibrary(source:))
    │                              └▶ GPURenderDataSource ──▶ GPUGateway (encode / commit / completion)
@@ -155,15 +156,15 @@ Pixel buffers never cross a layer as `Data` or as raw `IOSurface`. The host and 
 | Presenter | `Presenters` | `@Published` display state: `MenuBarPresenter`, `OnboardingPresenter`, `ParameterPanelPresenter`, `PreviewPresenter`. No AppKit/SwiftUI import |
 | Interactor | `CameraInteractor`, `ExtensionInteractor`, `EffectInteractor` | Combine pipelines over UseCases for the GUI |
 | UseCase | `FramePipelineUseCase`, `CameraControlUseCase`, `ExtensionInstallUseCase`, `EffectCatalogUseCase`, `SettingsUseCase`, `ExtensionRelayUseCase` (extension side) | Business logic, no cross-UseCase dependencies. `FramePipelineUseCase` owns the pure policy types `EffectHealthPolicy` (consecutive-failure counting, budget, auto-disable/cool-down) and `ParameterPacker` (clamping, defaults, uniform byte layout) as sibling files |
-| Repository | `CameraRepository`, `VirtualCameraRepository`, `EffectRuntimeRepository`, `EffectPackageRepository`, `SettingsRepository`, `SurfaceRepository`, `FrameReceiverRepository`, `StreamOutputRepository` | Orchestration and cache strategy. `EffectRuntimeRepository` caches compiled libraries by `(source hash, compile options, device id, OS)`. `SurfaceRepository` owns surface lifetime and hands out `SurfaceLease` |
+| Repository | `CameraRepository`, `VirtualCameraRepository`, `EffectRuntimeRepository`, `EffectPackageRepository`, `SettingsRepository`, `SurfaceRepository`, `FrameReceiverRepository`, `StreamOutputRepository`, `ExtensionInstallRepository` | Orchestration and cache strategy. `ExtensionInstallRepository` is a pass-through that keeps the UseCase → Repository → DataSource chain intact for the installer. `EffectRuntimeRepository` caches compiled libraries by `(source hash, compile options, device id, OS)`. `SurfaceRepository` owns surface lifetime and hands out `SurfaceToken`s (`allocate` / `release` / `liveCount`) |
 | DataSource | `CameraDataSource`, `CameraPermissionDataSource`, `ShaderCompilationDataSource`, `GPURenderDataSource`, `SurfacePoolDataSource`, `FrameTransportDataSource`, `FrameReceiverDataSource`, `StreamOutputDataSource`, `ExtensionInstallDataSource`, `EffectPackageDataSource`, `EffectWatchDataSource` | Real work against Gateways plus domain knowledge (prelude + `#line` source assembly, diagnostic line mapping, manifest decoding/validation, Mach state machines, the extension's receive loop, surface pool bookkeeping with generation tags). Gateways are consumed here only |
 | DataStore | `PreferencesDataStore` | Settings and the disabled-effect set via `KeyValueStoreGateway` |
-| Gateway | `AVFoundationGateway`, `MetalGateway`, `MetalKitPreviewGateway`, `IOSurfaceGateway`, `MachGateway`, `SystemExtensionGateway`, `CMIOExtensionGateway`, `FileSystemGateway`, `FileWatchGateway`, `UserDefaultsGateway`, `WorkspaceGateway`, `DispatchExecutorGateway` | 1:1 thin pass-throughs to OS APIs. No branching, no timing, no ordering decisions (`make check` enforces the thin-live rule). `DispatchExecutorGateway` is the live `FrameExecutor` (serial queue) and `FrameScheduler` (display link) |
+| Gateway | `AVFoundationGateway`, `MetalGateway`, `MetalKitPreviewGateway`, `IOSurfaceGateway`, `MachGateway`, `SystemExtensionGateway`, `CMIOExtensionGateway`, `FileSystemGateway`, `FileWatchGateway`, `UserDefaultsGateway`, `WorkspaceGateway`, `DispatchExecutorGateway` | 1:1 thin pass-throughs to OS APIs. No branching, no timing, no ordering decisions (`make check` enforces the thin-live rule). `DispatchExecutorGateway` is the live `FrameExecutor` (serial queue) and `FrameScheduler` (`DispatchSourceTimer` on that queue) |
 | Provider / Support | `RandomSource`, `UnifiedLog`, `HostTime`, `AppDirectoriesProvider` | Cross-cutting seams: seeded randomness, `os.Logger`-backed `ErrorLog`/`DeveloperLog`, mach uptime for PTS, Application Support path resolution (no env reads) |
 | DI | `CommonDependencyInjection`, `HostDependencyInjection`, `ExtensionDependencyInjection` | `liveValue` registrations only; one wiring point per process |
 | Domain | `Domain` | Protocols, `TestDependencyKey`, `DependencyValues` extensions, `Unimplemented*` (`@_exported import Entity`). Subdirectories by port kind: `UseCase/ Repository/ DataSource/ DataStore/ Gateway/ Sink/ Transport/ Installer/ Support/` |
-| Entity | `Entity` | Pure data: `FrameRef`, `SurfaceToken`, `SurfaceLease`, `EffectManifest`, `ParameterSpec/Value`, `UniformsLayout`, `GPUCompletion`, `RawGPUError`, `EffectFailure`, `InstallStatus`, `ProductIdentity` |
-| Test | `Tests/TestSupport`, `Tests/TestDoubles` | Waiting primitives (Foundation + Combine only) and shared fakes (`FakeCaptureSessionGateway`, `FakeGPUGateway`, `ManualFrameExecutor`, `FakeSurfacePool`, `InMemoryFrameTransport`, `FakeStreamOutput`, `InMemoryFileSystemGateway`, `FakeDirectoryWatchGateway`, `ScriptedCameraAuthorization`, `FakeSystemExtensionGateway`, `RecordingLog`, `FixedHostTime`, `SequenceRandomSource`) |
+| Entity | `Entity` | Pure data: `FrameRef`, `SurfaceToken`, `EffectManifest`, `ParameterSpec/Value`, `UniformsLayout`, `GPUCompletion`, `RawGPUError`, `EffectFailure`, `InstallStatus`, `ProductIdentity` |
+| Test | `Tests/TestSupport`, `Tests/TestDoubles` | Waiting primitives (Foundation + Combine only) and shared fakes (`FakeCaptureSessionGateway`, `FakeGPUGateway`, `ManualFrameExecutor`, `ManualFrameScheduler`, `FakeSurfacePool`, `FakeFrameTransport`, `FakeMachBootstrapGateway`, `FakeMachMessageGateway`, `FakeStreamOutput`, `InMemoryFileSystemGateway`, `FakeDirectoryWatchGateway`, `ScriptedCameraAuthorization`, `FakeSystemExtensionGateway`, `RecordingLog`, `FixedHostTime`, `SequenceRandomSource`). The host ↔ extension loopback (one `FakeMachMessageGateway` whose sends are delivered to the receiving side, separate surface pools per side) is assembled in `Tests/FramePathIntegrationTests` |
 
 Delivery stages: **M0** spike (pass-through to Zoom via the real extension) → **MVP-A** end-to-end with one bundled effect → **MVP-B** runtime `.lens` loading + hot reload + menu switching → **MVP-C** parameter UI → **MVP-D** pass-through on failure + auto-disable. Later: Vision face landmarks / person segmentation inputs, GLSL (Shadertoy) import, URL/Git import, gallery.
 
@@ -182,17 +183,17 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 | Texture cache | `TextureCacheGateway` (`bind(lease) → TextureHandle`) | `MetalGateway` | `FakeTextureCacheGateway` | Bind/unbind counts are a pool invariant |
 | IOSurface | `IOSurfaceGateway` (`create`, `makeMachPort`, `resolve(machPort)`, `readBytes`) — thin; pool logic is `SurfacePoolDataSource` | `IOSurfaceGateway` | `FakeSurfacePool` (tokens + generations + lifetimes) | `liveCount == 0` after stop is a property test; real IOSurface only in Gateway smoke |
 | Frame execution context | `FrameExecutor` (serial `run { }`) | `DispatchExecutorGateway` | `ManualFrameExecutor` (`drain()`) | The test enumerates interleavings; UseCase state is single-threaded |
-| Display link / frame pacing | `FrameScheduler` (`ticks()`) | `DispatchExecutorGateway` | `ManualFrameScheduler` (`tick()`) | Driven by `tickUntil`, never by time |
+| Frame pacing | `FrameScheduler` (`start(frameRate:onTick:)`) | `DispatchExecutorGateway` | `ManualFrameScheduler` (`tick()`) | Driven by `tickUntil`, never by time |
 | Clock (debounce, timeouts, cool-down, slate period) | `\.continuousClock` (swift-dependencies) | swift-dependencies | `TestClock` / `ImmediateClock` | No fixed sleeps; `clock.timer` advanced by `advance` |
 | PTS / uniform `time` / frame index | `FrameRef.presentationTime`, `HostTimeProvider` (mach uptime ns) | `HostTime` | `FixedHostTime` (advanceable) | Uniform `time` = PTS − session-start PTS (pure); slate PTS = base + n × (1/fps) (pure) |
 | GPU execution time | `GPUCompletion.gpuStart/gpuEnd` | `MetalGateway` | `FakeGPUGateway` returns any values | Budget judgement is a pure function in `EffectHealthPolicy` |
 | Randomness | `RandomSource` (`next(below:)`, seed) | `RandomSource` | `ZeroRandomSource`, `SequenceRandomSource` | Seed injected; GPU hash-noise has a Swift reference implementation |
 | File system (effect folders, manifests) | `FileSystemGateway` (list, read, stat) + `AppDirectoriesProvider` | `FileSystemGateway`, `AppDirectoriesProvider` | `InMemoryFileSystemGateway` (missing, partial write, permission errors) | Hot-reload races are reproducible; real FS only in Gateway smoke under a UUID temp dir |
 | File watch | `DirectoryWatchGateway` | `FileWatchGateway` (copied from lyra) | `FakeDirectoryWatchGateway` (`fire()`) | Debounce under `TestClock`; live smoke uses `Collector.waitForCount(≥1)` |
-| System Extension install | `SystemExtensionGateway` (submit activation, delegate events as `AsyncStream`) + `CameraExtensionInstaller` (`notInstalled → installing → needsApproval → installed`) | `SystemExtensionGateway`, `ExtensionInstallDataSource` | `FakeSystemExtensionGateway` (scripted events) | No approval dialog; transitions driven by test events |
+| System Extension install | `SystemExtensionGateway` (submit activation, delegate events as `AsyncStream`) + `CameraExtensionInstaller` (`notInstalled → installing → needsApproval → installed`, or `rebootRequired` when the activation only takes effect after a restart) | `SystemExtensionGateway`, `ExtensionInstallDataSource` | `FakeSystemExtensionGateway` (scripted events) | No approval dialog; transitions driven by test events |
 | Mach port IPC | `MachBootstrapGateway` (`lookUp` / `checkIn` → `MachPortToken`), `MachMessageGateway` (`send`, async cancellable `receive()` of one message), `FrameTransport` (`connect` / `send` / `events`) | `MachGateway`, `FrameTransportDataSource`, `FrameReceiverDataSource` (owns the loop) | `FakeMachBootstrap`, `RecordingMachSender`, `InMemoryFrameTransport` (loopback with separate pools, port tokens, queue cap + drop policy) | State machines covered by fakes; in-process host→loopback→extension integration test checks order and PTS |
 | CMIO extension stream | `StreamOutput` (`send(frame)`, `clientCount` events, format) | `CMIOExtensionGateway` via `StreamOutputDataSource` | `FakeStreamOutput` (`connectClient` / `disconnectClient`) | Slate switch/resume driven by test |
-| Virtual camera output | `VirtualCameraSink` | `VirtualCameraRepository` | `InMemoryVirtualCameraSink` | "Never send when not installed" is a state-machine test |
+| Virtual camera output | `VirtualCameraSink` | `VirtualCameraRepository` | `FakeVirtualCameraSink` | A frame can only go once the transport has looked the extension up, which happens after the install step — until then every send is `.dropped(.notConnected)` (state-machine test) |
 | Preview window | `PreviewSink` | `MetalKitPreviewGateway` + `Views` | `InMemoryPreviewSink` | Presenter tested; rendering untested by design |
 | Menu bar / windows | not abstracted (Presenter holds state; View declarative) | `Views`, `AppRouter` | UI tests swap a fixture graph at bootstrap (`#if DEBUG`) | lyra pattern |
 | UserDefaults | `KeyValueStoreGateway` | `UserDefaultsGateway` | `InMemoryKeyValueStore` | Live smoke uses `UserDefaults(suiteName: UUID)` and removes it |
@@ -209,11 +210,11 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 
 ## Key Design Decisions
 
-**Rename-safe naming.** The product name appears in exactly three files: `README.md`, `project.yml` (`name`, `PRODUCT_NAME`, bundle IDs) and `Sources/Entity/ProductIdentity.swift` (display name, bundle-ID prefix, extension bundle ID, Mach service name — all derived from two constants). Module, target, type, file and directory names are role names. `Info.plist` and the entitlements necessarily carry bundle IDs, so they are **generated** by xcodegen from `project.yml` (`info:` / `entitlements:` properties) and gitignored — never hand-written. Renaming = editing those three files + re-issuing the two provisioning profiles (bundle IDs and the Mach service name are baked into them — an Apple constraint, not a code one) + `gh repo rename`. `make check` fails if the product name string appears anywhere else under `Sources/`, `Tests/` or `Apps/` (Swift and Metal sources, file and directory names).
+**Rename-safe naming.** The product name appears in exactly three files: `README.md`, `project.yml` (`name`, `PRODUCT_NAME`, bundle IDs) and `Sources/Entity/ProductIdentity.swift` (display name, host and extension bundle IDs, Mach service name, log subsystem, virtual device UUID — plain literals, because `project.yml` and the provisioning profiles need the same literal strings and `scripts/check-service-names.sh` compares them textually). Module, target, type, file and directory names are role names. `Info.plist` and the entitlements necessarily carry bundle IDs, so they are **generated** by xcodegen from `project.yml` (`info:` / `entitlements:` properties) and gitignored — never hand-written. Renaming = editing those three files + re-issuing the two provisioning profiles (bundle IDs and the Mach service name are baked into them — an Apple constraint, not a code one) + `gh repo rename`. `make check` fails if the product name string appears anywhere else under `Sources/`, `Tests/` or `Apps/` (Swift and Metal sources, file and directory names).
 
 **Gateway modules for every OS boundary (lyra, not decoy).** decoy hid OS types behind inner ports inside adapters; here each boundary is its own `*Gateway` module consumed at the DataSource layer, so the import lint can draw a hard line: AVFoundation, Metal, MetalKit, IOSurface, CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit and `os` are importable only in Gateway modules and the View/Router/App lane.
 
-**No actors on the frame path; leases instead of surfaces.** decoy hit a Swift 6.3 crash passing `IOSurface` across an actor boundary and fell back to `Data` frames (up to four full copies per frame). Here frame callbacks run synchronously on the `FrameExecutor` port (live: one serial queue), UseCase frame state is a single-threaded state machine (no locks in UseCases), and pixel storage is referenced through `SurfaceLease` — a `~Copyable`-style scoped handle with a `(index, generation)` token, owned by `SurfaceRepository` / `SurfacePoolDataSource`. Tokens are process-local and never serialized; a surface crosses the process boundary only as a Mach port. Property test: after stop, `liveCount == 0`; any acquire/release sequence never double-frees. To be validated in the M0 spike; fallback is a single copy at the transport.
+**No actors on the frame path; tokens instead of surfaces.** decoy hit a Swift 6.3 crash passing `IOSurface` across an actor boundary and fell back to `Data` frames (up to four full copies per frame). Here frame callbacks run synchronously on the `FrameExecutor` port (live: one serial queue), UseCase frame state is a single-threaded state machine (no locks in UseCases), and pixel storage is referenced through `SurfaceToken` — an `(index, generation)` value issued by `SurfaceRepository` / `SurfacePoolDataSource`. The generation is what makes the token safe without a scoped wrapper: a token whose generation no longer matches the slot resolves to nothing, so a double `release` or a use after release is detected (`release` returns `false`) rather than touching the slot's next tenant. Tokens are process-local and never serialized; a surface crosses the process boundary only as a Mach port. Property test: after stop, `liveCount == 0`; any allocate/release sequence never double-frees. To be validated in the M0 spike; fallback is a single copy at the transport.
 
 **Latest-frame slot + tick, not per-frame fan-out.** Capture callbacks only overwrite a `LatestFrameSlot`; the pipeline consumes it on `FrameScheduler.tick()` with an in-flight cap. Heavy encoding never runs on the capture callback, and interleavings are enumerable in tests (`ManualFrameExecutor.drain()` + seeded `forAll`). A TSan job (`swift test --sanitize=thread`) runs nightly.
 
@@ -243,7 +244,7 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 
 ## Open Questions (to resolve in M0)
 
-- Does the `SurfaceLease` zero-copy design survive the extension boundary, or is one copy at the transport required?
+- Does the `SurfaceToken` zero-copy design survive the extension boundary, or is one copy at the transport required?
 - Does the extension's `mach-register` entitlement need an App Group prefix?
 - Does `systemextensionsctl developer on` require SIP off on the dev machine?
 - Is a Metal device available on GitHub-hosted macOS runners (decides whether `make test-gpu` can run in CI at all)?
