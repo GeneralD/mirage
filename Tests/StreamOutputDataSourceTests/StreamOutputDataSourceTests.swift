@@ -104,6 +104,31 @@ struct StreamOutputDataSourceTests {
         #expect(rig.gateway.sent.count == 0)
     }
 
+    @Test("two clients at once: the first stop keeps the stream live, the last one ends it")
+    func countsClients() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.clientStarts()
+        rig.clientStarts()
+        rig.clientStops()
+        #expect(rig.subject.isStreaming)
+        #expect(rig.send() == .sent)
+        rig.clientStops()
+        #expect(!rig.subject.isStreaming)
+        #expect(rig.send() == .dropped(.noClient))
+        #expect(rig.gateway.sent.count == 1)
+    }
+
+    @Test("a stop without a matching start is ignored, so the next start still streams")
+    func stopBelowZeroIsIgnored() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.clientStops()
+        rig.clientStarts()
+        #expect(rig.subject.isStreaming)
+        #expect(rig.send() == .sent)
+    }
+
     @Test("start and stop reach the caller only after the executor ran them")
     func relaysEventsOnTheExecutor() throws {
         let rig = Rig()
@@ -150,7 +175,7 @@ struct StreamOutputDataSourceTests {
         try rig.start()
         rig.clientStarts()
         rig.clientStops()
-        #expect(rig.developerLog.messages(in: .stream) == ["client stream started", "client stream stopped"])
+        #expect(rig.developerLog.messages(in: .stream) == ["client stream started; 1 streaming", "client stream stopped; 0 streaming"])
         #expect(rig.errorLog.entries.count == 0)
     }
 
@@ -218,27 +243,27 @@ struct StreamOutputDataSourceTests {
         #expect(rig.gateway.sent.count == failures.filter { !$0 }.count)
     }
 
-    @Test("sends succeed exactly while the last client event was a start", arguments: standardSeeds)
-    func sendFollowsLastEvent(seed: UInt64) throws {
+    @Test("sends succeed exactly while at least one client is streaming", arguments: standardSeeds)
+    func sendFollowsClientCount(seed: UInt64) throws {
         var generator = SeededGenerator(seed: seed)
         let rig = Rig()
         try rig.start()
         let steps = (0..<24).map { _ in Int.random(in: 0..<3, using: &generator) }
-        let streamingAfter = steps.reduce(into: (streaming: false, sentCount: 0)) { model, step in
+        let model = steps.reduce(into: (clients: 0, sentCount: 0)) { model, step in
             switch step {
             case 0:
                 rig.clientStarts()
-                model.streaming = true
+                model.clients += 1
             case 1:
                 rig.clientStops()
-                model.streaming = false
+                model.clients = max(0, model.clients - 1)
             default:
                 let outcome = rig.send()
-                #expect(outcome == (model.streaming ? .sent : .dropped(.noClient)))
-                model.sentCount += model.streaming ? 1 : 0
+                #expect(outcome == (model.clients > 0 ? .sent : .dropped(.noClient)))
+                model.sentCount += model.clients > 0 ? 1 : 0
             }
         }
-        #expect(rig.subject.isStreaming == streamingAfter.streaming)
-        #expect(rig.gateway.sent.count == streamingAfter.sentCount)
+        #expect(rig.subject.isStreaming == (model.clients > 0))
+        #expect(rig.gateway.sent.count == model.sentCount)
     }
 }

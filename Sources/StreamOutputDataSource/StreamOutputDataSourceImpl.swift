@@ -1,3 +1,4 @@
+import Combine
 import Dependencies
 import Domain
 
@@ -10,10 +11,15 @@ public final class StreamOutputDataSourceImpl: @unchecked Sendable {
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
-    /// The declared format while a client is streaming, `nil` otherwise. One
-    /// optional instead of a flag plus a descriptor, so "streaming without a
-    /// declared format" cannot be represented.
-    private var streamingFormat: SurfaceDescriptor?
+    /// The declared format while at least one client is streaming, `nil`
+    /// otherwise. One optional instead of a flag plus a descriptor, so
+    /// "streaming without a declared format" cannot be represented. A subject
+    /// rather than a bare `var` so `isStreaming` reads a whole value from any
+    /// context (the subject synchronizes its `value`); the executor is its only writer.
+    private let streamingFormat = CurrentValueSubject<SurfaceDescriptor?, Never>(nil)
+    /// CMIO reports a start and a stop per client (Zoom and QuickTime at once
+    /// are two), so the stream is live from the first start to the last stop.
+    private var streamingClients = 0
 
     public init() {}
 }
@@ -27,19 +33,20 @@ extension StreamOutputDataSourceImpl: StreamOutput {
         try gateway.start(deviceName: ProductIdentity.displayName, descriptor: descriptor, frameRate: frameRate) { [weak self] event in
             guard let self else { return }
             frameExecutor.run {
-                self.streamingFormat = event == .streamStarted ? descriptor : nil
-                self.developerLog.record(.stream, "client stream \(event == .streamStarted ? "started" : "stopped")")
+                self.streamingClients = max(0, self.streamingClients + (event == .streamStarted ? 1 : -1))
+                self.streamingFormat.value = self.streamingClients > 0 ? descriptor : nil
+                self.developerLog.record(
+                    .stream, "client stream \(event == .streamStarted ? "started" : "stopped"); \(self.streamingClients) streaming")
                 onEvent(event)
             }
         }
     }
 
-    /// A best-effort snapshot: the value is written on the executor and may be
-    /// read from elsewhere (display, logging), never used to gate a send.
-    public var isStreaming: Bool { streamingFormat != nil }
+    /// A snapshot for display and logging; `send` decides on the executor.
+    public var isStreaming: Bool { streamingFormat.value != nil }
 
     public func send(_ surface: any SurfaceHandle, descriptor: SurfaceDescriptor, presentationTime: HostTimestamp) -> SendOutcome {
-        guard let declared = streamingFormat else { return .dropped(.noClient) }
+        guard let declared = streamingFormat.value else { return .dropped(.noClient) }
         guard declared.matchesGeometry(of: descriptor) else {
             errorLog.record(
                 .stream, "frame dropped: \(descriptor.width)x\(descriptor.height) does not match the declared \(declared.width)x\(declared.height)")
