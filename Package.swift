@@ -130,6 +130,7 @@ let package = Package(
             name: "CommonDependencyInjection",
             dependencies: dependencies + [
                 "SurfaceRepository", "SurfacePoolDataSource", "IOSurfaceGateway", "MachGateway", "UnifiedLog", "HostTime",
+                "DispatchExecutorGateway",
             ]
         ),
         .target(
@@ -140,7 +141,7 @@ let package = Package(
                 "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase",
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
-                "AVFoundationGateway", "SystemExtensionGateway", "DispatchExecutorGateway",
+                "AVFoundationGateway", "SystemExtensionGateway",
             ]
         ),
         .target(
@@ -150,7 +151,7 @@ let package = Package(
                 "ExtensionRelayUseCase",
                 "FrameReceiverRepository", "StreamOutputRepository",
                 "FrameReceiverDataSource", "StreamOutputDataSource",
-                "CMIOExtensionGateway", "DispatchExecutorGateway",
+                "CMIOExtensionGateway",
             ]
         ),
 

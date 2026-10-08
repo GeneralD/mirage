@@ -38,7 +38,7 @@ make lint
 make format
 make check
 make generate
-swift run dev-harness
+swift run dev-harness   # MVP-A; not in M0
 ```
 
 ## Project Summary

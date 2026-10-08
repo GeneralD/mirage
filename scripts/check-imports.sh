@@ -40,7 +40,9 @@ allowed_for() {
         Entity)                                  echo "Foundation" ;;
         Domain)                                  echo "Foundation Combine Dependencies Entity" ;;
         *DependencyInjection)                    echo "*" ;;
-        Views|AppRouter|App|DevHarness|ExtensionApp) echo "$COMMON $UI_FRAMEWORKS CoreMediaIO" ;;
+        Views|AppRouter|DevHarness)   echo "$COMMON $UI_FRAMEWORKS CoreMediaIO" ;;
+        App)                          echo "$COMMON $UI_FRAMEWORKS HostDependencyInjection" ;;
+        ExtensionApp)                 echo "$COMMON $UI_FRAMEWORKS CoreMediaIO ExtensionDependencyInjection" ;;
         *)
             if gw=$(gateway_allow "$module"); then
                 echo "$COMMON $gw"

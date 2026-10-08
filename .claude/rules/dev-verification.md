@@ -27,7 +27,7 @@ user wants to see the camera in Zoom/Meet/QuickTime:
 
 ```sh
 make generate                                        # xcodegen → project
-xcodebuild -scheme Host -configuration Debug build   # ad-hoc signed
+xcodebuild -scheme Host -configuration Debug build DEVELOPMENT_TEAM=<team id>   # the team is not in project.yml; the two Apple Development profiles (#3) must exist
 # copy the built .app to /Applications (replace the previous copy)
 open -a "<the app>"                                  # triggers OSSystemExtensionRequest
 systemextensionsctl list                             # expect: [activated enabled] for the extension bundle id

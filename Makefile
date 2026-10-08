@@ -4,7 +4,7 @@
 # test helper targets (TestSupport, TestDoubles), so a test-only diagnostic on
 # the release runner's older toolchain would block the release build.
 build:
-	swift build --disable-sandbox -c release --product dev-harness
+	swift build --disable-sandbox -c release --product App --product ExtensionApp
 
 # The main run skips GPU suites; they need a Metal device and their own process.
 test:

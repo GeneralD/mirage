@@ -55,6 +55,7 @@ flowchart TD
     SurfaceRepository
     FrameReceiverRepository
     StreamOutputRepository
+    ExtensionInstallRepository
   end
   subgraph L_DS["DataSource / DataStore"]
     CameraDataSource
@@ -104,10 +105,10 @@ flowchart TD
   HostDI --> CommonDI
   ExtDI --> CommonDI
   HostDI --> L_Inter & L_UC & L_Repo & L_DS
-  HostDI --> AVFoundationGateway & MetalGateway & MetalKitPreviewGateway & SystemExtensionGateway & FileSystemGateway & FileWatchGateway & UserDefaultsGateway & WorkspaceGateway & DispatchExecutorGateway
+  HostDI --> AVFoundationGateway & MetalGateway & MetalKitPreviewGateway & SystemExtensionGateway & FileSystemGateway & FileWatchGateway & UserDefaultsGateway & WorkspaceGateway
   HostDI --> RandomSource & AppDirectoriesProvider
   ExtDI --> ExtensionRelayUseCase & FrameReceiverRepository & StreamOutputRepository & FrameReceiverDataSource & StreamOutputDataSource & CMIOExtensionGateway
-  CommonDI --> SurfaceRepository & SurfacePoolDataSource & IOSurfaceGateway & MachGateway & UnifiedLog & HostTime
+  CommonDI --> SurfaceRepository & SurfacePoolDataSource & IOSurfaceGateway & MachGateway & DispatchExecutorGateway & UnifiedLog & HostTime
   L_Pres & L_Inter & L_UC & L_Repo & L_DS & L_GW & L_Sup --> Domain
 
   Presenters -.-> L_Inter
@@ -155,7 +156,7 @@ Pixel buffers never cross a layer as `Data` or as raw `IOSurface`. The host and 
 | Presenter | `Presenters` | `@Published` display state: `MenuBarPresenter`, `OnboardingPresenter`, `ParameterPanelPresenter`, `PreviewPresenter`. No AppKit/SwiftUI import |
 | Interactor | `CameraInteractor`, `ExtensionInteractor`, `EffectInteractor` | Combine pipelines over UseCases for the GUI |
 | UseCase | `FramePipelineUseCase`, `CameraControlUseCase`, `ExtensionInstallUseCase`, `EffectCatalogUseCase`, `SettingsUseCase`, `ExtensionRelayUseCase` (extension side) | Business logic, no cross-UseCase dependencies. `FramePipelineUseCase` owns the pure policy types `EffectHealthPolicy` (consecutive-failure counting, budget, auto-disable/cool-down) and `ParameterPacker` (clamping, defaults, uniform byte layout) as sibling files |
-| Repository | `CameraRepository`, `VirtualCameraRepository`, `EffectRuntimeRepository`, `EffectPackageRepository`, `SettingsRepository`, `SurfaceRepository`, `FrameReceiverRepository`, `StreamOutputRepository` | Orchestration and cache strategy. `EffectRuntimeRepository` caches compiled libraries by `(source hash, compile options, device id, OS)`. `SurfaceRepository` owns surface lifetime and hands out `SurfaceLease` |
+| Repository | `CameraRepository`, `VirtualCameraRepository`, `EffectRuntimeRepository`, `EffectPackageRepository`, `SettingsRepository`, `SurfaceRepository`, `FrameReceiverRepository`, `StreamOutputRepository`, `ExtensionInstallRepository` | Orchestration and cache strategy. `ExtensionInstallRepository` is a pass-through that keeps the UseCase → Repository → DataSource chain intact for the installer. `EffectRuntimeRepository` caches compiled libraries by `(source hash, compile options, device id, OS)`. `SurfaceRepository` owns surface lifetime and hands out `SurfaceLease` |
 | DataSource | `CameraDataSource`, `CameraPermissionDataSource`, `ShaderCompilationDataSource`, `GPURenderDataSource`, `SurfacePoolDataSource`, `FrameTransportDataSource`, `FrameReceiverDataSource`, `StreamOutputDataSource`, `ExtensionInstallDataSource`, `EffectPackageDataSource`, `EffectWatchDataSource` | Real work against Gateways plus domain knowledge (prelude + `#line` source assembly, diagnostic line mapping, manifest decoding/validation, Mach state machines, the extension's receive loop, surface pool bookkeeping with generation tags). Gateways are consumed here only |
 | DataStore | `PreferencesDataStore` | Settings and the disabled-effect set via `KeyValueStoreGateway` |
 | Gateway | `AVFoundationGateway`, `MetalGateway`, `MetalKitPreviewGateway`, `IOSurfaceGateway`, `MachGateway`, `SystemExtensionGateway`, `CMIOExtensionGateway`, `FileSystemGateway`, `FileWatchGateway`, `UserDefaultsGateway`, `WorkspaceGateway`, `DispatchExecutorGateway` | 1:1 thin pass-throughs to OS APIs. No branching, no timing, no ordering decisions (`make check` enforces the thin-live rule). `DispatchExecutorGateway` is the live `FrameExecutor` (serial queue) and `FrameScheduler` (display link) |
@@ -163,7 +164,7 @@ Pixel buffers never cross a layer as `Data` or as raw `IOSurface`. The host and 
 | DI | `CommonDependencyInjection`, `HostDependencyInjection`, `ExtensionDependencyInjection` | `liveValue` registrations only; one wiring point per process |
 | Domain | `Domain` | Protocols, `TestDependencyKey`, `DependencyValues` extensions, `Unimplemented*` (`@_exported import Entity`). Subdirectories by port kind: `UseCase/ Repository/ DataSource/ DataStore/ Gateway/ Sink/ Transport/ Installer/ Support/` |
 | Entity | `Entity` | Pure data: `FrameRef`, `SurfaceToken`, `SurfaceLease`, `EffectManifest`, `ParameterSpec/Value`, `UniformsLayout`, `GPUCompletion`, `RawGPUError`, `EffectFailure`, `InstallStatus`, `ProductIdentity` |
-| Test | `Tests/TestSupport`, `Tests/TestDoubles` | Waiting primitives (Foundation + Combine only) and shared fakes (`FakeCaptureSessionGateway`, `FakeGPUGateway`, `ManualFrameExecutor`, `FakeSurfacePool`, `InMemoryFrameTransport`, `FakeStreamOutput`, `InMemoryFileSystemGateway`, `FakeDirectoryWatchGateway`, `ScriptedCameraAuthorization`, `FakeSystemExtensionGateway`, `RecordingLog`, `FixedHostTime`, `SequenceRandomSource`) |
+| Test | `Tests/TestSupport`, `Tests/TestDoubles` | Waiting primitives (Foundation + Combine only) and shared fakes (`FakeCaptureSessionGateway`, `FakeGPUGateway`, `ManualFrameExecutor`, `ManualFrameScheduler`, `FakeSurfacePool`, `FakeFrameTransport`, `FakeMachBootstrapGateway`, `FakeMachMessageGateway`, `FakeStreamOutput`, `InMemoryFileSystemGateway`, `FakeDirectoryWatchGateway`, `ScriptedCameraAuthorization`, `FakeSystemExtensionGateway`, `RecordingLog`, `FixedHostTime`, `SequenceRandomSource`). The host ↔ extension loopback (one `FakeMachMessageGateway` whose sends are delivered to the receiving side, separate surface pools per side) is assembled in `Tests/FramePathIntegrationTests` |
 
 Delivery stages: **M0** spike (pass-through to Zoom via the real extension) → **MVP-A** end-to-end with one bundled effect → **MVP-B** runtime `.lens` loading + hot reload + menu switching → **MVP-C** parameter UI → **MVP-D** pass-through on failure + auto-disable. Later: Vision face landmarks / person segmentation inputs, GLSL (Shadertoy) import, URL/Git import, gallery.
 
@@ -192,7 +193,7 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 | System Extension install | `SystemExtensionGateway` (submit activation, delegate events as `AsyncStream`) + `CameraExtensionInstaller` (`notInstalled → installing → needsApproval → installed`) | `SystemExtensionGateway`, `ExtensionInstallDataSource` | `FakeSystemExtensionGateway` (scripted events) | No approval dialog; transitions driven by test events |
 | Mach port IPC | `MachBootstrapGateway` (`lookUp` / `checkIn` → `MachPortToken`), `MachMessageGateway` (`send`, async cancellable `receive()` of one message), `FrameTransport` (`connect` / `send` / `events`) | `MachGateway`, `FrameTransportDataSource`, `FrameReceiverDataSource` (owns the loop) | `FakeMachBootstrap`, `RecordingMachSender`, `InMemoryFrameTransport` (loopback with separate pools, port tokens, queue cap + drop policy) | State machines covered by fakes; in-process host→loopback→extension integration test checks order and PTS |
 | CMIO extension stream | `StreamOutput` (`send(frame)`, `clientCount` events, format) | `CMIOExtensionGateway` via `StreamOutputDataSource` | `FakeStreamOutput` (`connectClient` / `disconnectClient`) | Slate switch/resume driven by test |
-| Virtual camera output | `VirtualCameraSink` | `VirtualCameraRepository` | `InMemoryVirtualCameraSink` | "Never send when not installed" is a state-machine test |
+| Virtual camera output | `VirtualCameraSink` | `VirtualCameraRepository` | `FakeVirtualCameraSink` | A frame can only go once the transport has looked the extension up, which happens after the install step — until then every send is `.dropped(.notConnected)` (state-machine test) |
 | Preview window | `PreviewSink` | `MetalKitPreviewGateway` + `Views` | `InMemoryPreviewSink` | Presenter tested; rendering untested by design |
 | Menu bar / windows | not abstracted (Presenter holds state; View declarative) | `Views`, `AppRouter` | UI tests swap a fixture graph at bootstrap (`#if DEBUG`) | lyra pattern |
 | UserDefaults | `KeyValueStoreGateway` | `UserDefaultsGateway` | `InMemoryKeyValueStore` | Live smoke uses `UserDefaults(suiteName: UUID)` and removes it |
@@ -209,7 +210,7 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 
 ## Key Design Decisions
 
-**Rename-safe naming.** The product name appears in exactly three files: `README.md`, `project.yml` (`name`, `PRODUCT_NAME`, bundle IDs) and `Sources/Entity/ProductIdentity.swift` (display name, bundle-ID prefix, extension bundle ID, Mach service name — all derived from two constants). Module, target, type, file and directory names are role names. `Info.plist` and the entitlements necessarily carry bundle IDs, so they are **generated** by xcodegen from `project.yml` (`info:` / `entitlements:` properties) and gitignored — never hand-written. Renaming = editing those three files + re-issuing the two provisioning profiles (bundle IDs and the Mach service name are baked into them — an Apple constraint, not a code one) + `gh repo rename`. `make check` fails if the product name string appears anywhere else under `Sources/`, `Tests/` or `Apps/` (Swift and Metal sources, file and directory names).
+**Rename-safe naming.** The product name appears in exactly three files: `README.md`, `project.yml` (`name`, `PRODUCT_NAME`, bundle IDs) and `Sources/Entity/ProductIdentity.swift` (display name, host and extension bundle IDs, Mach service name, log subsystem, virtual device UUID — plain literals, because `project.yml` and the provisioning profiles need the same literal strings and `scripts/check-service-names.sh` compares them textually). Module, target, type, file and directory names are role names. `Info.plist` and the entitlements necessarily carry bundle IDs, so they are **generated** by xcodegen from `project.yml` (`info:` / `entitlements:` properties) and gitignored — never hand-written. Renaming = editing those three files + re-issuing the two provisioning profiles (bundle IDs and the Mach service name are baked into them — an Apple constraint, not a code one) + `gh repo rename`. `make check` fails if the product name string appears anywhere else under `Sources/`, `Tests/` or `Apps/` (Swift and Metal sources, file and directory names).
 
 **Gateway modules for every OS boundary (lyra, not decoy).** decoy hid OS types behind inner ports inside adapters; here each boundary is its own `*Gateway` module consumed at the DataSource layer, so the import lint can draw a hard line: AVFoundation, Metal, MetalKit, IOSurface, CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit and `os` are importable only in Gateway modules and the View/Router/App lane.
 
