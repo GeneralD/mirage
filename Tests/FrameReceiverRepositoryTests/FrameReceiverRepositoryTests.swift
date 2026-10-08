@@ -72,6 +72,7 @@ struct FrameReceiverRepositoryTests {
 
         #expect(rig.frames.count == 1)
         #expect(rig.errors.messages(in: .receiver).count == 1)
+        #expect(rig.events.values == [.frameDropped(.poolExhausted)], "the layers above can count the drop")
         #expect(rig.pool.liveCount == 1)
 
         let first = try #require(rig.frames.values.first)

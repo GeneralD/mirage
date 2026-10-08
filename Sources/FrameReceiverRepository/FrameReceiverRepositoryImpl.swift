@@ -22,6 +22,7 @@ extension FrameReceiverRepositoryImpl: FrameReceiverRepository {
                 // latest frame wins, so the surplus one is dropped, not queued.
                 guard let token = surfacePool.adopt(incoming.handle, descriptor: incoming.descriptor) else {
                     errorLog.record(.receiver, "frame dropped: surface pool exhausted (\(surfacePool.liveCount)/\(surfacePool.capacity))")
+                    onEvent(.frameDropped(.poolExhausted))
                     return
                 }
                 onFrame(FrameRef(token: token, descriptor: incoming.descriptor, presentationTime: incoming.presentationTime))
