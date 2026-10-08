@@ -8,6 +8,7 @@ public protocol StreamOutputRepository: Sendable {
         frameRate: FrameRate,
         onEvent: @escaping @Sendable (StreamOutputEvent) -> Void
     ) throws
+    /// Best-effort snapshot for display and logging (see `StreamOutput.isStreaming`).
     var isStreaming: Bool { get }
     func send(_ frame: FrameRef) -> SendOutcome
 }
