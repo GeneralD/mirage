@@ -3,11 +3,11 @@ import TestDoubles
 import TestSupport
 import Testing
 
+@MainActor
 @Suite("FrameReceiverDataSource host presence", .timeLimit(.minutes(1)))
 struct PresenceTests {
     private func connectedHost(_ rig: ReceiverRig) async throws -> Task<Void, any Error> {
-        let task = rig.start()
-        await rig.machMessage.receiveCalls.waitForCount(1)
+        let task = await rig.listen()
         try rig.deliver(id: 1, at: HostTimestamp(nanoseconds: 1))
         await rig.machMessage.receiveCalls.waitForCount(2)
         rig.executor.drain()
@@ -54,8 +54,7 @@ struct PresenceTests {
     @Test("the watchdog stays quiet before any frame has arrived")
     func silentBeforeFirstFrame() async throws {
         let rig = ReceiverRig()
-        let task = rig.start()
-        await rig.machMessage.receiveCalls.waitForCount(1)
+        let task = await rig.listen()
 
         await rig.clock.advance(by: rig.frameGap * 3)
         rig.executor.drain()
@@ -93,11 +92,11 @@ struct PresenceTests {
     @Test("an error without a raw code is reported as -1")
     func receiveFailedWithoutCode() async throws {
         let rig = ReceiverRig()
-        let task = rig.start()
-        await rig.machMessage.receiveCalls.waitForCount(1)
+        let task = await rig.listen()
 
         rig.machMessage.failReceive(with: .malformedMessage, on: ReceiverRig.firstPort)
         try await task.value
+        rig.executor.drain()
 
         #expect(rig.events.values.last == .hostLost(.receiveFailed(code: -1)))
     }
@@ -109,9 +108,8 @@ struct PresenceTests {
         try await rig.finish(first)
         rig.executor.drain()
 
-        let second = rig.start()
         let secondPort = MachPortToken(name: 0x2001)
-        await rig.machMessage.receiveCalls.settle { $0.contains(secondPort) }
+        let second = await rig.listen(on: secondPort)
         try rig.deliver(id: 2, at: HostTimestamp(nanoseconds: 2), on: secondPort)
         await rig.machMessage.receiveCalls.waitForCount(4)
         rig.executor.drain()
@@ -124,8 +122,7 @@ struct PresenceTests {
     func alternation(seed: UInt64) async throws {
         let rig = ReceiverRig(frameGap: .seconds(2))
         var generator = SeededGenerator(seed: seed)
-        let task = rig.start()
-        await rig.machMessage.receiveCalls.waitForCount(1)
+        let task = await rig.listen()
 
         for step in 0..<12 {
             guard Bool.random(using: &generator) else {

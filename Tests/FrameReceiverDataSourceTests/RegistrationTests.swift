@@ -2,14 +2,15 @@ import Domain
 import TestSupport
 import Testing
 
+@MainActor
 @Suite("FrameReceiverDataSource registration", .timeLimit(.minutes(1)))
 struct RegistrationTests {
     @Test("checkIn succeeds: listening is announced and register is never tried")
     func checkInSucceeds() async throws {
         let rig = ReceiverRig()
-        let task = rig.start()
+        let task = await rig.listen()
 
-        await rig.events.settle { $0.contains(.listening) }
+        #expect(rig.events.values == [.listening])
         try await rig.finish(task)
 
         #expect(rig.bootstrap.checkIns.values == [ProductIdentity.machServiceName])
@@ -21,9 +22,9 @@ struct RegistrationTests {
     func fallsBackToRegister() async throws {
         let rig = ReceiverRig()
         rig.bootstrap.scriptCheckIn([.failure(.checkInFailed(code: 1100))])
-        let task = rig.start()
+        let task = await rig.listen()
 
-        await rig.events.settle { $0.contains(.listening) }
+        #expect(rig.events.values == [.listening])
         try await rig.finish(task)
 
         #expect(rig.bootstrap.registrations.values == [ProductIdentity.machServiceName])

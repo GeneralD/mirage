@@ -5,6 +5,12 @@ import FrameReceiverDataSource
 import TestDoubles
 import TestSupport
 
+/// One thing the subject handed to its caller, for asserting cross-channel order.
+enum Observation: Equatable, Sendable {
+    case event(ReceiverEvent)
+    case frame(HostTimestamp)
+}
+
 /// The subject wired to fakes, with the test holding every end: the Mach
 /// queue (`machMessage`), the kernel table (`ioSurface`), the executor
 /// (`drain()`) and the clock (`advance`).
@@ -18,15 +24,19 @@ struct ReceiverRig: Sendable {
     let developer = RecordingLog()
     let events = Collector<ReceiverEvent>()
     let frames = Collector<IncomingSurface>()
+    /// Events and frames in the one order the subject delivered them.
+    let timeline = Collector<Observation>()
     let frameGap: Duration
     let subject: FrameReceiverDataSourceImpl
 
     /// The port name `FakeMachBootstrapGateway` hands out first.
     static let firstPort = MachPortToken(name: 0x2000)
 
-    init(frameGap: Duration = .seconds(2)) {
+    /// - Parameter wrapBootstrap: lets a test put a probe in front of the fake
+    ///   bootstrap, e.g. to act at the moment registration happens.
+    init(frameGap: Duration = .seconds(2), wrapBootstrap: (FakeMachBootstrapGateway) -> any MachBootstrapGateway = { $0 }) {
         self.frameGap = frameGap
-        let bootstrap = bootstrap
+        let bootstrap = wrapBootstrap(bootstrap)
         let machMessage = machMessage
         let ioSurface = ioSurface
         let executor = executor
@@ -50,10 +60,30 @@ struct ReceiverRig: Sendable {
     func start() -> Task<Void, any Error> {
         let events = events
         let frames = frames
+        let timeline = timeline
         let subject = subject
         return Task {
-            try await subject.start(onFrame: { frames.append($0) }, onEvent: { events.append($0) })
+            try await subject.start(
+                onFrame: {
+                    frames.append($0)
+                    timeline.append(.frame($0.presentationTime))
+                },
+                onEvent: {
+                    events.append($0)
+                    timeline.append(.event($0))
+                }
+            )
         }
+    }
+
+    /// `start`, then drives the executor until the subject is receiving on `port`.
+    /// `start` hands the receive right to the executor and waits for it, so a
+    /// manual executor has to be pumped before the first `receive` happens.
+    @MainActor
+    func listen(on port: MachPortToken = firstPort) async -> Task<Void, any Error> {
+        let task = start()
+        await tickUntil(tick: { executor.drain() }, until: { machMessage.receiveCalls.contains { $0 == port } })
+        return task
     }
 
     /// Queues a frame message as the host would send it.

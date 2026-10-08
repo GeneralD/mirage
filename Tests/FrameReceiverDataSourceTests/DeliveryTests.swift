@@ -3,13 +3,13 @@ import TestDoubles
 import TestSupport
 import Testing
 
+@MainActor
 @Suite("FrameReceiverDataSource delivery", .timeLimit(.minutes(1)))
 struct DeliveryTests {
     @Test("the first message announces the host, then delivers the frame on the executor")
     func firstFrame() async throws {
         let rig = ReceiverRig()
-        let task = rig.start()
-        await rig.machMessage.receiveCalls.waitForCount(1)
+        let task = await rig.listen()
 
         let time = HostTimestamp(nanoseconds: 42_000)
         let descriptor = SurfaceDescriptor.bgra(width: 640, height: 360)
@@ -20,6 +20,7 @@ struct DeliveryTests {
         rig.executor.drain()
 
         #expect(rig.events.values == [.listening, .hostConnected])
+        #expect(rig.timeline.values == [.event(.listening), .event(.hostConnected), .frame(time)], "the host is announced before its first frame")
         let frame = try #require(rig.frames.values.first)
         #expect(frame.handle === handle)
         #expect(frame.descriptor == descriptor)
@@ -30,7 +31,7 @@ struct DeliveryTests {
     @Test("further frames keep order and do not repeat hostConnected")
     func frameOrder() async throws {
         let rig = ReceiverRig()
-        let task = rig.start()
+        let task = await rig.listen()
         let times = (1...3).map { HostTimestamp(nanoseconds: UInt64($0) * 33_000_000) }
 
         for (index, time) in times.enumerated() {
@@ -48,16 +49,16 @@ struct DeliveryTests {
     @Test("a right that does not resolve is logged and dropped, and the loop carries on")
     func unresolvableRight() async throws {
         let rig = ReceiverRig()
-        let task = rig.start()
-        await rig.machMessage.receiveCalls.waitForCount(1)
+        let task = await rig.listen()
 
         let stale = FrameMessage(surface: MachSendRight(name: 0xDEAD), descriptor: .hd720, presentationTime: .zero)
         rig.machMessage.deliver(stale, on: ReceiverRig.firstPort)
         await rig.machMessage.receiveCalls.waitForCount(2)
 
+        #expect(rig.events.values == [.listening], "the drop is reported on the executor")
+        rig.executor.drain()
         #expect(rig.events.values.contains(.frameDropped(.sendFailed(code: -1))))
         #expect(rig.errors.contains("did not resolve"))
-        rig.executor.drain()
         #expect(rig.frames.values.isEmpty)
         #expect(!rig.events.values.contains(.hostConnected), "a dropped frame is not proof of a live host")
 

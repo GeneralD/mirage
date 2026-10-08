@@ -16,7 +16,7 @@ extension FrameReceiverDataSourceImpl {
 
     /// `nil` ends the loop: the right was destroyed (`stop()`), or the receive
     /// failed and the host has been reported lost.
-    private func nextMessage(on port: MachPortToken, onEvent: @Sendable (ReceiverEvent) -> Void) async -> FrameMessage? {
+    private func nextMessage(on port: MachPortToken, onEvent: @escaping @Sendable (ReceiverEvent) -> Void) async -> FrameMessage? {
         do {
             return try await machMessage.receive(on: port)
         } catch MachError.portDied {
@@ -24,7 +24,13 @@ extension FrameReceiverDataSourceImpl {
             return nil
         } catch {
             errorLog.record(.receiver, "receive failed: \(error)")
-            onEvent(.hostLost(.receiveFailed(code: Self.code(of: error))))
+            let code = Self.code(of: error)
+            // Through the executor: the frames this loop queued earlier have not
+            // run yet, and the loss must not overtake their `hostConnected`.
+            frameExecutor.run { [self] in
+                hostPresent = false
+                onEvent(.hostLost(.receiveFailed(code: code)))
+            }
             return nil
         }
     }
@@ -50,7 +56,8 @@ extension FrameReceiverDataSourceImpl {
             }
         } catch {
             errorLog.record(.receiver, "frame dropped: surface did not resolve: \(error)")
-            onEvent(.frameDropped(.sendFailed(code: Self.code(of: error))))
+            let code = Self.code(of: error)
+            frameExecutor.run { onEvent(.frameDropped(.sendFailed(code: code))) }
         }
     }
 

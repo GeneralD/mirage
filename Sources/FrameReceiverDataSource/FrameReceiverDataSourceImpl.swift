@@ -26,6 +26,12 @@ public final class FrameReceiverDataSourceImpl: @unchecked Sendable {
     var hostPresent = false
     /// The receive right, kept so `stop()` can reach it from any context.
     var receiveRight: MachPortToken?
+    /// A `start` is between its first line and its end. Lets `stop()` tell
+    /// "start has not stored its right yet" from "nothing is running".
+    var starting = false
+    /// `stop()` arrived while `start` was still registering, so there was no
+    /// right to destroy yet; `start` honours it before it begins receiving.
+    var stopRequested = false
 
     /// - Parameter frameGap: silence longer than this means the host stalled.
     public init(frameGap: Duration = .seconds(2)) {
@@ -38,8 +44,16 @@ extension FrameReceiverDataSourceImpl: FrameReceiver {
         onFrame: @escaping @Sendable (IncomingSurface) -> Void,
         onEvent: @escaping @Sendable (ReceiverEvent) -> Void
     ) async throws {
-        let port = try registerService()
-        frameExecutor.run { [self] in receiveRight = port }
+        // Queued first, so a `stop()` issued from here on is remembered.
+        frameExecutor.run { [self] in starting = true }
+        let port: MachPortToken
+        do {
+            port = try registerService()
+        } catch {
+            frameExecutor.run { [self] in reset() }
+            throw error
+        }
+        guard await claim(port) else { return }
         onEvent(.listening)
         // Cancelling `start` must also unblock the pending receive.
         await withTaskCancellationHandler {
@@ -58,11 +72,39 @@ extension FrameReceiverDataSourceImpl: FrameReceiver {
     }
 
     public func stop() {
-        frameExecutor.run { [self] in destroyReceiveRight() }
+        frameExecutor.run { [self] in requestStop() }
     }
 }
 
 extension FrameReceiverDataSourceImpl {
+    /// Runs on the executor. Destroys the right, or, when `start` has not
+    /// stored one yet, leaves a note for `start` so the stop is not lost.
+    private func requestStop() {
+        guard receiveRight != nil else {
+            stopRequested = starting
+            return
+        }
+        destroyReceiveRight()
+    }
+
+    /// Stores the right on the executor and reports whether `start` may go on
+    /// receiving; `false` means `stop()` got in first, so the right is destroyed
+    /// here instead of leaving `start` blocked on a receive nobody will end.
+    private func claim(_ port: MachPortToken) async -> Bool {
+        await withCheckedContinuation { continuation in
+            frameExecutor.run { [self] in
+                guard !stopRequested else {
+                    bootstrap.destroyReceiveRight(port)
+                    reset()
+                    continuation.resume(returning: false)
+                    return
+                }
+                receiveRight = port
+                continuation.resume(returning: true)
+            }
+        }
+    }
+
     /// Runs on the executor.
     func destroyReceiveRight() {
         guard let port = receiveRight else { return }
@@ -75,6 +117,8 @@ extension FrameReceiverDataSourceImpl {
         destroyReceiveRight()
         hostPresent = false
         sinceLastFrame = nil
+        starting = false
+        stopRequested = false
     }
 
     /// `checkIn` first (the launchd-known name); `register` only as the
