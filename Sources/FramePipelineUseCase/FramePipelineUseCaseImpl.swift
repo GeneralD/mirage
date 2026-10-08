@@ -1,3 +1,4 @@
+import Combine
 import Dependencies
 import Domain
 
@@ -18,18 +19,20 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
-    // Executor-confined: every mutation runs on FrameExecutor.
+    // Executor-confined: every mutation runs on FrameExecutor. The statistics
+    // live in a subject rather than a bare `var` so `stats` reads one whole
+    // snapshot from any context (the subject synchronizes its `value`); the
+    // executor is its only writer and never reads it back.
     private var latest: FrameRef?
-    private var counters = PipelineStats.empty
+    private let snapshot = CurrentValueSubject<PipelineStats, Never>(.empty)
     private var tickCount = 0
     private var lastDropReason: FrameDropReason?
 
     public init() {}
 
-    /// A snapshot of the executor-confined counters. It is not synchronised with
-    /// the frame path: read it from a diagnostic context, or in tests after
+    /// The counters as of the last frame-path step; in tests, read after
     /// `ManualFrameExecutor.drain()`.
-    public var stats: PipelineStats { counters }
+    public var stats: PipelineStats { snapshot.value }
 
     public func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
         virtualCameraSink.observe { [weak self] event in self?.observed(event) }
@@ -62,20 +65,27 @@ extension FramePipelineUseCaseImpl {
     private func receive(_ frame: FrameRef) {
         releaseLatest()
         latest = frame
-        counters.noteReceived(at: frame.presentationTime)
+        update { $0.noteReceived(at: frame.presentationTime) }
     }
 
     private func tick(summaryEvery interval: Int) {
         tickCount += 1
         flushLatest()
         guard tickCount.isMultiple(of: interval) else { return }
-        developerLog.record(.pipeline, counters.summary)
+        developerLog.record(.pipeline, snapshot.value.summary)
     }
 
     private func flushLatest() {
         guard let frame = takeLatest() else { return }
-        counters.note(virtualCameraSink.send(frame))
+        let outcome = virtualCameraSink.send(frame)
+        update { $0.note(outcome) }
         surfaceRepository.release(frame.token)
+    }
+
+    private func update(_ change: (inout PipelineStats) -> Void) {
+        var next = snapshot.value
+        change(&next)
+        snapshot.value = next
     }
 
     private func releaseLatest() {
