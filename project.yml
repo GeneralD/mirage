@@ -71,6 +71,9 @@ targets:
       properties:
         com.apple.developer.system-extension.install: true
         com.apple.security.device.camera: true
+        # The group the CMIO service name is prefixed with (see the extension).
+        com.apple.security.application-groups:
+          - $(TeamIdentifierPrefix)com.generald.mirage
         # Pairs with the extension's mach-register entitlement below and with
         # ProductIdentity.machServiceName (scripts/check-service-names.sh).
         com.apple.security.temporary-exception.mach-lookup.global-name:
@@ -100,6 +103,15 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
+        # Required for every non-DriverKit system extension; missing, the
+        # activation request fails (Apple: NSSystemExtensionUsageDescription).
+        NSSystemExtensionUsageDescription: Mirage installs a camera extension so other apps can use its virtual camera.
+        # The Mach service CoreMediaIO launches and talks to the provider over
+        # (Apple: "Creating a camera extension with Core Media I/O"). Prefixed
+        # with the team's app group so the sandboxed extension may register it;
+        # distinct from the frame-transport service below.
+        CMIOExtension:
+          CMIOExtensionMachServiceName: $(TeamIdentifierPrefix)com.generald.mirage.CameraExtension
         NSExtension:
           NSExtensionPointIdentifier: com.apple.cmio.providers
           NSExtensionPrincipalClass: ExtensionPrincipal
@@ -108,6 +120,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.cmio.extension.providerSource: true
+        com.apple.security.application-groups:
+          - $(TeamIdentifierPrefix)com.generald.mirage
         com.apple.security.temporary-exception.mach-register.global-name:
           - com.generald.mirage.frames
 
