@@ -48,6 +48,16 @@ struct IOSurfaceGatewayTests {
         #expect(bytes.allSatisfy { $0 == 0xAB })
     }
 
+    @Test("fill releases its write lock: the surface seed advances on unlock")
+    func fillUnlocks() throws {
+        let surface = try gateway.create(size)
+        let raw = try #require(surface.backing as? IOSurface)
+        let before = IOSurfaceGetSeed(raw)
+        try gateway.fill(surface, with: 0x11)
+        // IOSurface bumps the seed when a write lock is dropped, so an unbalanced lock leaves it unchanged.
+        #expect(IOSurfaceGetSeed(raw) != before)
+    }
+
     @Test("a send right resolves to the same surface: identical ID and shared pixels (zero-copy identity)")
     func zeroCopyIdentity() throws {
         let original = try gateway.create(size)
@@ -63,6 +73,7 @@ struct IOSurfaceGatewayTests {
         #expect(try firstByte(of: original) == 0xC3)
     }
 
+    // Relies on the kernel not recycling the just-deallocated port name within this test.
     @Test("a right that was already resolved fails to resolve again")
     func resolveTwice() throws {
         let right = try gateway.makeSendRight(try gateway.create(size))

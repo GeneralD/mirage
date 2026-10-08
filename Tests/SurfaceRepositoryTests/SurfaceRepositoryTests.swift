@@ -25,6 +25,16 @@ struct SurfaceRepositoryTests {
         #expect(repository.liveCount == 1)
     }
 
+    @Test("allocate forwards the exact descriptor it was given")
+    func allocateForwardsDescriptor() throws {
+        let pool = FakeSurfacePool(capacity: 2)
+        let repository = makeRepository(pool: pool)
+        let requested = SurfaceDescriptor.bgra(width: 3, height: 2)
+        let token = try #require(try repository.allocate(requested))
+        #expect(pool.descriptor(for: token) == requested)
+        #expect(pool.descriptor(for: token) != .hd720)
+    }
+
     @Test("allocate returns nil when the pool is full")
     func allocateFull() throws {
         let pool = FakeSurfacePool(capacity: 1)

@@ -60,6 +60,23 @@ struct SurfacePoolDataSourceTests {
         #expect(pool.handle(for: token) is FakeSurfaceHandle)
     }
 
+    @Test("allocate stores the descriptor the gateway resolved, not the one requested (IOSurface rounds the stride up)")
+    func allocateStoresResolvedDescriptor() throws {
+        let gateway = StrideRoundingGateway(rounding: 64)
+        let pool = withDependencies {
+            $0.ioSurfaceGateway = gateway
+        } operation: {
+            SurfacePoolDataSourceImpl(capacity: 1)
+        }
+        let requested = SurfaceDescriptor.bgra(width: 8, height: 4)
+        let token = try #require(try pool.allocate(requested))
+        let stored = try #require(pool.descriptor(for: token))
+        #expect(stored != requested)
+        #expect(stored.bytesPerRow == requested.bytesPerRow + 64)
+        #expect(stored.width == requested.width)
+        #expect(stored.height == requested.height)
+    }
+
     @Test("allocate on a full pool returns nil without asking the gateway for a surface")
     func allocateFullSkipsGateway() throws {
         let gateway = FakeIOSurfaceGateway()
@@ -138,5 +155,24 @@ struct SurfacePoolDataSourceTests {
         let pool = makePool()
         pool.releaseAll()
         #expect(pool.liveCount == 0)
+    }
+}
+
+/// Delegates to `FakeIOSurfaceGateway` but reports a stride rounded up the way a
+/// real IOSurface does, so the pool can be told apart from one that stores the request.
+private struct StrideRoundingGateway: IOSurfaceGateway {
+    let rounding: Int
+    let base = FakeIOSurfaceGateway()
+
+    func create(_ descriptor: SurfaceDescriptor) throws -> any SurfaceHandle { try base.create(descriptor) }
+    func makeSendRight(_ surface: any SurfaceHandle) throws -> MachSendRight { try base.makeSendRight(surface) }
+    func resolve(_ right: MachSendRight) throws -> any SurfaceHandle { try base.resolve(right) }
+    func identifier(_ surface: any SurfaceHandle) -> UInt32 { base.identifier(surface) }
+    func fill(_ surface: any SurfaceHandle, with byte: UInt8) throws { try base.fill(surface, with: byte) }
+
+    func descriptor(_ surface: any SurfaceHandle) -> SurfaceDescriptor {
+        let resolved = base.descriptor(surface)
+        return SurfaceDescriptor(
+            width: resolved.width, height: resolved.height, pixelFormat: resolved.pixelFormat, bytesPerRow: resolved.bytesPerRow + rounding)
     }
 }
