@@ -29,7 +29,12 @@ public final class FrameTransportDataSourceImpl: @unchecked Sendable {
 
 extension FrameTransportDataSourceImpl: FrameTransport {
     public func connect() async throws {
-        let found = try await lookUp(attempt: 1)
+        let found = try await lookUp()
+        // A connect cancelled while its look-up was in flight must not come alive afterwards.
+        guard !Task.isCancelled else {
+            bootstrap.deallocate(found)
+            throw CancellationError()
+        }
         executor.run { [self] in adopt(found) }
     }
 
@@ -50,21 +55,30 @@ extension FrameTransportDataSourceImpl: FrameTransport {
 }
 
 extension FrameTransportDataSourceImpl {
-    /// Looks the service up, backing off per the policy. Recursion keeps the attempt
-    /// counter immutable; each level is one suspended sleep, so depth is bounded by
-    /// how long the extension stays away, not by CPU.
-    private func lookUp(attempt: Int) async throws -> MachPortToken {
-        do {
-            return try bootstrap.lookUp(serviceName: ProductIdentity.machServiceName)
-        } catch let error as MachError {
-            developerLog.record(.transport, "look-up attempt \(attempt) failed: \(error)")
-            guard let delay = policy.delay(afterFailure: attempt) else {
-                errorLog.record(.transport, "look-up gave up after \(attempt) attempts: \(error)")
-                throw error
+    /// Looks the service up, backing off per the policy. A loop rather than recursion,
+    /// so an extension that stays away for hours costs one suspended sleep at a time
+    /// instead of a growing chain of async frames.
+    private func lookUp() async throws -> MachPortToken {
+        // The attempt counter is the loop's only state; it exists to feed the policy.
+        var attempt = 1
+        while true {
+            do {
+                return try bootstrap.lookUp(serviceName: ProductIdentity.machServiceName)
+            } catch let error as MachError {
+                developerLog.record(.transport, "look-up attempt \(attempt) failed: \(error)")
+                guard let delay = policy.delay(afterFailure: attempt) else { throw giveUp(after: attempt, error) }
+                try await clock.sleep(for: delay)
+                attempt += 1
             }
-            try await clock.sleep(for: delay)
-            return try await lookUp(attempt: attempt + 1)
         }
+    }
+
+    /// Retries are exhausted: tell the observer as well as the caller, since the
+    /// observer is the one that outlives this `connect` call.
+    private func giveUp(after attempts: Int, _ error: MachError) -> MachError {
+        errorLog.record(.transport, "look-up gave up after \(attempts) attempts: \(error)")
+        executor.run { [self] in onEvent?(.disconnected(.lookupFailed(code: error.code))) }
+        return error
     }
 
     /// Replaces any earlier port (a second `connect`) so no send right leaks.

@@ -46,6 +46,7 @@ struct FrameTransportSendTests {
         #expect(outcome == .dropped(.sendFailed(code: -1)))
         #expect(fixture.messaging.sent.count == 0)
         #expect(fixture.log.contains("no send right"))
+        #expect(fixture.log.contains("foreignHandle"))
     }
 
     @Test("a lost destination releases the port, reports it, and later frames are notConnected")

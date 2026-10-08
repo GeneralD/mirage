@@ -6,7 +6,9 @@ import Testing
 
 @testable import MachGateway
 
-@Suite("Mach loopback", .timeLimit(.minutes(1)))
+// Serialized because the resource tests count the task's port names, which any
+// concurrently running test in this process would disturb.
+@Suite("Mach loopback", .serialized, .timeLimit(.minutes(1)))
 struct MachLoopbackTests {
     @Test("a frame sent through a registered service arrives with the same surface and metadata")
     func roundTrip() async throws {
@@ -131,6 +133,46 @@ struct MachLoopbackTests {
         #expect(sendRefs(carried.name) == held - 1)
     }
 
+    @Test("a malformed message carrying a receive right destroys it instead of leaking it")
+    func malformedReleasesReceiveRight() async throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+        let before = receiveNames().count
+        let carried = try makeOwnedPort()
+        let message = FrameMessage(surface: MachSendRight(name: carried.name), descriptor: TestSurface.descriptor, presentationTime: .zero)
+        let wire = FrameWire(message, to: loopback.send)
+        let moved = mach_msg_port_descriptor_t(
+            name: carried.name, pad1: 0, pad2: 0, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_MOVE_RECEIVE), type: wire.port.type)
+
+        #expect(sendRaw(wire.replacing(port: moved)) == MACH_MSG_SUCCESS)
+        await #expect(throws: MachError.malformedMessage) { try await loopback.messaging.receive(on: loopback.receive) }
+
+        #expect(receiveNames().count == before)
+    }
+
+    @Test("a message with an out-of-line descriptor is malformedMessage and releases no unrelated name")
+    func outOfLineDescriptor() async throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+        let bystander = try makeOwnedPort()
+        defer { loopback.bootstrap.destroyReceiveRight(bystander) }
+        let held = sendRefs(bystander.name)
+        let wire = FrameWire(try TestSurface().message(), to: loopback.send)
+        let bytes = UnsafeMutableRawPointer.allocate(byteCount: 16, alignment: 16)
+        defer { bytes.deallocate() }
+        let descriptor = mach_msg_ool_descriptor_t(
+            address: bytes, deallocate: 0, copy: mach_msg_copy_options_t(MACH_MSG_VIRTUAL_COPY), pad1: 0,
+            type: mach_msg_descriptor_type_t(MACH_MSG_OOL_DESCRIPTOR), size: 16)
+        let message = OutOfLineMessage(
+            header: wire.header.replacing(size: mach_msg_size_t(MemoryLayout<OutOfLineMessage>.size)), body: wire.body, descriptor: descriptor,
+            payload: wire.payload)
+
+        #expect(sendRaw(message) == MACH_MSG_SUCCESS)
+        await #expect(throws: MachError.malformedMessage) { try await loopback.messaging.receive(on: loopback.receive) }
+
+        #expect(sendRefs(bystander.name) == held)
+    }
+
     @Test("looking up an unknown service reports lookupFailed with launchd's code")
     func unknownService() {
         let bootstrap = MachBootstrapGatewayImpl()
@@ -156,6 +198,46 @@ struct MachLoopbackTests {
 
         #expect(received.presentationTime == HostTimestamp(nanoseconds: 5))
         bootstrap.deallocate(MachPortToken(name: received.surface.name))
+    }
+
+    @Test("a failed register gives back the receive right it allocated")
+    func failedRegisterLeavesNoRight() throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+        let before = receiveNames().count
+
+        #expect(throws: MachError.registerFailed(code: 1101)) { try loopback.bootstrap.register(serviceName: loopback.serviceName) }
+
+        #expect(receiveNames().count == before)
+    }
+
+    @Test("a successful register keeps no send right of its own; look-up hands out one per call")
+    func registerKeepsNoSendRight() throws {
+        let bootstrap = MachBootstrapGatewayImpl()
+        let name = "\(ProductIdentity.machServiceName).test.rights.\(getpid()).\(UUID().uuidString)"
+        let receive = try bootstrap.register(serviceName: name)
+        defer { bootstrap.destroyReceiveRight(receive) }
+
+        #expect(sendRefs(receive.name) == 0)
+        let first = try bootstrap.lookUp(serviceName: name)
+        let second = try bootstrap.lookUp(serviceName: name)
+        #expect(sendRefs(receive.name) == 2)
+        bootstrap.deallocate(first)
+        bootstrap.deallocate(second)
+        #expect(sendRefs(receive.name) == 0)
+    }
+
+    @Test("repeated look-ups do not accumulate references on the task's bootstrap port")
+    func lookUpReleasesBootstrapRight() throws {
+        let bootstrap = MachBootstrapGatewayImpl()
+        let port = try taskBootstrapPort()
+        defer { _ = mach_port_deallocate(mach_task_self_, port) }
+        let before = sendRefs(port)
+        let name = "\(ProductIdentity.machServiceName).test.absent.\(getpid())"
+
+        for _ in 0..<5 { _ = try? bootstrap.lookUp(serviceName: name) }
+
+        #expect(sendRefs(port) == before)
     }
 
     @Test("registering or checking in a name that is already taken fails with the raw code")

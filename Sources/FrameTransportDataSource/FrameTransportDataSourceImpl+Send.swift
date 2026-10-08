@@ -6,8 +6,11 @@ extension FrameTransportDataSourceImpl {
     /// a live feed never waits and never retries one frame.
     public func send(_ surface: any SurfaceHandle, descriptor: SurfaceDescriptor, presentationTime: HostTimestamp) -> SendOutcome {
         guard let port else { return .dropped(.notConnected) }
-        guard let right = try? surfaces.makeSendRight(surface) else {
-            return drop(code: -1, "no send right could be made for the surface")
+        let right: MachSendRight
+        do {
+            right = try surfaces.makeSendRight(surface)
+        } catch {
+            return drop(code: -1, "no send right could be made for the surface: \(error)")
         }
         let message = FrameMessage(surface: right, descriptor: descriptor, presentationTime: presentationTime)
         do {

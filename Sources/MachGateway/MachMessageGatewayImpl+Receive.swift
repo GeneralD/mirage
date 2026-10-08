@@ -20,13 +20,7 @@ extension MachMessageGatewayImpl {
             buffer.assumingMemoryBound(to: mach_msg_header_t.self), mach_msg_option_t(MACH_RCV_MSG), 0,
             mach_msg_size_t(layout.size), port.name, 0, mach_port_t(MACH_PORT_NULL))
         try (code == MACH_MSG_SUCCESS).orThrow(failure(code))
-        let wire = buffer.load(as: FrameWireReceive.self).message
-        do {
-            return try wire.message()
-        } catch {
-            _ = wire.carriedRight().map { mach_port_deallocate(mach_task_self_, $0) }
-            throw error
-        }
+        return try buffer.load(as: FrameWireReceive.self).message.decoded()
     }
 
     private static func failure(_ code: mach_msg_return_t) -> MachError {

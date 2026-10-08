@@ -83,6 +83,14 @@ struct OversizedMessage {
     let padding: (UInt64, UInt64, UInt64, UInt64, UInt64, UInt64, UInt64, UInt64)
 }
 
+/// The frame message with its port descriptor swapped for an out-of-line one.
+struct OutOfLineMessage {
+    let header: mach_msg_header_t
+    let body: mach_msg_body_t
+    let descriptor: mach_msg_ool_descriptor_t
+    let payload: FramePayload
+}
+
 extension FrameWire {
     func replacing(
         header: mach_msg_header_t? = nil, body: mach_msg_body_t? = nil, port: mach_msg_port_descriptor_t? = nil,
@@ -106,11 +114,16 @@ extension mach_msg_header_t {
     }
 }
 
-/// `MACH_PORT_TYPE(MACH_PORT_RIGHT_SEND)`: that C macro is not imported.
-private let sendRightType = mach_port_type_t(1) << (mach_port_type_t(MACH_PORT_RIGHT_SEND) + 16)
+/// `MACH_PORT_TYPE(right)`: that C macro is not imported.
+private func portType(_ right: mach_port_right_t) -> mach_port_type_t { mach_port_type_t(1) << (mach_port_type_t(right) + 16) }
 
 /// Every name in this task that holds a send right.
-func sendNames() -> [mach_port_name_t] {
+func sendNames() -> [mach_port_name_t] { names(holding: MACH_PORT_RIGHT_SEND) }
+
+/// Every name in this task that holds a receive right.
+func receiveNames() -> [mach_port_name_t] { names(holding: MACH_PORT_RIGHT_RECEIVE) }
+
+private func names(holding right: mach_port_right_t) -> [mach_port_name_t] {
     var names: mach_port_name_array_t?
     var nameCount: mach_msg_type_number_t = 0
     var types: mach_port_type_array_t?
@@ -121,6 +134,6 @@ func sendNames() -> [mach_port_name_t] {
         _ = vm_deallocate(mach_task_self_, vm_address_t(bitPattern: types), vm_size_t(typeCount) * vm_size_t(MemoryLayout<mach_port_type_t>.stride))
     }
     return zip(UnsafeBufferPointer(start: names, count: Int(nameCount)), UnsafeBufferPointer(start: types, count: Int(typeCount)))
-        .filter { $0.1 & sendRightType != 0 }
+        .filter { $0.1 & portType(right) != 0 }
         .map(\.0)
 }

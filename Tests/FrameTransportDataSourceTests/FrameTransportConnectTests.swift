@@ -5,6 +5,22 @@ import TestDoubles
 import TestSupport
 import Testing
 
+@testable import FrameTransportDataSource
+
+@Suite("MachError code")
+struct MachErrorCodeTests {
+    @Test("errors that carry a kernel code report it; the others report -1")
+    func codes() {
+        let carrying: [MachError] = [
+            .bootstrapUnavailable(code: 1), .lookupFailed(code: 2), .checkInFailed(code: 3), .registerFailed(code: 4),
+            .sendFailed(code: 5), .receiveFailed(code: 6),
+        ]
+
+        #expect(carrying.map(\.code) == [1, 2, 3, 4, 5, 6])
+        #expect([MachError.destinationLost, .portDied, .malformedMessage].map(\.code) == [-1, -1, -1])
+    }
+}
+
 @Suite("FrameTransportDataSource connect", .timeLimit(.minutes(1)))
 struct FrameTransportConnectTests {
     @Test("connects on the first look-up and announces it once the executor runs")
@@ -44,9 +60,10 @@ struct FrameTransportConnectTests {
 
         await #expect(throws: MachError.lookupFailed(code: 4)) { try await fixture.subject.connect() }
 
+        fixture.executor.drain()
         #expect(clock.sleeps.values == [.seconds(1), .seconds(3), .seconds(3)])
-        #expect(fixture.executor.pendingCount == 0)
         #expect(!fixture.subject.isConnected)
+        #expect(fixture.events.values == [.disconnected(.lookupFailed(code: 4))])
         #expect(fixture.log.contains("gave up after 4 attempts"))
     }
 
@@ -58,21 +75,24 @@ struct FrameTransportConnectTests {
 
         await #expect(throws: MachError.lookupFailed(code: 1102)) { try await fixture.subject.connect() }
 
+        fixture.executor.drain()
         #expect(clock.sleeps.count == 0)
+        #expect(fixture.events.values == [.disconnected(.lookupFailed(code: 1102))])
     }
 
     @Test("a retry waits for the clock, not for the look-up to be called again")
     func waitsForClock() async throws {
-        let clock = TestClock()
+        let clock = GatedClock()
         let fixture = TransportFixture(clock: clock)
         fixture.bootstrap.scriptLookUp([.failure(.lookupFailed(code: 1102))])
         let connecting = Task { try await fixture.subject.connect() }
 
-        await fixture.log.entries.waitForCount(1)
-        await clock.advance(by: .milliseconds(249))
+        await clock.sleepers.waitForCount(1)
+        clock.advance(by: .milliseconds(249))
         #expect(fixture.bootstrap.lookUps.count == 1)
+        #expect(clock.sleepers.values == [.milliseconds(250)])
 
-        await clock.advance(by: .milliseconds(1))
+        clock.advance(by: .milliseconds(1))
         try await connecting.value
         #expect(fixture.bootstrap.lookUps.count == 2)
     }
@@ -91,6 +111,23 @@ struct FrameTransportConnectTests {
         #expect(fixture.bootstrap.lookUps.count == 1)
         #expect(fixture.executor.pendingCount == 0)
         #expect(!fixture.subject.isConnected)
+    }
+
+    @Test("a connect cancelled just as the look-up succeeds gives the port back and never connects")
+    func cancelledAfterLookUp() async throws {
+        let fixture = TransportFixture()
+        let connecting = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await fixture.subject.connect()
+        }
+
+        let result = await connecting.result
+
+        #expect(throws: CancellationError.self) { try result.get() }
+        fixture.executor.drain()
+        #expect(fixture.bootstrap.deallocated.values == [MachPortToken(name: 0x2000)])
+        #expect(!fixture.subject.isConnected)
+        #expect(fixture.events.count == 0)
     }
 
     @Test("connecting again releases the earlier port instead of leaking it")

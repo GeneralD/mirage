@@ -63,16 +63,28 @@ struct FrameWireTests {
         #expect(try wire.replacing(port: received).message() == wire.message())
     }
 
-    @Test("a carried right is reported only for a well-shaped complex message")
+    @Test("a carried right is reported only for a well-shaped complex message with a port descriptor")
     func carriedRight() {
         let wire = valid
         let simple = wire.header.replacing(bits: wire.header.msgh_bits & ~MACH_MSGH_BITS_COMPLEX)
         let short = wire.header.replacing(size: 24)
+        let outOfLine = mach_msg_port_descriptor_t(
+            name: 7, pad1: 0, pad2: 0, disposition: wire.port.disposition, type: mach_msg_descriptor_type_t(MACH_MSG_OOL_DESCRIPTOR))
 
-        #expect(wire.carriedRight() == 7)
+        #expect(wire.carriedRight() == CarriedRight(name: 7, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_MOVE_SEND)))
+        #expect(wire.replacing(port: outOfLine).carriedRight() == nil)
         #expect(wire.replacing(header: simple).carriedRight() == nil)
         #expect(wire.replacing(header: short).carriedRight() == nil)
         #expect(wire.replacing(body: mach_msg_body_t(msgh_descriptor_count: 2)).carriedRight() == nil)
+    }
+
+    @Test("only a receive disposition is released as a receive right")
+    func receiveKind() {
+        let send = CarriedRight(name: 7, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_PORT_SEND))
+        let once = CarriedRight(name: 7, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_PORT_SEND_ONCE))
+        let receive = CarriedRight(name: 7, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_PORT_RECEIVE))
+
+        #expect([send.isReceive(), once.isReceive(), receive.isReceive()] == [false, false, true])
     }
 
     @Test("every deviation from the frame shape is malformedMessage")
