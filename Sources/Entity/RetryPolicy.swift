@@ -30,11 +30,16 @@ extension RetryPolicy {
     public func delay(afterFailure attempt: Int) -> Duration? {
         precondition(attempt >= 1)
         if let maxAttempts, attempt >= maxAttempts { return nil }
-        let scaled = initialDelay * pow(multiplier, attempt - 1)
-        return scaled > maxDelay ? maxDelay : scaled
+        return grown(steps: attempt - 1)
     }
-}
 
-private func pow(_ base: Double, _ exponent: Int) -> Double {
-    (0..<exponent).reduce(1.0) { acc, _ in acc * base }
+    /// Grows the delay one failure at a time and stops at the cap. A closed form
+    /// (`initial × multiplier^(attempt − 1)`) overflows after enough failures of
+    /// an unbounded policy and `Duration * Double` traps on infinity; an idle host
+    /// retrying every five seconds reaches that within an hour.
+    private func grown(steps: Int) -> Duration {
+        (0..<steps).reduce(Swift.min(initialDelay, maxDelay)) { delay, _ in
+            delay >= maxDelay ? maxDelay : Swift.min(delay * multiplier, maxDelay)
+        }
+    }
 }

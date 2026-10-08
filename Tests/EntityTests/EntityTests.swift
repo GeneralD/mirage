@@ -59,6 +59,11 @@ import Testing
         #expect(policy.delay(afterFailure: 60) == .seconds(5), "and stays there")
     }
 
+    @Test func anUnboundedPolicyStaysAtTheCapHoweverLongTheOutage() {
+        // 2^100_000 is not a representable factor; the cap must be reached by growing, not by scaling.
+        #expect(RetryPolicy.serviceLookup.delay(afterFailure: 100_000) == .seconds(5))
+    }
+
     @Test func neverGivesUpAfterTheFirstFailure() {
         #expect(RetryPolicy.never.delay(afterFailure: 1) == nil)
     }
