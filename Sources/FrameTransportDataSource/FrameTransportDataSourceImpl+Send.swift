@@ -5,7 +5,11 @@ extension FrameTransportDataSourceImpl {
     /// the confined port directly. A frame that cannot go is dropped with a reason;
     /// a live feed never waits and never retries one frame.
     public func send(_ surface: any SurfaceHandle, descriptor: SurfaceDescriptor, presentationTime: HostTimestamp) -> SendOutcome {
-        guard let port else { return .dropped(.notConnected) }
+        // Not logged: it is the steady state before the extension is installed, at camera pace.
+        guard let port = connection.value else {
+            onEvent?(.frameDropped(.notConnected))
+            return .dropped(.notConnected)
+        }
         let right: MachSendRight
         do {
             right = try surfaces.makeSendRight(surface)
@@ -25,8 +29,11 @@ extension FrameTransportDataSourceImpl {
         }
     }
 
+    /// Every drop also reaches the observer, which is where the owner's
+    /// once-per-reason diagnostics live.
     private func drop(code: Int, _ reason: String) -> SendOutcome {
         errorLog.record(.transport, "frame dropped, \(reason) (code \(code))")
+        onEvent?(.frameDropped(.sendFailed(code: code)))
         return .dropped(.sendFailed(code: code))
     }
 
@@ -36,6 +43,7 @@ extension FrameTransportDataSourceImpl {
         release()
         errorLog.record(.transport, "destination lost, port \(lost.name) released")
         onEvent?(.disconnected(.destinationLost))
+        onEvent?(.frameDropped(.extensionUnavailable))
         return .dropped(.extensionUnavailable)
     }
 }

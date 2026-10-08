@@ -16,6 +16,7 @@ struct FrameTransportSendTests {
         #expect(outcome == .dropped(.notConnected))
         #expect(fixture.messaging.sent.count == 0)
         #expect(fixture.surfaces.outstandingRights == 0)
+        #expect(fixture.events.values == [.frameDropped(.notConnected)])
     }
 
     @Test("a frame after connect goes to the connected port with its descriptor, timestamp and the surface's own right")
@@ -47,6 +48,7 @@ struct FrameTransportSendTests {
         #expect(fixture.messaging.sent.count == 0)
         #expect(fixture.log.contains("no send right"))
         #expect(fixture.log.contains("foreignHandle"))
+        #expect(fixture.events.values == [.connected, .frameDropped(.sendFailed(code: -1))])
     }
 
     @Test("a lost destination releases the port, reports it, and later frames are notConnected")
@@ -60,10 +62,11 @@ struct FrameTransportSendTests {
         #expect(outcome == .dropped(.extensionUnavailable))
         #expect(!fixture.subject.isConnected)
         #expect(fixture.bootstrap.deallocated.values == [port])
-        #expect(fixture.events.values == [.connected, .disconnected(.destinationLost)])
+        #expect(fixture.events.values == [.connected, .disconnected(.destinationLost), .frameDropped(.extensionUnavailable)])
         #expect(fixture.log.contains("destination lost"))
         fixture.messaging.failSend(with: nil)
         #expect(fixture.subject.send(try fixture.makeSurface(), descriptor: .hd720, presentationTime: .zero) == .dropped(.notConnected))
+        #expect(fixture.events.values.last == .frameDropped(.notConnected))
     }
 
     @Test("after a lost destination a new connect makes the link usable again")
@@ -92,6 +95,7 @@ struct FrameTransportSendTests {
         #expect(fixture.subject.isConnected)
         #expect(fixture.bootstrap.deallocated.count == 0)
         #expect(fixture.log.contains("code 5"))
+        #expect(fixture.events.values == [.connected, .frameDropped(.sendFailed(code: 5))])
     }
 
     @Test("an unexpected gateway error drops the frame with code -1 and keeps the link")

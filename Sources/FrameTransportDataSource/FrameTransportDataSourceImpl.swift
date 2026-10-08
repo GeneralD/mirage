@@ -1,3 +1,4 @@
+import Combine
 import Dependencies
 import Domain
 
@@ -18,8 +19,10 @@ public final class FrameTransportDataSourceImpl: @unchecked Sendable {
 
     let policy: RetryPolicy
 
-    // Executor-confined: every mutation runs on FrameExecutor.
-    var port: MachPortToken?
+    // Executor-confined: every mutation runs on FrameExecutor. The port lives in
+    // a subject so `isConnected` reads a whole value from any context (the
+    // subject synchronizes its `value`); the executor is its only writer.
+    let connection = CurrentValueSubject<MachPortToken?, Never>(nil)
     var onEvent: (@Sendable (FrameTransportEvent) -> Void)?
 
     public init(policy: RetryPolicy = .serviceLookup) {
@@ -47,7 +50,7 @@ extension FrameTransportDataSourceImpl: FrameTransport {
     }
 
     /// A snapshot read from any context; the frame path itself never relies on it.
-    public var isConnected: Bool { port != nil }
+    public var isConnected: Bool { connection.value != nil }
 
     public func observe(_ onEvent: @escaping @Sendable (FrameTransportEvent) -> Void) {
         executor.run { [self] in install(onEvent) }
@@ -84,7 +87,7 @@ extension FrameTransportDataSourceImpl {
     /// Replaces any earlier port (a second `connect`) so no send right leaks.
     private func adopt(_ found: MachPortToken) {
         release()
-        port = found
+        connection.value = found
         developerLog.record(.transport, "connected to port \(found.name)")
         onEvent?(.connected)
     }
@@ -95,7 +98,7 @@ extension FrameTransportDataSourceImpl {
 
     /// Gives the send right back and forgets it.
     func release() {
-        _ = port.map(bootstrap.deallocate)
-        port = nil
+        _ = connection.value.map(bootstrap.deallocate)
+        connection.value = nil
     }
 }
