@@ -13,7 +13,11 @@ public struct ExtensionMain {
 
     public init() {}
 
-    /// Never returns: the extension lives until the system kills it.
+    /// Never returns on its own: the extension lives until the system kills it,
+    /// or until the relay ends, which is not something this process can recover
+    /// from. A process parked in the run loop without a relay would answer the
+    /// system's launch of the camera with no frames, forever; exiting lets the
+    /// system start a fresh instance the next time a client opens the camera.
     public func run() -> Never {
         let relay = relay
         let errorLog = errorLog
@@ -22,13 +26,14 @@ public struct ExtensionMain {
             developerLog.record(.app, "relay starting")
             do {
                 try await relay.run(descriptor: .hd720, frameRate: .standard)
-                developerLog.record(.app, "relay ended")
+                errorLog.record(.app, "relay ended; exiting so the system can relaunch the extension")
             } catch {
-                errorLog.record(.app, "relay failed: \(error)")
+                errorLog.record(.app, "relay failed: \(error); exiting so the system can relaunch the extension")
             }
+            exit(EXIT_FAILURE)
         }
         CFRunLoopRun()
-        exit(0)
+        exit(EXIT_SUCCESS)
     }
 }
 
