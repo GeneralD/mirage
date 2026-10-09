@@ -10,11 +10,15 @@ public enum MachError: Error, Sendable, Hashable {
     case sendFailed(code: Int)
     /// `MACH_SEND_INVALID_DEST`: the receive right on the other side is gone.
     case destinationLost
+    /// `MACH_SEND_TIMED_OUT`: the destination's queue is full. The link is
+    /// fine; the frame is dropped.
+    case queueFull
     case receiveFailed(code: Int)
     /// The receive right was destroyed while a receive was pending
     /// (`MACH_RCV_PORT_DIED`) — the normal way a receive loop ends.
     case portDied
-    /// A message arrived that is not a `FrameMessage` (wrong id or shape).
+    /// A message arrived that is not a frame, hello or dead-name notification
+    /// (wrong id or shape).
     case malformedMessage
 }
 
@@ -34,16 +38,32 @@ public protocol MachBootstrapGateway: Sendable {
     func deallocate(_ port: MachPortToken)
     /// Destroys a receive right; a receive blocked on it fails with `.portDied`.
     func destroyReceiveRight(_ port: MachPortToken)
+    /// Host side: allocates a presence receive right and makes one send right on
+    /// it (`mach_port_allocate` + `MAKE_SEND`). The send right is announced to the
+    /// extension; destroying the receive right is how the extension learns the
+    /// host is gone.
+    func makePresencePort() throws -> PresencePort
+    /// Extension side: asks for a `MACH_NOTIFY_DEAD_NAME` message on `notifyPort`
+    /// (the service port) when the port behind `right` is destroyed
+    /// (`mach_port_request_notification`). The notification arrives through
+    /// `MachMessageGateway.receive` as `.deadName`.
+    func requestDeadNameNotification(of right: MachSendRight, to notifyPort: MachPortToken) throws
 }
 
-/// Thin pass-through to `mach_msg` for the one message shape on the wire.
+/// Thin pass-through to `mach_msg` for the message shapes on the wire: the
+/// frame, the host's hello and the kernel's dead-name notification.
 public protocol MachMessageGateway: Sendable {
     /// Moves `message.surface` into the message (`MACH_MSG_TYPE_MOVE_SEND`): on
     /// success the kernel owns the right; on failure it is deallocated here.
     func send(_ message: FrameMessage, to port: MachPortToken) throws
+    /// Moves `presence` (the host's presence send right) into a hello message
+    /// (`MACH_MSG_TYPE_MOVE_SEND`, no payload) sent to `port`. Like `send`, it
+    /// never blocks, and on failure the right is deallocated here.
+    func announce(_ presence: MachSendRight, to port: MachPortToken) throws
     /// Suspends until one message arrives on `port`. Ends with `.portDied` when
     /// the receive right is destroyed, which is how the loop above is stopped.
-    func receive(on port: MachPortToken) async throws -> FrameMessage
+    /// A message of any other shape is `.malformedMessage` and is destroyed.
+    func receive(on port: MachPortToken) async throws -> IncomingMessage
 }
 
 public enum MachBootstrapGatewayKey: TestDependencyKey {
@@ -82,6 +102,16 @@ private struct UnimplementedMachBootstrapGateway: MachBootstrapGateway {
         throw MachError.registerFailed(code: -1)
     }
 
+    func makePresencePort() throws -> PresencePort {
+        reportIssue("MachBootstrapGateway.makePresencePort not implemented")
+        throw MachError.registerFailed(code: -1)
+    }
+
+    func requestDeadNameNotification(of right: MachSendRight, to notifyPort: MachPortToken) throws {
+        reportIssue("MachBootstrapGateway.requestDeadNameNotification not implemented")
+        throw MachError.registerFailed(code: -1)
+    }
+
     func deallocate(_ port: MachPortToken) {
         reportIssue("MachBootstrapGateway.deallocate not implemented")
     }
@@ -97,7 +127,12 @@ private struct UnimplementedMachMessageGateway: MachMessageGateway {
         throw MachError.sendFailed(code: -1)
     }
 
-    func receive(on port: MachPortToken) async throws -> FrameMessage {
+    func announce(_ presence: MachSendRight, to port: MachPortToken) throws {
+        reportIssue("MachMessageGateway.announce not implemented")
+        throw MachError.sendFailed(code: -1)
+    }
+
+    func receive(on port: MachPortToken) async throws -> IncomingMessage {
         reportIssue("MachMessageGateway.receive not implemented")
         throw MachError.portDied
     }

@@ -17,7 +17,7 @@ struct MachErrorCodeTests {
         ]
 
         #expect(carrying.map(\.code) == [1, 2, 3, 4, 5, 6])
-        #expect([MachError.destinationLost, .portDied, .malformedMessage].map(\.code) == [-1, -1, -1])
+        #expect([MachError.destinationLost, .queueFull, .portDied, .malformedMessage].map(\.code) == [-1, -1, -1, -1])
     }
 }
 

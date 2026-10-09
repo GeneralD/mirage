@@ -10,6 +10,8 @@ public final class FakeMachBootstrapGateway: MachBootstrapGateway, Sendable {
         var checkInScript: [Result<MachPortToken, MachError>] = []
         var registerScript: [Result<MachPortToken, MachError>] = []
         var nextName: UInt32 = 0x2000
+        var presenceScript: [Result<PresencePort, MachError>] = []
+        var deadNameScript: [MachError] = []
     }
 
     private let state = Locked(State())
@@ -18,8 +20,38 @@ public final class FakeMachBootstrapGateway: MachBootstrapGateway, Sendable {
     public let registrations = Collector<String>()
     public let deallocated = Collector<MachPortToken>()
     public let destroyed = Collector<MachPortToken>()
+    /// Every presence port handed out, in order.
+    public let presencePorts = Collector<PresencePort>()
+    /// Every dead-name notification request, in order (recorded even when it fails).
+    public let deadNameRequests = Collector<(right: MachSendRight, port: MachPortToken)>()
 
     public init() {}
+
+    public func scriptMakePresencePort(_ results: [Result<PresencePort, MachError>]) {
+        state.withLock { $0.presenceScript = results }
+    }
+
+    /// Makes the next requests fail with these errors, in order; later ones succeed.
+    public func scriptDeadNameRequests(failingWith errors: [MachError]) {
+        state.withLock { $0.deadNameScript = errors }
+    }
+
+    public func makePresencePort() throws -> PresencePort {
+        let presence = try state.withLock { state -> PresencePort in
+            guard state.presenceScript.isEmpty else { return try state.presenceScript.removeFirst().get() }
+            defer { state.nextName += 1 }
+            return PresencePort(receive: MachPortToken(name: state.nextName), send: MachSendRight(name: state.nextName))
+        }
+        presencePorts.append(presence)
+        return presence
+    }
+
+    public func requestDeadNameNotification(of right: MachSendRight, to notifyPort: MachPortToken) throws {
+        deadNameRequests.append((right, notifyPort))
+        try state.withLock { state in
+            guard state.deadNameScript.isEmpty else { throw state.deadNameScript.removeFirst() }
+        }
+    }
 
     public func scriptLookUp(_ results: [Result<MachPortToken, MachError>]) {
         state.withLock { $0.lookUpScript = results }
@@ -73,19 +105,33 @@ public final class FakeMachBootstrapGateway: MachBootstrapGateway, Sendable {
 /// queued in order, like a port's message queue.
 public final class FakeMachMessageGateway: MachMessageGateway, Sendable {
     private struct State {
-        var queues: [UInt32: [Result<FrameMessage, MachError>]] = [:]
-        var waiters: [UInt32: [CheckedContinuation<FrameMessage, any Error>]] = [:]
+        var queues: [UInt32: [Result<IncomingMessage, MachError>]] = [:]
+        var waiters: [UInt32: [CheckedContinuation<IncomingMessage, any Error>]] = [:]
         var sendError: MachError?
+        var announceError: MachError?
     }
 
     private let state = Locked(State())
     public let sent = Collector<(message: FrameMessage, port: MachPortToken)>()
+    /// Every hello the subject announced, in order.
+    public let announced = Collector<(right: MachSendRight, port: MachPortToken)>()
     public let receiveCalls = Collector<MachPortToken>()
 
     public init() {}
 
     public func failSend(with error: MachError?) {
         state.withLock { $0.sendError = error }
+    }
+
+    public func failAnnounce(with error: MachError?) {
+        state.withLock { $0.announceError = error }
+    }
+
+    public func announce(_ presence: MachSendRight, to port: MachPortToken) throws {
+        try state.withLock { state in
+            if let error = state.announceError { throw error }
+        }
+        announced.append((presence, port))
     }
 
     public func send(_ message: FrameMessage, to port: MachPortToken) throws {
@@ -95,7 +141,7 @@ public final class FakeMachMessageGateway: MachMessageGateway, Sendable {
         sent.append((message, port))
     }
 
-    public func receive(on port: MachPortToken) async throws -> FrameMessage {
+    public func receive(on port: MachPortToken) async throws -> IncomingMessage {
         receiveCalls.append(port)
         return try await withCheckedThrowingContinuation { continuation in
             state.withLock { state in
@@ -111,7 +157,12 @@ public final class FakeMachMessageGateway: MachMessageGateway, Sendable {
     /// Hands a message to the receiver on `port` (resumes a pending receive, or
     /// queues it for the next one).
     public func deliver(_ message: FrameMessage, on port: MachPortToken) {
-        resolve(.success(message), on: port)
+        deliver(.frame(message), on: port)
+    }
+
+    /// Hands any incoming message (a hello, a dead-name notification) to the receiver on `port`.
+    public func deliver(_ incoming: IncomingMessage, on port: MachPortToken) {
+        resolve(.success(incoming), on: port)
     }
 
     /// Makes the pending (or next) receive on `port` throw, e.g. `.portDied`.
@@ -119,8 +170,8 @@ public final class FakeMachMessageGateway: MachMessageGateway, Sendable {
         resolve(.failure(error), on: port)
     }
 
-    private func resolve(_ result: Result<FrameMessage, MachError>, on port: MachPortToken) {
-        let waiter = state.withLock { state -> CheckedContinuation<FrameMessage, any Error>? in
+    private func resolve(_ result: Result<IncomingMessage, MachError>, on port: MachPortToken) {
+        let waiter = state.withLock { state -> CheckedContinuation<IncomingMessage, any Error>? in
             guard !state.waiters[port.name, default: []].isEmpty else {
                 state.queues[port.name, default: []].append(result)
                 return nil

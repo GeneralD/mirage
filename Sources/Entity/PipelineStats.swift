@@ -4,6 +4,8 @@ public struct PipelineStats: Sendable, Hashable {
     public var framesReceived: Int
     public var framesSent: Int
     public var framesDropped: Int
+    /// Placeholder frames the extension emitted while the host was absent.
+    public var slateFrames: Int
     /// Largest interval between two consecutive presentation times.
     public var maxGap: Duration
     public var lastPresentationTime: HostTimestamp?
@@ -12,12 +14,14 @@ public struct PipelineStats: Sendable, Hashable {
         framesReceived: Int = 0,
         framesSent: Int = 0,
         framesDropped: Int = 0,
+        slateFrames: Int = 0,
         maxGap: Duration = .zero,
         lastPresentationTime: HostTimestamp? = nil
     ) {
         self.framesReceived = framesReceived
         self.framesSent = framesSent
         self.framesDropped = framesDropped
+        self.slateFrames = slateFrames
         self.maxGap = maxGap
         self.lastPresentationTime = lastPresentationTime
     }
@@ -45,6 +49,6 @@ extension PipelineStats {
 
     /// One log line per report; the shape the acceptance criteria grep for.
     public var summary: String {
-        "frames=\(framesSent) received=\(framesReceived) dropped=\(framesDropped) maxGapMs=\(Int(maxGap.milliseconds.rounded()))"
+        "frames=\(framesSent) received=\(framesReceived) dropped=\(framesDropped) maxGapMs=\(Int(maxGap.milliseconds.rounded())) slate=\(slateFrames)"
     }
 }

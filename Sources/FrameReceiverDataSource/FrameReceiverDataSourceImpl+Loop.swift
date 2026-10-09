@@ -10,13 +10,25 @@ extension FrameReceiverDataSourceImpl {
         onEvent: @escaping @Sendable (ReceiverEvent) -> Void
     ) async {
         while let message = await nextMessage(on: port, onEvent: onEvent) {
-            deliver(message, onFrame: onFrame, onEvent: onEvent)
+            switch message {
+            case .frame(let frame):
+                deliver(frame, onFrame: onFrame, onEvent: onEvent)
+            case .hello(let presence):
+                // The presence semantics arrive with the dead-name watch; until then the moved right
+                // is only noted and given back, so reconnecting hosts do not pile up names here.
+                developerLog.record(.receiver, "hello received, presence right \(presence.name)")
+                bootstrap.deallocate(MachPortToken(name: presence.name))
+            case .deadName(let name):
+                // Not released: the name is only trusted once it matches a presence right this
+                // receiver holds, which arrives with the dead-name watch.
+                developerLog.record(.receiver, "dead-name notification received for \(name.name)")
+            }
         }
     }
 
     /// `nil` ends the loop: the right was destroyed (`stop()`), or the receive
     /// failed and the host has been reported lost.
-    private func nextMessage(on port: MachPortToken, onEvent: @escaping @Sendable (ReceiverEvent) -> Void) async -> FrameMessage? {
+    private func nextMessage(on port: MachPortToken, onEvent: @escaping @Sendable (ReceiverEvent) -> Void) async -> IncomingMessage? {
         do {
             return try await machMessage.receive(on: port)
         } catch MachError.portDied {
