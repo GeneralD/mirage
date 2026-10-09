@@ -77,6 +77,8 @@ let package = Package(
         // Host only: never a dependency of ExtensionDependencyInjection / ExtensionApp
         // (scripts/check-extension-no-metal.sh). Exercised by GPUSmokeTests, not here.
         .target(name: "MetalGateway", dependencies: dependencies),
+        // Host only, like MetalGateway. Exercised by PreviewSmokeTests (GPUSmokeTests).
+        .target(name: "MetalKitPreviewGateway", dependencies: dependencies),
         .target(name: "MachGateway", dependencies: dependencies),
         .testTarget(name: "MachGatewayTests", dependencies: ["MachGateway", "IOSurfaceGateway"] + testDependencies),
         .target(name: "SystemExtensionGateway", dependencies: dependencies),
@@ -180,7 +182,7 @@ let package = Package(
         // import allow-list (Sources/ only) does not apply. .claude/rules/gpu-testing.md.
         .testTarget(
             name: "GPUSmokeTests",
-            dependencies: dependencies + ["MetalGateway", "IOSurfaceGateway", "TestDoubles"]
+            dependencies: dependencies + ["MetalGateway", "MetalKitPreviewGateway", "PreviewDataSource", "Views", "IOSurfaceGateway", "TestDoubles"]
         ),
 
         // ── Test support ──
