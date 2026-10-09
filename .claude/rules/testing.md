@@ -48,9 +48,13 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   caller resumes with `.failure(.internalError)`, and one cancelled before it
   suspended is never recorded. Start concurrent callers one at a time
   (`waitForCount(n)` between them) when the test depends on request order.
-  `FakeGPURenderer` — the same shape one layer down, for the Repository suites:
-  `render` suspends until `complete(_:with:)` (any order, exactly once) unless
-  `respond(with:)` scripted an immediate answer; `requests` is a `Collector`.
+  `FakeGPURenderer` — one layer down, for the Repository suites: `render`
+  suspends until `complete(_:with:)` (any order, exactly once) unless
+  `respond(with:)` scripted an immediate answer; `requests` is a `Collector` in
+  call (`id`) order. Unlike `FakeEffectRuntimeRepository` it follows its live
+  counterpart on cancellation: `GPURenderDataSource` cannot withdraw a committed
+  pass, so a cancelled caller — even one cancelled before the call — is
+  recorded and keeps waiting; complete every request a test cancels.
   The `GPURenderDataSource` suite itself drives the executor hop with
   `tickUntil(tick: { executor.drain() }, …)` and completes passes through
   `FakeGPUGateway`. `InMemoryPreviewSink` —

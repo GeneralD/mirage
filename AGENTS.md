@@ -152,7 +152,8 @@ Shared conventions:
 - The GPU and effect fakes complete manually, in any order: `FakeGPUGateway`
   (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
   `completeApply`), `FakeGPURenderer` (`complete(request, with:)`, or a
-  scripted `respond(with:)`), `InMemoryPreviewSink` (`complete(presentation)`). Each
+  scripted `respond(with:)`; like the live renderer it ignores cancellation),
+  `InMemoryPreviewSink` (`complete(presentation)`). Each
   completion is exactly once; a second one returns `false`.
   `FakeShaderLibraryGateway` reports an issue when called on the main thread;
   `FakeTextureCacheGateway.isBalanced` is the bind/unbind invariant.

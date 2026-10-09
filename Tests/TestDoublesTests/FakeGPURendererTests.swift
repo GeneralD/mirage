@@ -79,21 +79,24 @@ struct FakeGPURendererTests {
         #expect(await task.value == .success(timing))
     }
 
-    @Test("a caller cancelled while suspended is resumed with internalError and cannot be completed afterwards")
-    func cancellationResumes() async throws {
+    @Test("a caller cancelled while suspended keeps waiting, as the live renderer does, and receives the answer the test completes")
+    func cancellationDoesNotResume() async throws {
         let task = Task { await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1)) }
         await renderer.requests.waitForCount(1)
         let request = try #require(renderer.requests.last)
 
         task.cancel()
 
-        #expect(await task.value == .failure(.internalError))
-        #expect(!renderer.complete(request, with: .success(timing)))
+        // Only `complete` removes a waiting render, so it is still suspended whatever the scheduler did.
+        #expect(renderer.pendingCount == 1)
+        #expect(renderer.complete(request, with: .failure(.pageFault)))
+        #expect(await task.value == .failure(.pageFault))
+        #expect(!renderer.complete(request, with: .success(timing)), "a second completion has nothing to resume")
         #expect(renderer.pendingCount == 0)
     }
 
-    @Test("a caller already cancelled returns internalError at once and is never recorded")
-    func cancelledBeforeSuspending() async {
+    @Test("a caller already cancelled is still recorded and waits for its completion")
+    func cancelledBeforeTheCall() async throws {
         let gate = Collector<Void>()
         let task = Task {
             await gate.waitForCount(1)
@@ -102,8 +105,25 @@ struct FakeGPURendererTests {
         task.cancel()
         gate.append(())
 
-        #expect(await task.value == .failure(.internalError))
-        #expect(renderer.requests.count == 0)
+        await renderer.requests.waitForCount(1)
+        #expect(task.isCancelled)
+        #expect(renderer.pendingCount == 1)
+        renderer.complete(try #require(renderer.requests.last), with: .success(timing))
+        #expect(await task.value == .success(timing))
         #expect(renderer.pendingCount == 0)
+    }
+
+    @Test("requests are recorded in call order: the ids count up from 1 whether answered at once or suspended")
+    func requestsAreNumberedInCallOrder() async throws {
+        renderer.respond(with: .success(timing))
+        _ = await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1))
+        renderer.respond(with: nil)
+        let task = Task { await renderer.render(library: library, input: token(3), output: token(4), uniforms: uniforms(2)) }
+        await renderer.requests.waitForCount(2)
+
+        #expect(renderer.requests.values.map(\.id) == [1, 2])
+        #expect(renderer.requests.values.map(\.uniforms.frameIndex) == [1, 2])
+        renderer.complete(try #require(renderer.requests.last), with: .failure(.timeout))
+        #expect(await task.value == .failure(.timeout))
     }
 }

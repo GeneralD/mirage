@@ -6,11 +6,16 @@ import TestSupport
 /// chooses — exactly once, in any order — so "the GPU answers after the next
 /// frame was captured" is a sequence the test writes down. `respond(with:)`
 /// scripts an immediate answer instead (still recorded) for suites that do not
-/// care about timing. A caller whose task is cancelled while suspended is
-/// resumed with `.failure(.internalError)`, so a stopped pipeline never leaks a
-/// continuation into the suite's time limit.
+/// care about timing.
+///
+/// Like the live `GPURenderDataSource`, it does not observe task cancellation:
+/// a cancelled caller (even one cancelled before the call) is recorded and keeps
+/// waiting for `complete(_:with:)`, then receives that answer. A suite that
+/// cancels a render must therefore complete it before it ends, or the suite's
+/// time limit reports the leak.
 public final class FakeGPURenderer: GPURenderer, Sendable {
     public struct Request: Sendable {
+        /// Call order: 1 for the first render that reached the fake, and so on.
         public let id: Int
         public let library: any LibraryHandle
         public let input: SurfaceToken
@@ -25,11 +30,13 @@ public final class FakeGPURenderer: GPURenderer, Sendable {
         var nextID = 1
         var scripted: Answer?
         var waiting: [Int: Continuation] = [:]
-        var cancelledBeforeSuspending: Set<Int> = []
     }
 
     private let state = Locked(State())
-    /// Every render handed in, in call order, answered or not.
+    /// Every render, answered or not, in the order it reached the fake (its `id`
+    /// order). Concurrent callers reach it in the scheduler's order, so a test
+    /// that depends on which request is which starts them one at a time
+    /// (`requests.waitForCount(n)` between them).
     public let requests = Collector<Request>()
 
     public init() {}
@@ -43,15 +50,26 @@ public final class FakeGPURenderer: GPURenderer, Sendable {
         state.withLock { $0.scripted = answer }
     }
 
-    public func render(library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms) async -> Answer {
-        let (id, scripted) = state.withLock { state in
-            defer { state.nextID += 1 }
-            return (state.nextID, state.scripted)
+    /// Numbering, recording and registering happen in one critical section, so the
+    /// recording order is the `id` order and a recorded request is always either
+    /// answered at once or waiting. (`Collector` takes its own lock and never calls
+    /// back into `state`, so the nesting cannot deadlock.)
+    public func render(
+        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms
+    ) async -> Answer {
+        await withCheckedContinuation { (continuation: Continuation) in
+            let scripted = state.withLock { state -> Answer? in
+                let request = Request(id: state.nextID, library: library, input: input, output: output, uniforms: uniforms)
+                state.nextID += 1
+                requests.append(request)
+                guard let answer = state.scripted else {
+                    state.waiting[request.id] = continuation
+                    return nil
+                }
+                return answer
+            }
+            if let scripted { continuation.resume(returning: scripted) }
         }
-        let request = Request(id: id, library: library, input: input, output: output, uniforms: uniforms)
-        guard let scripted else { return await suspend(request) }
-        requests.append(request)
-        return scripted
     }
 
     /// Resumes the suspended `render`; `false` when it is unknown or already answered.
@@ -60,32 +78,5 @@ public final class FakeGPURenderer: GPURenderer, Sendable {
         guard let continuation = state.withLock({ $0.waiting.removeValue(forKey: request.id) }) else { return false }
         continuation.resume(returning: answer)
         return true
-    }
-
-    /// A request is recorded if and only if it was registered as waiting, in one
-    /// critical section, so a cancellation never leaves a recorded request that was
-    /// already resumed, and a caller cancelled before it suspended is never recorded.
-    /// (`Collector` takes its own lock and never calls back into `state`.)
-    private func suspend(_ request: Request) async -> Answer {
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: Continuation) in
-                let alreadyCancelled = state.withLock { state in
-                    guard state.cancelledBeforeSuspending.remove(request.id) == nil else { return true }
-                    state.waiting[request.id] = continuation
-                    requests.append(request)
-                    return false
-                }
-                guard !alreadyCancelled else { return continuation.resume(returning: .failure(.internalError)) }
-            }
-        } onCancel: {
-            let continuation = state.withLock { state -> Continuation? in
-                guard let waiting = state.waiting.removeValue(forKey: request.id) else {
-                    state.cancelledBeforeSuspending.insert(request.id)
-                    return nil
-                }
-                return waiting
-            }
-            continuation?.resume(returning: .failure(.internalError))
-        }
     }
 }
