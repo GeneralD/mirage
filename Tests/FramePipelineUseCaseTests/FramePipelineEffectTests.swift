@@ -43,6 +43,22 @@ private final class LeaseProbeSink: VirtualCameraSink, Sendable {
     }
 }
 
+/// A sink whose `disconnect` only queues the teardown, as the live transport's does
+/// (it runs later on the executor): a send that reaches it before then still goes out.
+/// Here the teardown never runs, so every send the pipeline makes is recorded.
+private final class QueuedTeardownSink: VirtualCameraSink, Sendable {
+    let sent = Collector<FrameRef>()
+
+    func connect() async throws {}
+    func disconnect() {}
+    func observe(_ onEvent: @escaping @Sendable (FrameTransportEvent) -> Void) {}
+
+    func send(_ frame: FrameRef) -> SendOutcome {
+        sent.append(frame)
+        return .sent
+    }
+}
+
 @Suite("FramePipelineUseCaseImpl effect stage", .timeLimit(.minutes(1)))
 struct FramePipelineEffectTests {
     private func started(_ rig: Rig, frameRate: FrameRate = .standard) async throws {
@@ -322,21 +338,25 @@ struct FramePipelineEffectTests {
         #expect(rig.surfaces.refusedReleases == 0)
     }
 
-    @Test("an answer already queued when stop is called ends its leases once; the sink is already disconnected")
-    func answerQueuedBeforeStop() async throws {
-        let rig = Rig(capacity: 4)
+    @Test(
+        "an answer already queued when stop is called is never sent, even while the sink's teardown is still pending; its leases end once",
+        arguments: [Result<Void, EffectFailure>.success(()), .failure(.internalError)])
+    func answerQueuedBeforeStopIsNotSent(answer: Result<Void, EffectFailure>) async throws {
+        let sink = QueuedTeardownSink()
+        let rig = Rig(sink: sink, capacity: 4)
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
         let request = try await rig.applyRequest(0)
-        #expect(rig.effects.completeApply(request, with: .success(())))
+        #expect(rig.effects.completeApply(request, with: answer))
         await rig.work.finished.waitForCount(1)
 
+        // The answer now waits on the executor ahead of everything `stop` queues.
         rig.subject.stop()
         rig.executor.drain()
-        #expect(rig.sink.sent.count == 0)
-        #expect(rig.subject.stats.effectsApplied == 1)
-        #expect(rig.subject.stats.dropReasons == [.notConnected: 1])
+        #expect(sink.sent.count == 0, "stop abandoned the pass at once, before its queued answer ran")
+        #expect(rig.subject.stats.effectPasses == 0)
+        #expect(rig.subject.stats.framesDropped == 0)
         #expect(rig.surfaces.liveCount == 0)
         #expect(rig.surfaces.refusedReleases == 0)
     }

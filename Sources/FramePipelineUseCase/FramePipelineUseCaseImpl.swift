@@ -55,6 +55,10 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     // and the index the next pass of this run hands the effect.
     private var inFlight: EffectPass?
     private var frameIndex: UInt32 = 0
+    /// How many times `stop` was called. `stop` bumps it first thing, from the caller's
+    /// context (the subject synchronizes its `value`; `stop` is its only writer), and
+    /// the executor compares a pass's epoch with it before sending anything.
+    private let stopEpoch = CurrentValueSubject<Int, Never>(0)
     let phaseSubject = CurrentValueSubject<PipelinePhase, Never>(.idle)
 
     public init() {}
@@ -88,6 +92,10 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     }
 
     public func stop() {
+        // First, from the caller's context: every pass started before this moment is
+        // abandoned now, so an answer already queued on the executor ahead of the
+        // cleanup below can no longer send — whenever the sink's own teardown lands.
+        stopEpoch.value += 1
         frameScheduler.stop()
         cameraRepository.stop()
         // Cancel the reconnect work before the sink's generation moves: a task that
@@ -101,7 +109,7 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
         frameExecutor.run { [self] in
             phaseSubject.value = .stopped
             releaseLatest()
-            abandonEffect()
+            resetPoolWhenIdle()
         }
     }
 }
@@ -183,7 +191,7 @@ extension FramePipelineUseCaseImpl {
             let result = await runtime.apply(input: input, output: output, frameContext: context)
             self?.frameExecutor.run { [weak self] in self?.effectFinished(with: result) }
         }
-        inFlight = EffectPass(input: input, output: output, isAbandoned: false)
+        inFlight = EffectPass(input: input, output: output, epoch: stopEpoch.value)
     }
 
     /// The output carries the input's geometry and presentation time, so the stream
@@ -204,11 +212,12 @@ extension FramePipelineUseCaseImpl {
     /// The runtime's answer, back on the executor; it frees the in-flight cap. On
     /// success the input's lease ends now that the runtime is done reading it and the
     /// output goes on; on any failure the unused output is given back first and the
-    /// input goes on unchanged. A pass `stop` abandoned is only ended.
+    /// input goes on unchanged. A pass a `stop` has abandoned since it started is
+    /// only ended, even when its answer was already queued before that `stop`.
     private func effectFinished(with result: Result<Void, EffectFailure>) {
         guard let pass = inFlight else { return }
         inFlight = nil
-        guard !pass.isAbandoned else { return endAbandoned(pass) }
+        guard pass.epoch == stopEpoch.value else { return endAbandoned(pass) }
         update { $0.noteEffect(result) }
         switch result {
         case .success:
@@ -220,20 +229,21 @@ extension FramePipelineUseCaseImpl {
         }
     }
 
-    /// `stop`: a pass in flight cannot be called back — the GPU finishes what it was
-    /// given and `apply` answers with the real outcome — so it is marked abandoned and
-    /// keeps both leases, and the in-flight cap, until that answer. Releasing them
-    /// earlier would hand surfaces the GPU still reads or writes to the next frame.
-    /// The pool is reset (`releaseAll`) here only when no pass is in flight; otherwise
-    /// the reset waits for the answer.
-    private func abandonEffect() {
-        guard let pass = inFlight else { return surfaceRepository.releaseAll() }
-        inFlight = pass.abandoned
+    /// `stop`'s pool reset (`releaseAll`), run only when no pass is in flight. A pass
+    /// still running was abandoned by `stop` but cannot be called back — the GPU
+    /// finishes what it was given and `apply` answers with the real outcome — so it
+    /// keeps both leases, and the in-flight cap, until that answer; resetting the pool
+    /// now would hand surfaces the GPU still reads or writes to the next frame. The
+    /// reset then waits for the answer (`endAbandoned`).
+    private func resetPoolWhenIdle() {
+        guard inFlight == nil else { return }
+        surfaceRepository.releaseAll()
     }
 
     /// The answer to a pass `stop` abandoned: nothing is sent and the outcome is not
-    /// counted as applied or failed; both leases end. If the pipeline is still
-    /// stopped, the pool reset `stop` deferred runs now; after a restart the pool
+    /// counted as applied or failed; both leases end. If `stop`'s cleanup has run and
+    /// the pipeline is still stopped, the pool reset it deferred runs now (an answer
+    /// that overtakes the cleanup leaves the reset to it); after a restart the pool
     /// belongs to the new run and is left alone.
     private func endAbandoned(_ pass: EffectPass) {
         surfaceRepository.release(pass.input.token)

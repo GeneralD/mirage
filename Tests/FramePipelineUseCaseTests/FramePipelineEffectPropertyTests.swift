@@ -8,7 +8,8 @@ import Testing
 /// A pass the model knows is in flight: its input, the order it started in (which is
 /// also its `apply` request and its work item, as nothing else starts work here), the
 /// frame index its run handed it and — once the runtime has answered — the answer and
-/// the frame it would send. `stop` abandons it, but it stays in flight until answered.
+/// the frame it would send. `stop()` abandons it at once, but it stays in flight until
+/// answered.
 private struct ModelPass {
     let input: FrameRef
     let index: Int
@@ -22,15 +23,13 @@ private struct ModelPass {
 private enum Queued: Equatable {
     /// A pass's answer, hopping back onto the executor.
     case answer
-    /// The second half of `stop()`: the slot ends and the pass is abandoned.
+    /// The cleanup half of `stop()`: the slot ends (and the pool resets when no pass runs).
     case stop
 }
 
 /// What the test expects the subject to have done, tracked independently of it.
 private struct EffectModel {
     var running = true
-    /// From `start` until the next `stop()` call, which disconnects at once.
-    var sinkConnected = true
     var queue: [Queued] = []
     var latest: FrameRef?
     var pass: ModelPass?
@@ -45,9 +44,9 @@ private struct EffectModel {
     var capDrops = 0
     /// Cap drops in a restarted run while the old run's abandoned pass still held the cap.
     var capDropsBehindAbandoned = 0
-    /// Answers drained after `stop()` disconnected the sink: their frame drops as `.notConnected`.
-    var stopDrops = 0
     var abandoned = 0
+    /// Passes whose answer was already queued when `stop()` abandoned them.
+    var answeredThenAbandoned = 0
     var abandonedAnswered = 0
     var restarts = 0
     var applied = 0
@@ -65,7 +64,7 @@ private struct EffectCoverage {
     var applied = 0
     var failed = 0
     var abandoned = 0
-    var stopDrops = 0
+    var answeredThenAbandoned = 0
     var restarts = 0
     var capDropsBehindAbandoned = 0
 }
@@ -80,7 +79,7 @@ struct FramePipelineEffectPropertyTests {
     }
 
     @Test(
-        "across the seeds every path is taken: applied, failed, cap drop, abandoned at stop, answered into a stopping sink, restart behind an abandoned pass"
+        "across the seeds every path is taken: applied, failed, cap drop, abandoned at stop, abandoned with its answer queued, restart behind an abandoned pass"
     )
     func seedsCoverEveryPath() async throws {
         var total = EffectCoverage()
@@ -90,7 +89,7 @@ struct FramePipelineEffectPropertyTests {
             total.applied += coverage.applied
             total.failed += coverage.failed
             total.abandoned += coverage.abandoned
-            total.stopDrops += coverage.stopDrops
+            total.answeredThenAbandoned += coverage.answeredThenAbandoned
             total.restarts += coverage.restarts
             total.capDropsBehindAbandoned += coverage.capDropsBehindAbandoned
         }
@@ -98,7 +97,7 @@ struct FramePipelineEffectPropertyTests {
         #expect(total.applied > 0, "no seed ever applied an effect")
         #expect(total.failed > 0, "no seed ever passed a failure through")
         #expect(total.abandoned > 0, "no seed ever stopped with a pass in flight")
-        #expect(total.stopDrops > 0, "no seed ever drained an answer after stop")
+        #expect(total.answeredThenAbandoned > 0, "no seed ever stopped with an answer already queued")
         #expect(total.restarts > 0, "no seed ever restarted")
         #expect(total.capDropsBehindAbandoned > 0, "no seed ever ticked a restarted run into an abandoned pass")
     }
@@ -137,9 +136,8 @@ struct FramePipelineEffectPropertyTests {
         #expect(zip(times, times.dropFirst()).allSatisfy { $0 < $1 }, "seed \(seed): PTS strictly increasing")
         #expect(stats.framesReceived == model.emitted, "seed \(seed)")
         #expect(stats.framesSent == model.sent.count, "seed \(seed)")
-        #expect(stats.framesDropped == model.capDrops + model.stopDrops, "seed \(seed)")
-        #expect(stats.dropReasons[.inFlightCapReached, default: 0] == model.capDrops, "seed \(seed)")
-        #expect(stats.dropReasons[.poolExhausted] == nil, "seed \(seed): a pool of four never runs out")
+        #expect(stats.framesDropped == model.capDrops, "seed \(seed): nothing is sent into a stopping sink")
+        #expect(stats.dropReasons == (model.capDrops == 0 ? [:] : [.inFlightCapReached: model.capDrops]), "seed \(seed)")
         #expect(
             model.ticksTaking == stats.framesSent + stats.framesDropped + model.abandoned,
             "seed \(seed): every frame a tick took was sent, counted as a drop, or abandoned by stop")
@@ -148,7 +146,7 @@ struct FramePipelineEffectPropertyTests {
         #expect(stats.effectFailures == model.failures, "seed \(seed)")
         return EffectCoverage(
             capDrops: model.capDrops, applied: model.applied, failed: model.failures.values.reduce(0, +),
-            abandoned: model.abandoned, stopDrops: model.stopDrops, restarts: model.restarts,
+            abandoned: model.abandoned, answeredThenAbandoned: model.answeredThenAbandoned, restarts: model.restarts,
             capDropsBehindAbandoned: model.capDropsBehindAbandoned)
     }
 
@@ -170,7 +168,6 @@ struct FramePipelineEffectPropertyTests {
         case 0..<16 where !model.running && !model.stopQueued:
             try await rig.subject.start(descriptor: .hd720, frameRate: .standard)
             model.running = true
-            model.sinkConnected = true
             model.runPasses = 0
             model.restarts += 1
             drain(&model, rig)
@@ -188,7 +185,7 @@ struct FramePipelineEffectPropertyTests {
         case 40 where model.running:
             rig.subject.stop()
             model.running = false
-            model.sinkConnected = false
+            abandon(&model)
             model.queue.append(.stop)
         default:
             return
@@ -224,16 +221,24 @@ struct FramePipelineEffectPropertyTests {
         model.queue.append(.answer)
     }
 
-    /// Runs what is queued, in queue order. An answer queued before `stop()` finishes its
-    /// pass normally — into a sink `stop()` already disconnected; the stop's own work then
-    /// ends the slot and abandons a pass still unanswered, whose later answer only ends
-    /// its leases.
+    /// `stop()` itself: the pass in flight is abandoned at once — even one whose answer
+    /// already waits on the executor, which therefore never sends. A pass an earlier
+    /// run's `stop()` abandoned is not abandoned twice.
+    private func abandon(_ model: inout EffectModel) {
+        guard let pass = model.pass, !pass.abandoned else { return }
+        model.pass?.abandoned = true
+        model.abandoned += 1
+        if pass.answer != nil { model.answeredThenAbandoned += 1 }
+    }
+
+    /// Runs what is queued, in queue order: an answer ends its pass (sent, or for an
+    /// abandoned pass only its leases ended); the stop's cleanup ends the slot.
     private func drain(_ model: inout EffectModel, _ rig: Rig) {
         rig.executor.drain()
         for queued in model.queue {
             switch queued {
             case .answer: finish(&model)
-            case .stop: abandon(&model)
+            case .stop: model.latest = nil
             }
         }
         model.queue = []
@@ -250,13 +255,6 @@ struct FramePipelineEffectPropertyTests {
         case .success: model.applied += 1
         case .failure(let failure): model.failures[failure, default: 0] += 1
         }
-        if model.sinkConnected { model.sent.append(sends) } else { model.stopDrops += 1 }
-    }
-
-    private func abandon(_ model: inout EffectModel) {
-        model.latest = nil
-        guard model.pass != nil else { return }
-        model.pass?.abandoned = true
-        model.abandoned += 1
+        model.sent.append(sends)
     }
 }
