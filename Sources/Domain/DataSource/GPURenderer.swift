@@ -14,7 +14,13 @@ public protocol GPURenderer: Sendable {
     /// Runs `library` with `input` at texture index 0 and `output` at index 1,
     /// `uniforms` at buffer index 0, over a grid covering the output surface.
     /// Both leases stay the caller's; the renderer only borrows the surfaces
-    /// until the command buffer completes.
+    /// until the command buffer completes and never releases either.
+    ///
+    /// Cancellation does not cut a pass short: `render` does not observe task
+    /// cancellation, a committed command buffer cannot be withdrawn, so a
+    /// cancelled caller (even one cancelled before the call) still waits for the
+    /// pass and receives its real outcome. The caller keeps both leases until
+    /// `render` returns.
     func render(
         library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms
     ) async -> Result<GPUTiming, EffectFailure>
