@@ -141,9 +141,10 @@ struct ExtensionInstallDataSourceTests {
         let table: [(Int, InstallFailure)] = [
             (10, .denied), (11, .canceled), (12, .canceled),
             (2, .invalidBuild(code: 2)), (3, .invalidBuild(code: 3)), (4, .invalidBuild(code: 4)),
-            (5, .invalidBuild(code: 5)), (8, .invalidBuild(code: 8)), (9, .invalidBuild(code: 9)),
-            (1, .other(code: 1, description: "d")), (6, .other(code: 6, description: "d")),
-            (7, .other(code: 7, description: "d")), (13, .other(code: 13, description: "d")),
+            (5, .invalidBuild(code: 5)), (6, .invalidBuild(code: 6)), (7, .invalidBuild(code: 7)),
+            (8, .invalidBuild(code: 8)), (9, .invalidBuild(code: 9)),
+            (1, .other(code: 1, description: "d")), (13, .other(code: 13, description: "d")),
+            (14, .other(code: 14, description: "d")),
         ]
         for (code, expected) in table {
             #expect(ExtensionInstallDataSourceImpl.failure(code: code, description: "d") == expected, "code \(code)")

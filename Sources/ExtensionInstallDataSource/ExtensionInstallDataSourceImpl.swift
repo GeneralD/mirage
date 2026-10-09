@@ -120,13 +120,14 @@ extension ExtensionInstallDataSourceImpl {
     /// Classifies a raw `OSSystemExtensionError.Code` (kept as numbers so the gateway
     /// stays a pass-through): 10 forbiddenBySystemPolicy; 11 requestCanceled and
     /// 12 requestSuperseded; 2 missingEntitlement, 3 unsupportedParentBundleLocation,
-    /// 4 extensionNotFound, 5 extensionMissingIdentifier, 8 codeSignatureInvalid and
-    /// 9 validationFailed describe a wrong build.
+    /// 4 extensionNotFound, 5 extensionMissingIdentifier, 6 duplicateExtensionIdentifier,
+    /// 7 unknownExtensionCategory, 8 codeSignatureInvalid and 9 validationFailed describe
+    /// a wrong build. 1 unknown and 13 authorizationRequired stay `other`.
     static func failure(code: Int, description: String) -> InstallFailure {
         switch code {
         case 10: .denied
         case 11, 12: .canceled
-        case 2, 3, 4, 5, 8, 9: .invalidBuild(code: code)
+        case 2...9: .invalidBuild(code: code)
         default: .other(code: code, description: description)
         }
     }
