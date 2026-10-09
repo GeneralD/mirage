@@ -77,6 +77,7 @@ struct FramePipelineLifecycleTests {
         rig.executor.drain()
         rig.scheduler.tick()
         #expect(rig.sink.sent.count == 0)
+        #expect(rig.work.started.count == 0, "stop leaves no frame for a tick to start a pass on")
     }
 
     @Test("a capture end releases the pending frame and is logged as an error")
@@ -90,6 +91,8 @@ struct FramePipelineLifecycleTests {
         #expect(rig.errors.messages(in: .camera).contains { $0.contains("device disconnected") })
         #expect(rig.developer.messages(in: .camera).isEmpty)
         rig.scheduler.tick()
+        #expect(rig.work.started.count == 0, "the released frame is gone, not merely released: no pass starts on it")
+        #expect(rig.surfaces.liveCount == 0)
         #expect(rig.sink.sent.count == 0)
     }
 
