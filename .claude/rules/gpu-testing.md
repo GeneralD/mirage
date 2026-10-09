@@ -32,6 +32,11 @@ Only three things touch a real `MTLDevice`:
    `ShaderCompileOptions.precise` (→ `fastMathEnabled = false`) is the default.
 3. Hash-noise parity — GPU vs Swift reference, same tolerance.
 
+`CommandBufferErrorCodeTests` sits in the same target without touching a
+device: it pins `GPUCompletionMapping`'s domain string and code numbers to the
+SDK's `MTLCommandBufferErrorDomain` / `MTLCommandBufferError.Code`, wrapped as
+`MetalGateway` wraps them, because this is the only target that links Metal.
+
 ## Rules
 
 - These suites live in `Tests/GPUSmokeTests`, are `.serialized`, and are gated

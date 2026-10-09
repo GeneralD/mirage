@@ -99,6 +99,9 @@ let package = Package(
         .testTarget(name: "StreamOutputDataSourceTests", dependencies: ["StreamOutputDataSource"] + testDependencies),
         .target(name: "ExtensionInstallDataSource", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallDataSourceTests", dependencies: ["ExtensionInstallDataSource"] + testDependencies),
+        // Host only (it drives MetalGateway through the GPU ports): one effect pass, one command buffer.
+        .target(name: "GPURenderDataSource", dependencies: dependencies),
+        .testTarget(name: "GPURenderDataSourceTests", dependencies: ["GPURenderDataSource"] + testDependencies),
 
         // ── Repository ──
         .target(name: "CameraRepository", dependencies: dependencies),
@@ -151,6 +154,7 @@ let package = Package(
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
+                "GPURenderDataSource",
                 "AVFoundationGateway", "MetalGateway", "SystemExtensionGateway",
             ]
         ),
@@ -174,7 +178,7 @@ let package = Package(
         // import allow-list (Sources/ only) does not apply. .claude/rules/gpu-testing.md.
         .testTarget(
             name: "GPUSmokeTests",
-            dependencies: dependencies + ["MetalGateway", "IOSurfaceGateway", "TestDoubles"]
+            dependencies: dependencies + ["MetalGateway", "IOSurfaceGateway", "GPURenderDataSource", "TestDoubles"]
         ),
 
         // ── Test support ──

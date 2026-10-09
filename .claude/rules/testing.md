@@ -52,7 +52,22 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   at 1 per fake, so one from another instance returns `false` (a reported issue
   for `FakeGPUGateway`) and never resumes anything. Start
   concurrent callers one at a time (`waitForCount(n)` between them) when the
-  test depends on request order. `InMemoryPreviewSink` —
+  test depends on request order.
+  `FakeGPURenderer` — one layer down, for the Repository suites: `render`
+  suspends until `complete(_:with:)` (any order, exactly once) unless
+  `respond(with:)` scripted an immediate answer; `requests` is a `Collector` in
+  call (`id`) order. Its requests carry their issuing instance the same way, so
+  `complete` returns `false` for another `FakeGPURenderer`'s request and leaves
+  every pending render untouched. Like `FakeEffectRuntimeRepository` it ignores
+  cancellation, as its live counterpart does: `GPURenderDataSource` cannot
+  withdraw a committed pass, so a cancelled caller — even one cancelled before
+  the call — is recorded and keeps waiting; complete every request a test
+  cancels.
+  The `GPURenderDataSource` suite itself drives the executor hop in two
+  phases: it awaits `RecordingFrameExecutor.enqueued` (the render has queued its
+  hop), asserts that no context, binding or command buffer exists and no answer
+  arrived, then `drain()`s; passes complete through `FakeGPUGateway`. Removing
+  the hop turns that suite red. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
