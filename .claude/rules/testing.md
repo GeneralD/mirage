@@ -48,9 +48,10 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   runtime it ignores the caller's cancellation: a cancelled call is still
   recorded and waits for its completion, so a test that stops the pipeline
   mid-pass completes the pending request itself (`pendingCount`). Requests,
-  submissions and presentations carry the instance that issued them: ids restart
-  at 1 per fake, so one from another instance returns `false` (a reported issue
-  for `FakeGPUGateway`) and never resumes anything. Start
+  submissions, presentations and draws carry the instance that issued them: ids
+  restart at 1 per fake, so one from another instance returns `false` (a
+  reported issue for the two gateways, `FakeGPUGateway` and
+  `FakePreviewGateway`) and never resumes anything. Start
   concurrent callers one at a time (`waitForCount(n)` between them) when the
   test depends on request order.
   `FakeGPURenderer` — one layer down, for the Repository suites: `render`
@@ -71,6 +72,15 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
+- `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
+  answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
+  `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing
+  instance the same way, so `complete` returns `false` for another
+  `FakePreviewGateway`'s draw and leaves every pending draw untouched.
+  `failPrepare(with:)` / `failDraw(with:)` make **every** later `prepare` /
+  `draw` throw (`draw` before commit) until `fail…(with: nil)` clears it, like
+  the other fakes' `fail…` hooks. Foreign handles are refused in the live order
+  (`prepare`: target, then context; `draw`: context, kernel, texture, layer).
 - `FakeShaderCompiler` — the `ShaderCompiler` (`ShaderCompilationDataSource`)
   double: every `compile` suspends until `complete(_:with:)` (any handle or
   diagnostics) or `succeed(_:)` (a fresh `FakeLibraryHandle` of the request's

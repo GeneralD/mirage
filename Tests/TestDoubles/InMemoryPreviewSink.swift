@@ -1,7 +1,8 @@
 import Domain
 import TestSupport
 
-/// The drawable `InMemoryPreviewSink` accepts; identity is the object itself.
+/// Stands in for the preview view: the target `InMemoryPreviewSink.attach` and
+/// `FakePreviewGateway.prepare` accept; identity is the object itself.
 public final class FakePreviewTargetHandle: PreviewTargetHandle, Sendable {
     public init() {}
 
@@ -40,7 +41,7 @@ public final class InMemoryPreviewSink: PreviewSink, Sendable {
         return presented.values.filter { ids[$0.id] != nil }
     }
 
-    public func attach(_ target: any PreviewTargetHandle) throws {
+    public nonisolated func attach(_ target: any PreviewTargetHandle) throws {
         let fake = try (target as? FakePreviewTargetHandle).orThrow(PreviewError.foreignTarget)
         state.withLock { $0.attached.append(fake) }
     }

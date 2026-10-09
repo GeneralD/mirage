@@ -78,10 +78,11 @@ Shared conventions:
 - No OS framework import (AVFoundation, Metal, MetalKit, IOSurface,
   CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, os) outside
   Gateway modules and the View/Router/App lane. `make check` fails otherwise.
-- The extension process never links Metal: `MetalGateway` is registered in
-  `HostDependencyInjection` only, and `scripts/check-extension-no-metal.sh`
-  (in `make check`) walks the package graph from `ExtensionApp` /
-  `ExtensionDependencyInjection` and fails when a Metal module is reachable.
+- The extension process never links Metal: `MetalGateway` and
+  `MetalKitPreviewGateway` are registered in `HostDependencyInjection` only,
+  and `scripts/check-extension-no-metal.sh` (in `make check`) walks the
+  package graph from `ExtensionApp` / `ExtensionDependencyInjection` and fails
+  when a Metal module, `PreviewDataSource` or `Views` is reachable.
 - No physical symbol outside Gateway/Support live modules: `Date()`,
   `Date.now`, `ContinuousClock()`, `.now`, `Task.sleep`, `DispatchQueue`,
   `DispatchSource`, `Thread`, `UUID()`, `.random(in:)`,
@@ -92,11 +93,13 @@ Shared conventions:
 - No layer skipping. An Interactor never holds a Gateway; a UseCase never
   holds a DataSource. Thread pass-through contracts through adjacent layers.
 - Every host port has a live value from the day its contract exists:
-  `EffectRuntimeRepository` and `PreviewSink` are registered as
+  `EffectRuntimeRepository` is registered as
   `PassthroughEffectRuntimeRepository` (`prepare` and `apply` →
-  `.failure(.internalError)`, the pipeline passes the frame through) and `DiscardingPreviewSink`
-  (`present` completes at once) until the real ones replace them in the same
-  modules. A PR merged out of order never leaves the pipeline without a runtime.
+  `.failure(.internalError)`, the pipeline passes the frame through) until the
+  real one replaces it in the same module. `PreviewSink` is already real
+  (`PreviewRepositoryImpl` over `PreviewDataSource`, which completes frames at
+  once until a view is attached). A PR merged out of order never leaves the
+  pipeline without a runtime or a sink.
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
   the owning UseCase module, never as a second UseCase.
@@ -159,7 +162,8 @@ Shared conventions:
   (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
   `completeApply`), `FakeGPURenderer` (`complete(request, with:)`, or a
   scripted `respond(with:)`), `FakeShaderCompiler` (`complete(request, with:)` /
-  `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`).
+  `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`),
+  `FakePreviewGateway` (`complete(draw, with:)`).
   Each completion is exactly once; a second one, or one another instance
   issued, returns `false` (`FakeShaderCompiler.succeed` returns `nil`). Like
   their live counterparts, the runtime, renderer and compiler fakes ignore
