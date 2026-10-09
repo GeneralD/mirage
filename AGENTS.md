@@ -107,7 +107,13 @@ Shared conventions:
   frame path is a single-threaded state machine; no locks in UseCases. Async
   work the frame path must start (the host reconnect) goes through the
   `WorkRunner` port and its `WorkHandle`, never an unstructured `Task {` in a
-  UseCase.
+  UseCase. The shader compile is the same: `ShaderCompilationDataSource` runs it
+  inside a `WorkRunner` item, never on main and never in a bare `Task {`.
+- Effects compile behind the engine prelude (`Uniforms`, `hash`, `noise`) and a
+  `#line 1 "effect"` directive, so diagnostics carry the author's line numbers;
+  locations against the assembled source are rewritten to `effect:` /
+  `prelude:`. `hash` / `noise` have a Swift twin, `HashNoiseReference`, checked
+  on the GPU by the `hash-noise parity` suite.
 - Surface lifetime is owned by `SurfaceRepository`: `allocate` hands out a
   `SurfaceToken`, `release(token)` gives the slot back and reports whether the
   token was still live, `liveCount` is the invariant. A UseCase releases the
@@ -152,10 +158,12 @@ Shared conventions:
 - The GPU and effect fakes complete manually, in any order: `FakeGPUGateway`
   (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
   `completeApply`), `FakeGPURenderer` (`complete(request, with:)`, or a
-  scripted `respond(with:)`), `InMemoryPreviewSink` (`complete(presentation)`).
+  scripted `respond(with:)`), `FakeShaderCompiler` (`complete(request, with:)` /
+  `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`).
   Each completion is exactly once; a second one, or one another instance
-  issued, returns `false`. Like their live counterparts, the runtime and
-  renderer fakes ignore cancellation.
+  issued, returns `false` (`FakeShaderCompiler.succeed` returns `nil`). Like
+  their live counterparts, the runtime, renderer and compiler fakes ignore
+  cancellation.
   `FakeShaderLibraryGateway` reports an issue when called on the main thread;
   `FakeTextureCacheGateway.isBalanced` is the bind/unbind invariant.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect

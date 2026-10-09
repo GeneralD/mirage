@@ -71,6 +71,20 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
+- `FakeShaderCompiler` — the `ShaderCompiler` (`ShaderCompilationDataSource`)
+  double: every `compile` suspends until `complete(_:with:)` (any handle or
+  diagnostics) or `succeed(_:)` (a fresh `FakeLibraryHandle` of the request's
+  source), exactly once and in any order, so a slow compile overtaken by a newer
+  one is a sequence the test writes. Like `FakeEffectRuntimeRepository` it
+  ignores cancellation, as the live DataSource does: a cancelled caller waits
+  for the test's completion and gets that result (the stale success after a
+  newer compile can be written down), so a test completes every request it
+  starts — one left pending surfaces through the time limit. Its requests carry
+  their issuing instance the same way, so `complete` returns `false` and
+  `succeed` `nil` for another `FakeShaderCompiler`'s request, leaving every
+  pending compile untouched. `HashNoiseReference`
+  (Tests/TestSupport) is the Swift twin of the prelude's `hash` / `noise`, for
+  the parity GPU suite and the Swift-only property tests.
 - `InMemoryFrameTransport` — the in-process Mach kernel behind the host↔extension
   loopback (`Tests/FramePathIntegrationTests/LoopbackRig.swift` keeps
   **separate surface pools on each side**). Hooks: a bootstrap table (look-up

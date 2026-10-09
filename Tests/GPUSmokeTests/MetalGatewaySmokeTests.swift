@@ -1,8 +1,11 @@
+import Dependencies
 import Domain
-import IOSurface
+import Foundation
 import IOSurfaceGateway
 import MetalGateway
+import ShaderCompilationDataSource
 import TestDoubles
+import TestSupport
 import Testing
 
 /// The one suite that drives `MetalGateway` against a real device: runtime
@@ -14,43 +17,44 @@ import Testing
 ///
 /// `mac2` only: whole threadgroups, bounds-checked kernels, no Apple-family
 /// features. The kernels are plain fills, so nothing here can hang or fault.
-/// The MSL `Uniforms` declaration is inlined because the prelude that will
-/// carry it belongs to `ShaderCompilationDataSource`.
+/// Every kernel is assembled the way `ShaderCompilationDataSource` assembles an
+/// effect (the prelude's `Uniforms`, then `#line 1 "effect"`), so the suite also
+/// proves the prelude compiles and that `#line` maps diagnostics on this compiler.
 @Suite("MetalGateway smoke", .serialized, .enabled(if: MetalDeviceProbe.isAvailable), .timeLimit(.minutes(1)))
 struct MetalGatewaySmokeTests {
     private let gateway = MetalGatewayImpl()
     private let surfaces = IOSurfaceGatewayImpl()
     private static let descriptor = SurfaceDescriptor.bgra(width: 256, height: 256)
-    /// One 8-bit step: the GPU rounds the unorm store, the reference rounds in Swift.
-    private static let tolerance = 1
-
-    private static let header = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct Uniforms { float time; uint frameIndex; float2 resolution; uint seed; };
-
-        """
 
     /// Every pixel becomes B G R A = 64 128 255 255.
-    private static let fillSource =
-        header + """
-            kernel void effect(texture2d<float, access::write> out [[texture(0)]], constant Uniforms &u [[buffer(0)]],
-                               uint2 gid [[thread_position_in_grid]]) {
-                if (gid.x >= out.get_width() || gid.y >= out.get_height()) { return; }
-                out.write(float4(1.0, 0.5, 0.25, 1.0), gid);
-            }
-            """
+    private static let fillEffect = """
+        kernel void effect(texture2d<float, access::write> out [[texture(0)]], constant Uniforms &u [[buffer(0)]],
+                           uint2 gid [[thread_position_in_grid]]) {
+            if (gid.x >= out.get_width() || gid.y >= out.get_height()) { return; }
+            out.write(float4(1.0, 0.5, 0.25, 1.0), gid);
+        }
+        """
+    private static let fillSource = ShaderSourceAssembly.assemble(fillEffect)
 
     /// `r = x / (w - 1)`, `g = y / (h - 1)`, `b = fract(time)`, `a = (seed % 256) / 255` — mirrored by `reference`.
-    private static let gradientSource =
-        header + """
-            kernel void effect(texture2d<float, access::write> out [[texture(0)]], constant Uniforms &u [[buffer(0)]],
-                               uint2 gid [[thread_position_in_grid]]) {
-                if (gid.x >= out.get_width() || gid.y >= out.get_height()) { return; }
-                float2 uv = float2(gid) / (u.resolution - 1.0);
-                out.write(float4(uv.x, uv.y, fract(u.time), float(u.seed % 256u) / 255.0), gid);
-            }
-            """
+    private static let gradientSource = ShaderSourceAssembly.assemble(
+        """
+        kernel void effect(texture2d<float, access::write> out [[texture(0)]], constant Uniforms &u [[buffer(0)]],
+                           uint2 gid [[thread_position_in_grid]]) {
+            if (gid.x >= out.get_width() || gid.y >= out.get_height()) { return; }
+            float2 uv = float2(gid) / (u.resolution - 1.0);
+            out.write(float4(uv.x, uv.y, fract(u.time), float(u.seed % 256u) / 255.0), gid);
+        }
+        """)
+
+    /// A syntax error on the author's third line (`1.0 +;` has no right operand).
+    private static let brokenOnLine3 = """
+        kernel void effect(texture2d<float, access::write> out [[texture(0)]],
+                           uint2 gid [[thread_position_in_grid]]) {
+            float broken = 1.0 +;
+            out.write(float4(broken), gid);
+        }
+        """
 
     private static func reference(x: Int, y: Int, uniforms: EffectUniforms) -> [UInt8] {
         let r = Float(x) / (uniforms.resolution.x - 1)
@@ -64,33 +68,13 @@ struct MetalGatewaySmokeTests {
         EffectUniforms(time: time, frameIndex: 0, resolution: SIMD2(Float(descriptor.width), Float(descriptor.height)), seed: seed)
     }
 
-    /// Row-major BGRA bytes of the surface plus its stride, read under a read lock after the GPU is done.
-    private static func pixels(of surface: any SurfaceHandle) throws -> (bytes: [UInt8], stride: Int) {
-        let raw = try #require(surface.backing as? IOSurface)
-        IOSurfaceLock(raw, .readOnly, nil)
-        defer { IOSurfaceUnlock(raw, .readOnly, nil) }
-        let base = IOSurfaceGetBaseAddress(raw).assumingMemoryBound(to: UInt8.self)
-        return (Array(UnsafeBufferPointer(start: base, count: IOSurfaceGetAllocSize(raw))), IOSurfaceGetBytesPerRow(raw))
-    }
-
-    private static func pixel(_ image: (bytes: [UInt8], stride: Int), x: Int, y: Int) -> [UInt8] {
-        (0..<4).map { image.bytes[y * image.stride + x * 4 + $0] }
-    }
-
     private func compile(_ source: String) throws -> (any LibraryHandle, any GPUContextHandle) {
         let context = try gateway.makeContext()
         return (try gateway.compile(source: source, options: ShaderCompileOptions(), on: context).get(), context)
     }
 
-    /// The completion handler is the only clock: no sleeps, no polling.
     private func run(_ pass: ComputePass, on context: any GPUContextHandle) async throws -> GPUCompletion {
-        try await withCheckedThrowingContinuation { continuation in
-            do {
-                try gateway.encodeAndCommit(pass, on: context) { continuation.resume(returning: $0) }
-            } catch {
-                continuation.resume(throwing: error)
-            }
-        }
+        try await GPUSmokeSupport.run(pass, on: context, through: gateway)
     }
 
     @Test("a kernel compiled from source fills an IOSurface-backed texture through one compute pass")
@@ -104,9 +88,9 @@ struct MetalGatewaySmokeTests {
         #expect(completion.error == nil)
         #expect(completion.gpuEnd >= completion.gpuStart)
 
-        let image = try Self.pixels(of: surface)
+        let image = try GPUSmokeSupport.pixels(of: surface)
         let offPixels = (0..<Self.descriptor.height).flatMap { y in
-            (0..<Self.descriptor.width).filter { x in Self.pixel(image, x: x, y: y) != [64, 128, 255, 255] }
+            (0..<Self.descriptor.width).filter { x in image.pixel(x: x, y: y) != [64, 128, 255, 255] }
         }
         #expect(offPixels.isEmpty, "\(offPixels.count) pixels differ from the fill")
         try gateway.unbind(texture)
@@ -126,9 +110,9 @@ struct MetalGatewaySmokeTests {
         let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), grid: grid), on: context)
         #expect(completion.error == nil)
 
-        let image = try Self.pixels(of: surface)
+        let image = try GPUSmokeSupport.pixels(of: surface)
         let offPixels = (0..<unaligned.height).flatMap { y in
-            (0..<unaligned.width).filter { x in Self.pixel(image, x: x, y: y) != [64, 128, 255, 255] }
+            (0..<unaligned.width).filter { x in image.pixel(x: x, y: y) != [64, 128, 255, 255] }
         }
         #expect(offPixels.isEmpty, "\(offPixels.count) pixels differ from the fill at stride \(image.stride)")
         try gateway.unbind(texture)
@@ -145,19 +129,19 @@ struct MetalGatewaySmokeTests {
         let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: uniforms, grid: grid), on: context)
         #expect(completion.error == nil)
 
-        let image = try Self.pixels(of: surface)
+        let image = try GPUSmokeSupport.pixels(of: surface)
         let worst =
             (0..<Self.descriptor.height).flatMap { y in
                 (0..<Self.descriptor.width).map { x in
-                    zip(Self.pixel(image, x: x, y: y), Self.reference(x: x, y: y, uniforms: uniforms)).map { abs(Int($0) - Int($1)) }.max() ?? 0
+                    GPUSmokeSupport.distance(image.pixel(x: x, y: y), Self.reference(x: x, y: y, uniforms: uniforms))
                 }
             }.max() ?? 0
-        #expect(worst <= Self.tolerance, "worst channel difference \(worst)")
+        #expect(worst <= GPUSmokeSupport.tolerance, "worst channel difference \(worst)")
         // The corners are exact: the tolerance alone would hide a dropped `- 1`, a swapped axis or an unread uniform.
-        #expect(Self.pixel(image, x: 0, y: 0) == [64, 0, 0, 64], "fract(3.25) and seed % 256 = 64 land in B and A")
-        #expect(Self.pixel(image, x: 255, y: 0) == [64, 0, 255, 64], "x saturates R alone")
-        #expect(Self.pixel(image, x: 0, y: 255) == [64, 255, 0, 64], "y saturates G alone")
-        #expect(Self.pixel(image, x: 255, y: 255) == [64, 255, 255, 64])
+        #expect(image.pixel(x: 0, y: 0) == [64, 0, 0, 64], "fract(3.25) and seed % 256 = 64 land in B and A")
+        #expect(image.pixel(x: 255, y: 0) == [64, 0, 255, 64], "x saturates R alone")
+        #expect(image.pixel(x: 0, y: 255) == [64, 255, 0, 64], "y saturates G alone")
+        #expect(image.pixel(x: 255, y: 255) == [64, 255, 255, 64])
         try gateway.unbind(texture)
     }
 
@@ -173,14 +157,14 @@ struct MetalGatewaySmokeTests {
 
         let completions = try await passes.asyncMap { try await run($0, on: context) }
         #expect(completions.allSatisfy { $0.error == nil })
-        #expect(Self.pixel(try Self.pixels(of: first), x: 0, y: 0)[3] == 10)
-        #expect(Self.pixel(try Self.pixels(of: second), x: 0, y: 0)[3] == 200)
+        #expect(try GPUSmokeSupport.pixels(of: first).pixel(x: 0, y: 0)[3] == 10)
+        #expect(try GPUSmokeSupport.pixels(of: second).pixel(x: 0, y: 0)[3] == 200)
     }
 
     @Test("a syntax error comes back as the compiler's diagnostics, not a thrown error")
     func syntaxErrorYieldsDiagnostics() throws {
         let context = try gateway.makeContext()
-        let result = gateway.compile(source: Self.header + "kernel void effect( {", options: ShaderCompileOptions(), on: context)
+        let result = gateway.compile(source: ShaderSourceAssembly.assemble("kernel void effect( {"), options: ShaderCompileOptions(), on: context)
         let diagnostics = try #require(result.failure)
         #expect(diagnostics.message.contains("error"))
         #expect(diagnostics.code != 0)
@@ -193,6 +177,47 @@ struct MetalGatewaySmokeTests {
         let diagnostics = try #require(gateway.compile(source: source, options: ShaderCompileOptions(), on: context).failure)
         #expect(diagnostics.code == 0)
         #expect(diagnostics.message.contains("effect"))
+    }
+
+    @Test("#line makes the compiler report a syntax error on the author's third line as effect:3")
+    func lineDirectiveMapsDiagnostics() throws {
+        let context = try gateway.makeContext()
+        let source = ShaderSourceAssembly.assemble(Self.brokenOnLine3)
+        let diagnostics = try #require(gateway.compile(source: source, options: ShaderCompileOptions(), on: context).failure)
+        #expect(diagnostics.message.hasPrefix("effect:3:"), "the raw compiler output: \(diagnostics.message)")
+        #expect(!diagnostics.message.contains("program_source:\(ShaderSourceAssembly.authorLineOffset + 3):"))
+        #expect(diagnostics.code != 0)
+    }
+
+    @Test("ShaderCompilationDataSource over the live gateway: author lines, prelude notes, and a kernel that runs on another context")
+    func dataSourceOverLiveGateway() async throws {
+        let compiler = withDependencies {
+            $0.gpuGateway = gateway
+            $0.shaderLibraryGateway = gateway
+            $0.workRunner = RecordingWorkRunner()
+        } operation: {
+            ShaderCompilationDataSourceImpl()
+        }
+        let broken = try #require(await compiler.compile(EffectSource(name: "broken", source: Self.brokenOnLine3)).failure)
+        #expect(broken.message.hasPrefix("effect:3:"), "\(broken.message)")
+
+        // Redefining a prelude function: the error is the author's, the note points into the prelude.
+        let clash = "inline float hash(uint2 cell, uint timeStep, uint seed) { return 0.0f; }\n" + Self.fillEffect
+        let redefinition = try #require(await compiler.compile(EffectSource(name: "clash", source: clash)).failure)
+        #expect(redefinition.message.hasPrefix("effect:1:"), "\(redefinition.message)")
+        #expect(redefinition.message.contains("prelude:"), "\(redefinition.message)")
+        #expect(!redefinition.message.contains("program_source:"), "\(redefinition.message)")
+
+        // The handle is the device's: it dispatches on a context the compile never saw.
+        let kernel = try await compiler.compile(EffectSource(name: "fill", source: Self.fillEffect)).get()
+        let context = try gateway.makeContext()
+        let surface = try surfaces.create(Self.descriptor)
+        let texture = try gateway.bind(surface, on: context)
+        let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
+        let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), grid: grid), on: context)
+        #expect(completion.error == nil)
+        #expect(try GPUSmokeSupport.pixels(of: surface).pixel(x: 17, y: 201) == [64, 128, 255, 255])
+        try gateway.unbind(texture)
     }
 
     @Test("a surface can be bound again after unbind, and foreign handles are refused")
@@ -234,13 +259,4 @@ private final class ForeignTextureHandle: TextureHandle, Sendable {
 
 private final class ForeignContextHandle: GPUContextHandle, Sendable {
     var backing: AnyObject { self }
-}
-
-extension Result {
-    fileprivate var failure: Failure? {
-        switch self {
-        case .success: nil
-        case .failure(let error): error
-        }
-    }
 }
