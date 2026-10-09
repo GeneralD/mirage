@@ -41,7 +41,7 @@ webcam ──▶ mirage (host app) ──▶ Metal effect (.lens, compiled at ru
 make test              # deterministic suite, no GPU or camera required
 make test-gpu          # Metal smoke tests in their own process (needs a Metal device; CI has one)
 make lint && make check
-swift run dev-harness  # camera → effects → preview window, no extension needed (MVP-A; not in M0)
+swift run dev-harness  # lite for now: a solid frame in a preview window + the camera permission prompt; camera → effects → preview arrives with issue #24
 ```
 
 Architecture, module map and the physical-abstraction table: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
