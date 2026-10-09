@@ -1,6 +1,6 @@
 /// Port: MachBootstrapGateway (dynamic registration and release).
 /// OS API: mach_port_allocate, mach_port_insert_right, bootstrap_register,
-/// mach_port_deallocate, mach_port_destroy, mach_port_mod_refs.
+/// mach_port_deallocate, mach_port_get_refs, mach_port_mod_refs.
 import Darwin
 import Domain
 
@@ -22,8 +22,12 @@ extension MachBootstrapGatewayImpl {
         _ = mach_port_deallocate(mach_task_self_, port.name)
     }
 
+    /// Every user reference goes at once (the notification added one of its own);
+    /// `mach_port_destroy` would do the same but is deprecated. A name that is not
+    /// a dead name reads as zero references, and a zero delta changes nothing.
     public func releaseDeadName(_ port: MachPortToken) {
-        _ = mach_port_destroy(mach_task_self_, port.name)
+        let held = withOutRefs { mach_port_get_refs(mach_task_self_, port.name, MACH_PORT_RIGHT_DEAD_NAME, $0) }
+        _ = mach_port_mod_refs(mach_task_self_, port.name, MACH_PORT_RIGHT_DEAD_NAME, -mach_port_delta_t(clamping: held.refs))
     }
 
     public func destroyReceiveRight(_ port: MachPortToken) {

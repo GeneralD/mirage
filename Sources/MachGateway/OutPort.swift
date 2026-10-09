@@ -14,6 +14,16 @@ func withOutPort(_ body: (UnsafeMutablePointer<mach_port_t>) -> kern_return_t) -
     return (code, slot.pointee)
 }
 
+/// Runs `body` with a zero-initialised reference-count out-parameter and returns
+/// its status together with the count the call stored (zero when it failed).
+func withOutRefs(_ body: (UnsafeMutablePointer<mach_port_urefs_t>) -> kern_return_t) -> (code: kern_return_t, refs: mach_port_urefs_t) {
+    let slot = UnsafeMutablePointer<mach_port_urefs_t>.allocate(capacity: 1)
+    defer { slot.deallocate() }
+    slot.initialize(to: 0)
+    let code = body(slot)
+    return (code, slot.pointee)
+}
+
 /// The task's bootstrap port (a send right the caller must release).
 func taskBootstrapPort() throws -> mach_port_t {
     let result = withOutPort { task_get_special_port(mach_task_self_, TASK_BOOTSTRAP_PORT, $0) }
