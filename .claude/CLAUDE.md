@@ -12,7 +12,7 @@ tables, physical-abstraction table, and Key Design Decisions — lives in
 ## Build & Test
 
 ```sh
-make build                 # release build of the shipped products only (never a bare `swift build`)
+make build                 # release build of App + ExtensionApp (never a bare `swift build`; SwiftPM still compiles every non-test target, dev-harness included)
 make build-dev-harness     # debug build of the dev-harness product (what `swift run dev-harness` runs; not shipped)
 make test                  # swift test (parallel, no GPU)
 make test-gpu              # GPU smoke suites in their own process (needs a Metal device; CI runs it as the `test-gpu` job)

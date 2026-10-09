@@ -208,7 +208,7 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 
 ## Target Layout
 
-- **SPM (`Package.swift`, tools 6.0, macOS 14)** — every module above as `.target` + `.testTarget`; external dependencies: swift-dependencies, swift-clocks (tests). `DevHarness` is the only executable (product `dev-harness`); `make build-dev-harness` builds it and the CI release-build job runs that after `make build`, which never includes it. `make build` always passes `--product`.
+- **SPM (`Package.swift`, tools 6.0, macOS 14)** — every module above as `.target` + `.testTarget`; external dependencies: swift-dependencies, swift-clocks (tests). `DevHarness` is the only executable (product `dev-harness`); `make build-dev-harness` builds it and the CI release-build job runs that after `make build`. It is not a shipped product, yet `make build` compiles it too: SwiftPM ignores `--product` for the automatic `App` / `ExtensionApp` library products and builds every non-test target. `make build` always passes `--product`.
 - **Xcode shell (`project.yml` → xcodegen; `*.xcodeproj`, `Info.plist` and `*.entitlements` are generated and gitignored)** — target `Host` (application; sources `Apps/Host/`, embeds the extension with `codeSign: true`) and target `CameraExtension` (`system-extension`; sources `Apps/CameraExtension/`). Product names, bundle IDs, plist properties and entitlements are declared in `project.yml`; target names are role names.
 - **Signing** — Debug ad-hoc; Release Developer ID + two provisioning profiles (app, extension), notarized DMG via the release workflow copied from decoy (never exercised there — M0 includes its first real run).
 

@@ -48,7 +48,7 @@ let package = Package(
         .library(name: "App", targets: ["App"]),
         .library(name: "ExtensionApp", targets: ["ExtensionApp"]),
         // `swift run dev-harness`: camera prompt + preview window, no extension.
-        // Not shipped; `make build-dev-harness` builds it, `make build` never does.
+        // Not shipped (no xcodegen shell links it); `make build-dev-harness` builds it.
         .executable(name: "dev-harness", targets: ["DevHarness"]),
     ],
     dependencies: [

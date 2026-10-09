@@ -8,7 +8,9 @@ build:
 	swift build --disable-sandbox -c release --product ExtensionApp
 
 # The development harness, in the configuration `swift run dev-harness` uses.
-# Never part of `make build`: it is not shipped.
+# Not shipped. `make build` compiles it as well (SwiftPM ignores `--product` for
+# the automatic App / ExtensionApp products and builds every non-test target),
+# but in release, not in the configuration `swift run` uses.
 build-dev-harness:
 	swift build --product dev-harness
 
