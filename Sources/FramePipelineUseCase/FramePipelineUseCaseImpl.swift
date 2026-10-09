@@ -49,7 +49,12 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     var phase: PipelinePhase { phaseSubject.value }
 
     public func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
-        frameExecutor.run { [self] in phaseSubject.value = .connecting }
+        frameExecutor.run { [self] in
+            // A fresh run: nothing of a previous run's loss pacing carries over.
+            lossStreak = 0
+            lastDropReason = nil
+            phaseSubject.value = .connecting
+        }
         virtualCameraSink.observe { [weak self] event in self?.observed(event) }
         try cameraRepository.start(
             descriptor: descriptor,
@@ -65,9 +70,15 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     public func stop() {
         frameScheduler.stop()
         cameraRepository.stop()
-        virtualCameraSink.disconnect()
+        // Cancel the reconnect task before the sink's generation moves: a task that
+        // reads the new generation afterwards is then already cancelled and cannot
+        // bring the transport back up after `stop`.
         frameExecutor.run { [self] in
             cancelReconnect()
+            lossStreak = 0
+        }
+        virtualCameraSink.disconnect()
+        frameExecutor.run { [self] in
             phaseSubject.value = .stopped
             releaseLatest()
             surfaceRepository.releaseAll()
