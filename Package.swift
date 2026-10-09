@@ -74,6 +74,9 @@ let package = Package(
         .target(name: "AVFoundationGateway", dependencies: dependencies),
         .target(name: "IOSurfaceGateway", dependencies: dependencies),
         .testTarget(name: "IOSurfaceGatewayTests", dependencies: ["IOSurfaceGateway"] + testDependencies),
+        // Host only: never a dependency of ExtensionDependencyInjection / ExtensionApp
+        // (scripts/check-extension-no-metal.sh). Exercised by GPUSmokeTests, not here.
+        .target(name: "MetalGateway", dependencies: dependencies),
         .target(name: "MachGateway", dependencies: dependencies),
         .testTarget(name: "MachGatewayTests", dependencies: ["MachGateway", "IOSurfaceGateway"] + testDependencies),
         .target(name: "SystemExtensionGateway", dependencies: dependencies),
@@ -141,7 +144,7 @@ let package = Package(
                 "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase",
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
-                "AVFoundationGateway", "SystemExtensionGateway",
+                "AVFoundationGateway", "MetalGateway", "SystemExtensionGateway",
             ]
         ),
         .target(
@@ -160,9 +163,12 @@ let package = Package(
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
 
         // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──
-        // Imports Metal directly: a test target, not a Gateway, so the import
-        // allow-list (Sources/ only) does not apply. .claude/rules/gpu-testing.md.
-        .testTarget(name: "GPUSmokeTests"),
+        // Imports Metal and IOSurface directly: a test target, not a Gateway, so the
+        // import allow-list (Sources/ only) does not apply. .claude/rules/gpu-testing.md.
+        .testTarget(
+            name: "GPUSmokeTests",
+            dependencies: dependencies + ["MetalGateway", "IOSurfaceGateway", "TestDoubles"]
+        ),
 
         // ── Test support ──
         .target(
