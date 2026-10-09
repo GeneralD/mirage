@@ -55,37 +55,72 @@ struct FakeEffectRuntimeRepositoryTests {
         #expect(results.values.map(\.result.failure) == [.timeout, nil])
     }
 
-    @Test("a caller cancelled while suspended is resumed with internalError and cannot be completed afterwards")
-    func cancellationResumes() async throws {
+    @Test("a caller cancelled while suspended keeps waiting and gets the result the test completes it with")
+    func cancellationDoesNotAnswer() async throws {
         let task = Task { await runtime.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1)) }
         await runtime.applyRequests.waitForCount(1)
         let request = try #require(runtime.applyRequests.last)
 
         task.cancel()
+        #expect(runtime.pendingCount == 1, "cancellation does not cut the pass short")
 
-        #expect(await task.value.failure == .internalError)
-        #expect(!runtime.completeApply(request, with: .success(())))
+        #expect(runtime.completeApply(request, with: .success(())))
+        #expect(await task.value.failure == nil, "the caller gets the pass's real outcome")
         #expect(runtime.pendingCount == 0)
     }
 
-    @Test("a caller already cancelled returns internalError at once and is never recorded")
-    func cancelledBeforeSuspending() async {
+    @Test("a caller already cancelled is still recorded and still waits for its completion")
+    func cancelledBeforeSuspending() async throws {
         let gate = Collector<Void>()
         let task = Task {
             await gate.waitForCount(1)
-            let prepared = await runtime.prepare(effect)
-            let applied = await runtime.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))
-            return (prepared, applied)
+            return await runtime.prepare(effect)
         }
         task.cancel()
         gate.append(())
 
-        let (prepared, applied) = await task.value
+        await runtime.prepareRequests.waitForCount(1)
+        let request = try #require(runtime.prepareRequests.last)
+        #expect(runtime.pendingCount == 1)
 
-        #expect(prepared.failure == .internalError)
-        #expect(applied.failure == .internalError)
-        #expect(runtime.prepareRequests.count == 0)
-        #expect(runtime.applyRequests.count == 0)
+        #expect(runtime.completePrepare(request, with: .failure(.compileFailed)))
+        #expect(await task.value.failure == .compileFailed)
         #expect(runtime.pendingCount == 0)
+    }
+
+    @Test("requests issued by another repository complete nothing here")
+    func foreignRequestsAreRefused() async throws {
+        let other = FakeEffectRuntimeRepository()
+        let preparing = Task { await runtime.prepare(effect) }
+        let applying = Task {
+            await runtime.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))
+        }
+        let strangerPreparing = Task { await other.prepare(effect) }
+        let strangerApplying = Task {
+            await other.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))
+        }
+        await runtime.prepareRequests.waitForCount(1)
+        await runtime.applyRequests.waitForCount(1)
+        await other.prepareRequests.waitForCount(1)
+        await other.applyRequests.waitForCount(1)
+        let strangerPrepare = try #require(other.prepareRequests.last)
+        let strangerApply = try #require(other.applyRequests.last)
+        // Each repository numbers its calls from 1, so only provenance tells the strangers apart.
+        #expect(strangerPrepare.id == runtime.prepareRequests.last?.id)
+        #expect(strangerApply.id == runtime.applyRequests.last?.id)
+
+        #expect(!runtime.completePrepare(strangerPrepare, with: .success(())))
+        #expect(!runtime.completeApply(strangerApply, with: .success(())))
+        #expect(runtime.pendingCount == 2, "neither of this repository's calls was resumed")
+
+        // Each call is completed by the repository that issued it, and only then does it return.
+        #expect(runtime.completePrepare(try #require(runtime.prepareRequests.last), with: .failure(.compileFailed)))
+        #expect(runtime.completeApply(try #require(runtime.applyRequests.last), with: .failure(.timeout)))
+        #expect(other.completePrepare(strangerPrepare, with: .success(())))
+        #expect(other.completeApply(strangerApply, with: .success(())))
+        #expect(await preparing.value.failure == .compileFailed)
+        #expect(await applying.value.failure == .timeout)
+        #expect(await strangerPreparing.value.failure == nil)
+        #expect(await strangerApplying.value.failure == nil)
     }
 }

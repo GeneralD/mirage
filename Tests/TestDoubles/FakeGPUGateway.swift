@@ -20,6 +20,8 @@ public final class FakeGPUGateway: GPUGateway, Sendable {
     public struct Submission: Sendable {
         public let id: Int
         public let pass: ComputePass
+        /// The gateway that issued it: ids restart at 1 per instance, so the id alone cannot tell a stranger's submission.
+        fileprivate let origin: ObjectIdentifier
     }
 
     private struct State {
@@ -71,16 +73,20 @@ public final class FakeGPUGateway: GPUGateway, Sendable {
             let id = state.nextID
             state.nextID += 1
             state.pending[id] = completion
-            return Submission(id: id, pass: pass)
+            return Submission(id: id, pass: pass, origin: ObjectIdentifier(self))
         }
         submissions.append(submission)
     }
 
     /// Delivers `completion` to the pass's handler, once. `false` when the
-    /// submission is unknown or was already completed — a double completion is
-    /// a bug in the test, and it is reported as one.
+    /// submission is unknown, came from another gateway, or was already
+    /// completed — each is a bug in the test, and it is reported as one.
     @discardableResult
     public func complete(_ submission: Submission, with completion: GPUCompletion) -> Bool {
+        guard submission.origin == ObjectIdentifier(self) else {
+            reportIssue("FakeGPUGateway: submission \(submission.id) was issued by another gateway")
+            return false
+        }
         guard let handler = state.withLock({ $0.pending.removeValue(forKey: submission.id) }) else {
             reportIssue("FakeGPUGateway: submission \(submission.id) completed twice or never submitted")
             return false

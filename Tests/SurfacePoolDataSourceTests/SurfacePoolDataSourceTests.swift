@@ -60,7 +60,7 @@ struct SurfacePoolDataSourceTests {
         #expect(pool.handle(for: token) is FakeSurfaceHandle)
     }
 
-    @Test("allocate stores the descriptor the gateway resolved, not the one requested (IOSurface rounds the stride up)")
+    @Test("allocate stores the descriptor the gateway resolved, not the one requested (the live gateway aligns the stride up)")
     func allocateStoresResolvedDescriptor() throws {
         let gateway = StrideRoundingGateway(rounding: 64)
         let pool = withDependencies {
@@ -187,8 +187,8 @@ struct SurfacePoolDataSourceTests {
     }
 }
 
-/// Delegates to `FakeIOSurfaceGateway` but reports a stride rounded up the way a
-/// real IOSurface does, so the pool can be told apart from one that stores the request.
+/// Delegates to `FakeIOSurfaceGateway` but reports a stride rounded up the way the
+/// live gateway's alignment does, so the pool can be told apart from one that stores the request.
 private struct StrideRoundingGateway: IOSurfaceGateway {
     let rounding: Int
     let base = FakeIOSurfaceGateway()

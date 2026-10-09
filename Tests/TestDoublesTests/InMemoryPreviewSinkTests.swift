@@ -39,6 +39,22 @@ struct InMemoryPreviewSinkTests {
         #expect(sink.pending.map(\.frame.token.index) == [2])
     }
 
+    @Test("a presentation from another sink completes nothing here")
+    func foreignPresentationIsRefused() throws {
+        let other = InMemoryPreviewSink()
+        let completions = Collector<Void>()
+        sink.present(frame(1)) { completions.append(()) }
+        other.present(frame(1)) {}
+        // Both sinks number their first presentation 1, so only provenance tells them apart.
+        let stranger = try #require(other.pending.first)
+        #expect(stranger.id == sink.pending.first?.id)
+
+        #expect(!sink.complete(stranger))
+        #expect(completions.count == 0)
+        #expect(sink.pending.count == 1, "the sink's own presentation is still pending")
+        #expect(other.pending.count == 1)
+    }
+
     @Test("attach records the fake target and refuses a foreign one")
     func attach() throws {
         let target = FakePreviewTargetHandle()
