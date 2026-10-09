@@ -80,7 +80,7 @@ struct FrameTransportSendTests {
         try await fixture.connect()
 
         #expect(fixture.subject.send(try fixture.makeSurface(), descriptor: .hd720, presentationTime: .zero) == .sent)
-        #expect(fixture.messaging.sent.last?.port == MachPortToken(name: 0x2001))
+        #expect(fixture.messaging.sent.last?.port == MachPortToken(name: 0x2002))
     }
 
     @Test("a refused send drops the frame with the raw code, keeps the link and logs the failure")

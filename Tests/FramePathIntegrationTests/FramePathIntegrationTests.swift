@@ -135,8 +135,9 @@ struct FramePathIntegrationTests {
         try await rig.stopExtension(relay)
         rig.stopHost()
 
-        #expect(rig.kernel.destroyed.values == [servicePort], "the extension destroys its receive right")
-        #expect(rig.kernel.deallocated.values == [servicePort], "the host returns its send right")
+        let presence = try #require(rig.kernel.destroyed.values.first { $0 != servicePort })
+        #expect(Set(rig.kernel.destroyed.values) == [servicePort, presence], "the extension destroys its service port, the host its presence port")
+        #expect(rig.kernel.deallocated.values.contains(servicePort), "the host returns its send right")
         #expect(rig.host.pool.liveCount == 0)
         #expect(rig.ext.pool.liveCount == 0)
         #expect(rig.host.scheduler.isRunning == false)

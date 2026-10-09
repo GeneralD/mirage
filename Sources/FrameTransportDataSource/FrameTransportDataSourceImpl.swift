@@ -27,6 +27,8 @@ public final class FrameTransportDataSourceImpl: @unchecked Sendable {
     /// cannot adopt the port it finds afterwards. Read once at the start of a
     /// `connect` from any context; the executor is its only writer.
     let generation = CurrentValueSubject<UInt64, Never>(0)
+    /// The host's liveness beacon while connected (see `PresencePort`). Executor-confined.
+    var presence: PresencePort?
     var onEvent: (@Sendable (FrameTransportEvent) -> Void)?
 
     public init(policy: RetryPolicy = .serviceLookup) {
@@ -100,19 +102,54 @@ extension FrameTransportDataSourceImpl {
             developerLog.record(.transport, "look-up result discarded: disconnected meanwhile")
             return
         }
-        release()
+        // The new hello goes out before the old presence port dies, so the extension never
+        // sees the old host's dead name while this host is alive and already announced.
+        let previous = (port: connection.value, presence: presence)
+        presence = nil
         connection.value = found
         developerLog.record(.transport, "connected to port \(found.name)")
+        announcePresence(to: found)
+        giveBack(port: previous.port, presence: previous.presence)
         onEvent?(.connected)
+    }
+
+    /// Hands the extension a send right on a fresh presence port, so it learns of this
+    /// process's death from a dead-name notification. Best effort: the frame-gap
+    /// watchdog on the other side covers a link that has to go without.
+    private func announcePresence(to port: MachPortToken) {
+        let made: PresencePort
+        do {
+            made = try bootstrap.makePresencePort()
+        } catch {
+            errorLog.record(.transport, "no presence port could be made, continuing without: \(error)")
+            return
+        }
+        do {
+            // `MachMessageGateway.announce` contract: the moved send right is consumed on success
+            // and deallocated by the gateway on failure, so only the receive right is left to destroy.
+            try messaging.announce(made.send, to: port)
+            presence = made
+        } catch {
+            bootstrap.destroyReceiveRight(made.receive)
+            errorLog.record(.transport, "presence could not be announced, continuing without: \(error)")
+        }
     }
 
     private func install(_ listener: @escaping @Sendable (FrameTransportEvent) -> Void) {
         onEvent = listener
     }
 
-    /// Gives the send right back and forgets it.
+    /// Gives the send right back and forgets it, and destroys the presence receive
+    /// right, which tells the extension this host is gone.
     func release() {
-        _ = connection.value.map(bootstrap.deallocate)
+        let previous = (port: connection.value, presence: presence)
         connection.value = nil
+        presence = nil
+        giveBack(port: previous.port, presence: previous.presence)
+    }
+
+    private func giveBack(port: MachPortToken?, presence: PresencePort?) {
+        _ = port.map(bootstrap.deallocate)
+        _ = presence.map { bootstrap.destroyReceiveRight($0.receive) }
     }
 }

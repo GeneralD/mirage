@@ -11,6 +11,7 @@ private enum Step: CaseIterable {
     case tick
     case drain
     case toggleDrops
+    case destinationLost
     case stop
 }
 
@@ -45,6 +46,7 @@ struct FramePipelinePropertyTests {
         rig.subject.stop()
         rig.executor.drain()
 
+        #expect(rig.subject.phase == .stopped)
         let stats = rig.subject.stats
         #expect(rig.surfaces.liveCount == 0)
         #expect(rig.surfaces.refusedReleases == 0)
@@ -75,6 +77,8 @@ struct FramePipelinePropertyTests {
         case .toggleDrops where model.running:
             model.dropping.toggle()
             rig.sink.dropSends(with: model.dropping ? .sendFailed(code: 7) : nil)
+        case .destinationLost where model.running:
+            rig.sink.emit(.disconnected(.destinationLost))
         case .stop where model.running:
             rig.subject.stop()
             model.running = false
