@@ -40,6 +40,7 @@ extension FrameReceiverDataSourceImpl {
             // run yet, and the loss must not overtake their `hostConnected`.
             frameExecutor.run { [self] in
                 hostPresent = false
+                awaitingFirstHost = false
                 onEvent(.hostLost(.receiveFailed(code: code)))
             }
             return nil
@@ -76,6 +77,9 @@ extension FrameReceiverDataSourceImpl {
     /// the earlier right is given back before the new one is watched.
     private func adopt(presence right: MachSendRight, notifying servicePort: MachPortToken) {
         releasePresence()
+        // A hello is not a frame: a host that greets and then stays silent (permission denied, hung at
+        // launch) must still be declared lost, so the startup wait stays armed and only restarts its count.
+        if awaitingFirstHost { sinceLastFrame = Self.stopwatch(on: clock) }
         presence = right
         do {
             try bootstrap.requestDeadNameNotification(of: right, to: servicePort)
@@ -95,6 +99,7 @@ extension FrameReceiverDataSourceImpl {
             return
         }
         hostPresent = false
+        awaitingFirstHost = false
         onEvent(.hostLost(.deadName))
         presence = nil
         bootstrap.releaseDeadName(name)
@@ -109,12 +114,14 @@ extension FrameReceiverDataSourceImpl {
 
     /// Runs on the executor.
     private func noteHostPresent(onEvent: @Sendable (ReceiverEvent) -> Void) {
+        awaitingFirstHost = false
         guard !hostPresent else { return }
         hostPresent = true
         onEvent(.hostConnected)
     }
 
-    /// Declares the host lost when no frame arrived for `frameGap`. Checks every
+    /// Declares the host lost when no frame arrived for `frameGap`, counted from
+    /// the last frame, or from `start` while no host has been seen yet. Checks every
     /// quarter of the gap (worst-case detection latency 1.25 x `frameGap`) on
     /// the injected clock, so a test moves time by hand.
     func watchHost(onEvent: @escaping @Sendable (ReceiverEvent) -> Void) async {
@@ -125,14 +132,15 @@ extension FrameReceiverDataSourceImpl {
 
     /// Runs on the executor.
     private func checkGap(onEvent: @Sendable (ReceiverEvent) -> Void) {
-        guard hostPresent, let silence = sinceLastFrame?(), silence >= frameGap else { return }
+        guard hostPresent || awaitingFirstHost, let silence = sinceLastFrame?(), silence >= frameGap else { return }
         hostPresent = false
+        awaitingFirstHost = false
         onEvent(.hostLost(.frameGap(frameGap)))
     }
 
     /// Starts a stopwatch on `clock`. Generic so the clock existential is opened
     /// and its `Instant` can live in the closure.
-    private static func stopwatch<C: Clock>(on clock: C) -> @Sendable () -> Duration where C.Duration == Duration {
+    static func stopwatch<C: Clock>(on clock: C) -> @Sendable () -> Duration where C.Duration == Duration {
         let mark = clock.now
         return { mark.duration(to: clock.now) }
     }

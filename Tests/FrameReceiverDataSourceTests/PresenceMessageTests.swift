@@ -204,4 +204,53 @@ struct PresenceMessageTests {
         #expect(rig.events.values.last == .hostLost(.frameGap(rig.frameGap)))
         try await rig.finish(task)
     }
+
+    @Test("a hello without any frame does not end the startup wait: the gap is counted from the hello and reports hostLost(frameGap) once")
+    func silentHostAfterHello() async throws {
+        let rig = ReceiverRig(frameGap: .seconds(2))
+        let task = await rig.listen()
+        await rig.clock.advance(by: .seconds(1))
+        await hello(rig, name: 0x77)
+
+        // 2.0 s since listening but only 1.0 s since the hello: still quiet.
+        await rig.clock.advance(by: .seconds(1))
+        rig.executor.drain()
+        #expect(lossCount(rig) == 0)
+
+        await rig.clock.advance(by: .seconds(2))
+        rig.executor.drain()
+        await rig.clock.advance(by: .seconds(2))
+        rig.executor.drain()
+        #expect(rig.events.values == [.listening, .hostLost(.frameGap(rig.frameGap))], "reported once")
+        try await rig.finish(task)
+    }
+
+    @Test("a hello followed by a frame inside the gap connects without any loss")
+    func helloThenFrame() async throws {
+        let rig = ReceiverRig(frameGap: .seconds(2))
+        let task = await rig.listen()
+        await hello(rig, name: 0x77)
+        await rig.clock.advance(by: .seconds(1))
+        try await frame(rig, id: 1)
+        await rig.clock.advance(by: .milliseconds(1_500))
+        rig.executor.drain()
+
+        #expect(rig.events.values == [.listening, .hostConnected])
+        try await rig.finish(task)
+    }
+
+    @Test("a dead name before the first frame ends the startup wait: the loss is not reported a second time by the gap")
+    func deadNameEndsStartupWait() async throws {
+        let rig = ReceiverRig(frameGap: .seconds(2))
+        let task = await rig.listen()
+        await hello(rig, name: 0x77)
+        await deadName(rig, name: 0x77)
+        await rig.clock.advance(by: .seconds(2))
+        rig.executor.drain()
+        await rig.clock.advance(by: .seconds(2))
+        rig.executor.drain()
+
+        #expect(rig.events.values == [.listening, .hostLost(.deadName)])
+        try await rig.finish(task)
+    }
 }

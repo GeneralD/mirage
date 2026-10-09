@@ -24,6 +24,11 @@ public final class FrameReceiverDataSourceImpl: @unchecked Sendable {
     /// because the clock is an existential whose `Instant` cannot be stored.
     var sinceLastFrame: (@Sendable () -> Duration)?
     var hostPresent = false
+    /// The receiver is listening and no frame or hello has arrived since: the
+    /// gap budget counts from `start`, so a host that never shows up is lost
+    /// once, exactly like a stalled one. Distinct from `hostPresent`, which
+    /// keeps its meaning "a host has been seen since the last loss".
+    var awaitingFirstHost = false
     /// The host's presence right (from its hello), watched for a dead name.
     var presence: MachSendRight?
     /// The receive right, kept so `stop()` can reach it from any context.
@@ -102,6 +107,8 @@ extension FrameReceiverDataSourceImpl {
                     return
                 }
                 receiveRight = port
+                sinceLastFrame = Self.stopwatch(on: clock)
+                awaitingFirstHost = true
                 continuation.resume(returning: true)
             }
         }
@@ -119,6 +126,7 @@ extension FrameReceiverDataSourceImpl {
         destroyReceiveRight()
         releasePresence()
         hostPresent = false
+        awaitingFirstHost = false
         sinceLastFrame = nil
         starting = false
         stopRequested = false

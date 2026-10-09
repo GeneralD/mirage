@@ -107,8 +107,9 @@ Shared conventions:
   their size. `Info.plist` and entitlements are generated from `project.yml`
   by `make generate` (gitignored), never hand-written.
 - Host absence: the extension detects it by frame gap (watchdog every
-  `frameGap / 4`) and by dead-name of the host's presence port; either yields
-  `hostLost`, and the relay then runs a black slate (`SlateSchedule`) with
+  `frameGap / 4`, counted from the last frame, or from `start` while no host
+  has been seen yet, so a host that never launched is lost too) and by dead-name
+  of the host's presence port; either yields `hostLost`, and the relay then runs a black slate (`SlateSchedule`) with
   strictly increasing PTS until a real frame arrives (real PTS is re-timed above
   the last slate PTS with `SlateSchedule.shift`; a frame that still does not
   advance drops as `.nonMonotonic`). The host reconnects on `destinationLost` from
