@@ -99,6 +99,9 @@ let package = Package(
         .testTarget(name: "StreamOutputDataSourceTests", dependencies: ["StreamOutputDataSource"] + testDependencies),
         .target(name: "ExtensionInstallDataSource", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallDataSourceTests", dependencies: ["ExtensionInstallDataSource"] + testDependencies),
+        // Host only: the prelude, `#line` assembly, diagnostic mapping and the off-main compile.
+        .target(name: "ShaderCompilationDataSource", dependencies: dependencies),
+        .testTarget(name: "ShaderCompilationDataSourceTests", dependencies: ["ShaderCompilationDataSource"] + testDependencies),
 
         // ── Repository ──
         .target(name: "CameraRepository", dependencies: dependencies),
