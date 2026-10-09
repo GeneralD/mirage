@@ -78,6 +78,10 @@ Shared conventions:
 - No OS framework import (AVFoundation, Metal, MetalKit, IOSurface,
   CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, os) outside
   Gateway modules and the View/Router/App lane. `make check` fails otherwise.
+- The extension process never links Metal: `MetalGateway` is registered in
+  `HostDependencyInjection` only, and `scripts/check-extension-no-metal.sh`
+  (in `make check`) walks the package graph from `ExtensionApp` /
+  `ExtensionDependencyInjection` and fails when a Metal module is reachable.
 - No physical symbol outside Gateway/Support live modules: `Date()`,
   `Date.now`, `ContinuousClock()`, `.now`, `Task.sleep`, `DispatchQueue`,
   `DispatchSource`, `Thread`, `UUID()`, `.random(in:)`,

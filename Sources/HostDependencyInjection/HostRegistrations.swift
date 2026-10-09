@@ -12,6 +12,7 @@ import ExtensionInstallRepository
 import ExtensionInstallUseCase
 import FramePipelineUseCase
 import FrameTransportDataSource
+import MetalGateway
 import SystemExtensionGateway
 import VirtualCameraRepository
 
@@ -71,4 +72,16 @@ extension CameraAuthorizationGatewayKey: DependencyKey {
 
 extension SystemExtensionGatewayKey: DependencyKey {
     public static let liveValue: any SystemExtensionGateway = SystemExtensionGatewayImpl()
+}
+
+extension GPUGatewayKey: DependencyKey {
+    public static let liveValue: any GPUGateway = MetalGatewayImpl()
+}
+
+extension ShaderLibraryGatewayKey: DependencyKey {
+    public static let liveValue: any ShaderLibraryGateway = MetalGatewayImpl()
+}
+
+extension TextureCacheGatewayKey: DependencyKey {
+    public static let liveValue: any TextureCacheGateway = MetalGatewayImpl()
 }

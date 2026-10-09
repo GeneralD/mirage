@@ -16,10 +16,17 @@ Only three things touch a real `MTLDevice`:
    source fills a buffer correctly. It predates `MetalGateway` (MVP-A) so the
    CI job exists before the gateway does; `MetalDeviceProbe` next to it is
    the one place the suites ask whether a device exists.
-2. `MetalGateway` smoke — `makeLibrary(source:)` of the prelude + one effect,
-   one compute pass, output compared with the Swift reference implementation
-   under a single fixed tolerance (`fastMathEnabled = false` is part of the
-   compile options the port takes).
+2. `MetalGatewaySmokeTests` — the three ports against the real device:
+   `compile` of a kernel (the MSL `Uniforms` declaration is inlined until the
+   prelude exists in `ShaderCompilationDataSource`), `bind` of a real IOSurface
+   (`.shared`, `bgra8Unorm`), one `encodeAndCommit`, the pixels read back
+   through the IOSurface and compared with a Swift reference under a single
+   fixed tolerance of one 8-bit step, plus exact checks at the corners so a
+   dropped `- 1`, a swapped axis or an unread uniform cannot hide inside the
+   tolerance. Also: a syntax error and a missing entry point come back as
+   `ShaderDiagnostics`, two commits on one context each write their own
+   surface, a surface rebinds after `unbind`, and foreign handles are refused.
+   `ShaderCompileOptions.precise` (→ `fastMathEnabled = false`) is the default.
 3. Hash-noise parity — GPU vs Swift reference, same tolerance.
 
 ## Rules
