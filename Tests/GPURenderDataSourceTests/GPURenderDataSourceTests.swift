@@ -38,6 +38,29 @@ struct GPURenderDataSourceTests {
         #expect(fixture.progress == Progress(contexts: 0, binds: 0, submissions: 0))
     }
 
+    // MARK: - The leases stay the caller's
+
+    @Test(
+        "render never ends a lease: whatever the outcome, both still resolve to their surfaces and only the caller releases them",
+        arguments: LeasePath.allCases
+    )
+    func leasesStayTheCallers(_ path: LeasePath) async throws {
+        let fixture = RenderFixture()
+        path.arrange(fixture)
+        let input = try fixture.lease()
+        let output = try fixture.lease()
+        let surfaces = try [fixture.surface(input), fixture.surface(output)].map { ObjectIdentifier($0) }
+
+        let call = await fixture.start(input: input, output: output)
+        if let completion = path.completion { try fixture.completePending(with: completion) }
+
+        #expect(await call.value == path.expected)
+        #expect(fixture.pool.liveCount == 2)
+        #expect(try [fixture.surface(input), fixture.surface(output)].map { ObjectIdentifier($0) } == surfaces)
+        #expect(fixture.pool.release(input), "the input lease is still the caller's to end")
+        #expect(fixture.pool.release(output), "the output lease is still the caller's to end")
+    }
+
     // MARK: - One effect, one command buffer
 
     @Test("a pass commits one command buffer: the library, input then output, the uniforms verbatim, a grid covering the output")
@@ -264,6 +287,41 @@ enum StaleSide: Sendable, CustomTestStringConvertible {
         case .both: "both"
         }
     }
+}
+
+/// Every way a render can end, for checking that none of them touches the leases.
+enum LeasePath: String, CaseIterable, Sendable, CustomTestStringConvertible {
+    case completed, gpuFault, bindRefused, encodeRefused, noContext
+
+    /// Makes the fixture refuse where this path fails.
+    func arrange(_ fixture: RenderFixture) {
+        switch self {
+        case .completed, .gpuFault: break
+        case .bindRefused: fixture.textures.failBind(with: .textureBindingFailed)
+        case .encodeRefused: fixture.gpu.failEncode(with: .encoderUnavailable)
+        case .noContext: fixture.gpu.failMakeContext(with: .noDevice)
+        }
+    }
+
+    /// The GPU's answer to the committed pass; `nil` when nothing is committed.
+    var completion: GPUCompletion? {
+        switch self {
+        case .completed: .finished
+        case .gpuFault: .failed(code: 3)
+        case .bindRefused, .encodeRefused, .noContext: nil
+        }
+    }
+
+    var expected: RenderResult {
+        switch self {
+        case .completed: .success(GPUTiming(gpuStart: 10, gpuEnd: 10.004))
+        case .gpuFault: .failure(.pageFault)
+        case .bindRefused: .failure(.invalidResource)
+        case .encodeRefused, .noContext: .failure(.internalError)
+        }
+    }
+
+    var testDescription: String { rawValue }
 }
 
 extension Array {

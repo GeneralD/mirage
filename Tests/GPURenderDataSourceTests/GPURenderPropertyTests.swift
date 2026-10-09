@@ -57,6 +57,9 @@ struct GPURenderPropertyTests {
         #expect(fixture.textures.bindCount == committed.count * 2)
         #expect(fixture.gpu.submissions.count == committed.count)
         #expect(fixture.gpu.contextCount == (committed.isEmpty ? 0 : 1))
+        #expect(
+            fixture.pool.liveCount == plans.count + committed.count,
+            "every output and every live input is still leased: render ended none, only the test ended the stale inputs")
     }
 
     private func word(in bytes: [UInt8], at offset: Int) -> UInt32 {
