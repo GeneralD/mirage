@@ -60,6 +60,36 @@ struct ShaderCompilationDataSourceTests {
         #expect(gpu.contextCount == 1)
     }
 
+    @Test("a cancelled caller still gets the real result: the compile is neither cut short nor its work item cancelled")
+    func cancellationDoesNotShortenTheCompile() async throws {
+        let held = HeldWorkRunner()
+        let subject = makeSubject(work: held)
+        let task = Task { await subject.compile(effect) }
+        await held.items.waitForCount(1)
+        task.cancel()
+
+        await held.runItem(0)
+        let handle = try #require(try await task.value.get() as? FakeLibraryHandle)
+        #expect(handle.source == ShaderSourceAssembly.assemble(effect.source))
+        #expect(library.calls.count == 1)
+        #expect(held.cancelled.count == 0, "nothing cancels the work item")
+    }
+
+    @Test("a cancelled caller receives the compiler's real diagnostics, mapped to the author's lines")
+    func cancelledCallerGetsDiagnostics() async throws {
+        let assembled = ShaderSourceAssembly.assemble(effect.source)
+        library.failCompile(
+            of: assembled, with: ShaderDiagnostics(message: "program_source:\(ShaderSourceAssembly.authorLineOffset + 1):1: error: x", code: 3))
+        let held = HeldWorkRunner()
+        let subject = makeSubject(work: held)
+        let task = Task { await subject.compile(effect) }
+        await held.items.waitForCount(1)
+        task.cancel()
+
+        await held.runItem(0)
+        #expect(await task.value.failure == ShaderDiagnostics(message: "effect:1:1: error: x", code: 3))
+    }
+
     @Test(
         "an error on any line of a source of any length comes back on the author's line, whichever form the compiler used",
         arguments: Seeds.range(0..<50))
@@ -117,24 +147,32 @@ struct ShaderCompilationDataSourceTests {
 }
 
 /// A `WorkRunner` that holds every item until the test runs it, so the suite can
-/// look at the compile before its work item has run.
+/// look at the compile before its work item has run. Records every
+/// `WorkHandle.cancel()` by item index.
 private final class HeldWorkRunner: WorkRunner, Sendable {
     let items = Collector<Item>()
+    let cancelled = Collector<Int>()
 
     struct Item: Sendable {
         let work: @Sendable () async -> Void
     }
 
     func run(_ work: @escaping @Sendable () async -> Void) -> any WorkHandle {
+        let index = items.count
         items.append(Item(work: work))
-        return NoHandle()
+        return Handle(index: index, cancelled: cancelled)
     }
 
     func runItem(_ index: Int) async {
         await items.values[index].work()
     }
 
-    private struct NoHandle: WorkHandle {
-        func cancel() {}
+    private struct Handle: WorkHandle {
+        let index: Int
+        let cancelled: Collector<Int>
+
+        func cancel() {
+            cancelled.append(index)
+        }
     }
 }
