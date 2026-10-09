@@ -30,6 +30,6 @@ private struct UnimplementedExtensionInstallUseCase: ExtensionInstallUseCase {
 
     func install(onStatus: @escaping @Sendable (InstallStatus) -> Void) async -> InstallStatus {
         reportIssue("ExtensionInstallUseCase.install not implemented")
-        return .failed(reason: "unimplemented")
+        return .failed(.other(code: -1, description: "unimplemented"))
     }
 }

@@ -34,8 +34,8 @@ extension CameraInteractorImpl {
         let (developerLog, errorLog) = (developerLog, errorLog)
         let result = await installUseCase.install { status in
             developerLog.record(.install, "install status: \(status)")
-            guard case .failed(let reason) = status else { return }
-            errorLog.record(.install, "extension install failed: \(reason)")
+            guard case .failed(let failure) = status else { return }
+            errorLog.record(.install, "extension install failed: \(failure)")
         }
         return result
     }

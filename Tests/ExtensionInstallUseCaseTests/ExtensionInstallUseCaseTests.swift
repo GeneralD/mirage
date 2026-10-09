@@ -31,9 +31,9 @@ struct ExtensionInstallUseCaseTests {
 
     @Test("a failure is returned with its reason")
     func failed() async {
-        let (result, reported) = await run([.installing, .failed(reason: "denied")])
-        #expect(result == .failed(reason: "denied"))
-        #expect(reported == [.installing, .failed(reason: "denied")])
+        let (result, reported) = await run([.installing, .failed(.denied)])
+        #expect(result == .failed(.denied))
+        #expect(reported == [.installing, .failed(.denied)])
     }
 
     @Test("reboot-required ends the install as its own terminal status, which is not installed")
@@ -47,14 +47,14 @@ struct ExtensionInstallUseCaseTests {
     @Test("an empty stream is a failure, not a stale status")
     func emptyStream() async {
         let (result, reported) = await run([])
-        #expect(result == .failed(reason: "no terminal status"))
+        #expect(result == .failed(.other(code: -1, description: "no terminal status")))
         #expect(reported.isEmpty)
     }
 
     @Test("a stream that stops on a non-terminal status is a failure", arguments: [InstallStatus.notInstalled, .installing, .needsApproval])
     func endedNonTerminal(last: InstallStatus) async {
         let (result, reported) = await run([last])
-        #expect(result == .failed(reason: "no terminal status"))
+        #expect(result == .failed(.other(code: -1, description: "no terminal status")))
         #expect(reported == [last])
     }
 

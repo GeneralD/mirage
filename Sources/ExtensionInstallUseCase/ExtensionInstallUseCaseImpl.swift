@@ -21,6 +21,6 @@ extension ExtensionInstallUseCaseImpl: ExtensionInstallUseCase {
             onStatus(status)
             last = status
         }
-        return last.flatMap { $0.isTerminal ? $0 : nil } ?? .failed(reason: "no terminal status")
+        return last.flatMap { $0.isTerminal ? $0 : nil } ?? .failed(.other(code: -1, description: "no terminal status"))
     }
 }
