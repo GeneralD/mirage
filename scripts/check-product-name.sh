@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # The product name lives in exactly three files (docs/ARCHITECTURE.md → Rename-safe naming):
 #   README.md, project.yml, Sources/Entity/ProductIdentity.swift
-# Anywhere else under Sources/, Tests/, Apps/ or in a file name is a violation —
-# the name may change, and a rename must stay a three-file edit. Info.plist and
-# entitlements necessarily carry bundle IDs, so xcodegen generates them from
-# project.yml (gitignored) and they are not scanned here.
+# Anywhere else under Sources/, Tests/, Apps/, Tools/ or in a file name is a
+# violation — the name may change, and a rename must stay a three-file edit.
+# The shells' Info.plist and entitlements necessarily carry bundle IDs, so
+# xcodegen generates them from project.yml (gitignored) and they are not scanned
+# here. Tools/ holds hand-written files (the dev harness's Info.plist), so every
+# file there is scanned, whatever its kind.
 #
 # The name is read from project.yml (`name:`); until the Xcode shell exists the
 # check falls back to the repository directory name.
@@ -31,9 +33,10 @@ while IFS= read -r path; do
     case "$base" in
         *"$name_lc"*) fail "$path:1" "file or directory name contains the product name" ;;
     esac
-done < <(find Sources Tests Apps -mindepth 1 2>/dev/null)
+done < <(find Sources Tests Apps Tools -mindepth 1 2>/dev/null)
 
-# Contents: identifiers, strings and comments in Swift and Metal sources.
+# Contents: identifiers, strings and comments in Swift and Metal sources, and
+# every file under Tools/.
 while IFS= read -r path; do
     [ -n "$path" ] || continue
     is_allowed "$path" && continue
@@ -41,6 +44,9 @@ while IFS= read -r path; do
         [ -n "$line_no" ] || continue
         fail "$path:$line_no" "product name appears outside the three allowed files: ${text## }"
     done < <(grep -niE "(^|[^A-Za-z0-9])${name_lc}([^A-Za-z0-9]|$)" "$path" || true)
-done < <(find Sources Tests Apps -type f \( -name '*.swift' -o -name '*.metal' \) 2>/dev/null)
+done < <(
+    find Sources Tests Apps -type f \( -name '*.swift' -o -name '*.metal' \) 2>/dev/null
+    find Tools -type f ! -name '.DS_Store' 2>/dev/null
+)
 
 finish "check-product-name"
