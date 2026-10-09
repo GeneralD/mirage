@@ -40,13 +40,7 @@ struct PreviewSmokeTests {
         let size = surfaces.descriptor(output)
         let uniforms = EffectUniforms(time: 0, frameIndex: 0, resolution: SIMD2(Float(size.width), Float(size.height)), seed: 0)
         let pass = ComputePass(kernel: kernel, textures: textures, uniforms: uniforms, grid: .covering(width: size.width, height: size.height))
-        let completion = try await withCheckedThrowingContinuation { continuation in
-            do {
-                try metal.encodeAndCommit(pass, on: context) { continuation.resume(returning: $0) }
-            } catch {
-                continuation.resume(throwing: error)
-            }
-        }
+        let completion = try await GPUSmokeSupport.run(pass, on: context, through: metal)
         #expect(completion.error == nil)
         try textures.forEach(metal.unbind)
         return try Self.rows(of: output)
@@ -61,8 +55,7 @@ struct PreviewSmokeTests {
         var testDescription: String { "\(width)x\(height) into \(targetWidth)x\(targetHeight)" }
 
         /// Letterboxed ×2 and ×½, pillarboxed ×2 and ×½: the filter weights are
-        /// quarters and halves, which the GPU represents exactly. Widths stay
-        /// multiples of 4, so every BGRA row is 16-byte aligned as Metal requires.
+        /// quarters and halves, which the GPU represents exactly.
         static let all = [
             Fit(width: 4, height: 2, targetWidth: 8, targetHeight: 8),
             Fit(width: 16, height: 8, targetWidth: 8, targetHeight: 8),
@@ -240,9 +233,9 @@ struct PreviewSmokeTests {
         }
     }
 
-    /// One 8-bit step of tolerance per channel, as in `MetalGatewaySmokeTests`.
+    /// Outside `GPUSmokeSupport.tolerance` in any channel.
     private static func differ(_ actual: [UInt8], _ expected: [Double]) -> Bool {
-        zip(actual.map(Double.init), expected).contains { abs($0 - $1) > 1 }
+        zip(actual.map(Double.init), expected).contains { abs($0 - $1) > Double(GPUSmokeSupport.tolerance) }
     }
 
     private static func bilinear(at texel: SIMD2<Double>, width: Int, height: Int, pixel: (Int, Int) -> [UInt8]) -> [Double] {

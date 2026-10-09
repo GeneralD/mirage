@@ -44,8 +44,8 @@ Only four things touch a real `MTLDevice`:
 4. `PreviewSmokeTests` — the preview kernel's pixels, run as an ordinary
    compute pass between two IOSurfaces so they can be read back: letterbox and
    pillarbox, each scaled ×2 and ×½, against a Swift reference of the
-   aspect-fit bilinear blit (one-step tolerance; the inputs vary per texel, so
-   a missing scale or a nearest filter is caught), and an exact same-size copy
+   aspect-fit bilinear blit (within `GPUSmokeSupport.tolerance`; the inputs
+   vary per texel, so a missing scale or a nearest filter is caught), and an exact same-size copy
    that catches a flip, a swapped axis or a half-texel shift; `MetalKitPreviewGateway.prepare` readying an
    off-screen `MTKView` and `draw` completing once into its layer's drawable.
    The view is created at a non-zero size and every draw asserts the layer's
