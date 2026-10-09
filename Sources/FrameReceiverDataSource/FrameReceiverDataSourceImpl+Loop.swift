@@ -14,9 +14,13 @@ extension FrameReceiverDataSourceImpl {
             case .frame(let frame):
                 deliver(frame, onFrame: onFrame, onEvent: onEvent)
             case .hello(let presence):
-                // The presence semantics arrive with the dead-name watch; for now it is only noted.
+                // The presence semantics arrive with the dead-name watch; until then the moved right
+                // is only noted and given back, so reconnecting hosts do not pile up names here.
                 developerLog.record(.receiver, "hello received, presence right \(presence.name)")
+                bootstrap.deallocate(MachPortToken(name: presence.name))
             case .deadName(let name):
+                // Not released: the name is only trusted once it matches a presence right this
+                // receiver holds, which arrives with the dead-name watch.
                 developerLog.record(.receiver, "dead-name notification received for \(name.name)")
             }
         }

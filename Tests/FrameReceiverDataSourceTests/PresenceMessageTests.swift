@@ -21,6 +21,7 @@ struct PresenceMessageTests {
 
         #expect(rig.developer.contains("hello"))
         #expect(rig.developer.contains("dead-name"))
+        #expect(rig.bootstrap.deallocated.values == [MachPortToken(name: 0x77)], "the hello's right is released; the dead-name is not trusted yet")
         #expect(rig.events.values == [.listening, .hostConnected])
         #expect(rig.frames.count == 1)
         try await rig.finish(task)
