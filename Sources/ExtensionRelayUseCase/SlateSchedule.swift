@@ -20,6 +20,11 @@ public struct SlateSchedule: Sendable, Hashable {
         /// Relay it, after leaving slate (the phase is already live again).
         case resume
         /// Its PTS does not advance past the last one emitted: drop it.
+        ///
+        /// Right after the host returns, the first frame or two can land here:
+        /// the slate PTS has advanced to wall-clock time while a real PTS is its
+        /// (slightly older) capture time. Accepted: strictly increasing PTS on
+        /// the stream matters more than those frames.
         case dropNonMonotonic
     }
 
