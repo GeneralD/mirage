@@ -30,6 +30,19 @@ struct IOSurfaceGatewayTests {
         #expect(surface.backing is IOSurface)
     }
 
+    /// IOSurface keeps an explicit `bytesPerRow` as given, so `width * 4` for a width that is not a multiple
+    /// of four would leave rows Metal refuses to bind (it asserts on an IOSurface texture whose rows are not
+    /// 16-byte aligned). The gateway must ask the OS to align the request.
+    @Test("create aligns the row stride to 16 bytes even when the width is not a multiple of four", arguments: [2, 6, 1366])
+    func createAlignsStride(width: Int) throws {
+        let surface = try gateway.create(.bgra(width: width, height: 4))
+        let resolved = gateway.descriptor(surface)
+        #expect(resolved.width == width)
+        #expect(resolved.height == 4)
+        #expect(resolved.bytesPerRow.isMultiple(of: 16), "bytesPerRow \(resolved.bytesPerRow) is not 16-byte aligned")
+        #expect(resolved.bytesPerRow >= width * 4)
+    }
+
     @Test("create rejects a descriptor IOSurface cannot allocate")
     func createFailure() {
         #expect(throws: SurfaceError.allocationFailed) {
