@@ -113,6 +113,27 @@ struct FakeGPURendererTests {
         #expect(renderer.pendingCount == 0)
     }
 
+    @Test("a request another FakeGPURenderer issued is refused, and the renders of both fakes stay suspended")
+    func foreignRequestIsRefused() async throws {
+        let other = FakeGPURenderer()
+        let mine = Task { await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1)) }
+        let theirs = Task { await other.render(library: library, input: token(3), output: token(4), uniforms: uniforms(2)) }
+        await renderer.requests.waitForCount(1)
+        await other.requests.waitForCount(1)
+        let own = try #require(renderer.requests.last)
+        let foreign = try #require(other.requests.last)
+        #expect(foreign.id == own.id, "ids are per instance, so only the origin tells the two apart")
+
+        #expect(!renderer.complete(foreign, with: .failure(.pageFault)))
+        #expect(renderer.pendingCount == 1, "the refused completion left this fake's render waiting")
+        #expect(other.pendingCount == 1, "and did not answer the issuing fake's render either")
+
+        #expect(renderer.complete(own, with: .success(timing)))
+        #expect(await mine.value == .success(timing), "the render received its own completion, not the refused one")
+        #expect(other.complete(foreign, with: .failure(.timeout)))
+        #expect(await theirs.value == .failure(.timeout))
+    }
+
     @Test("requests are recorded in call order: the ids count up from 1 whether answered at once or suspended")
     func requestsAreNumberedInCallOrder() async throws {
         renderer.respond(with: .success(timing))

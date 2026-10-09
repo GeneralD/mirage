@@ -16,7 +16,11 @@ import TestSupport
 public final class FakeGPURenderer: GPURenderer, Sendable {
     public struct Request: Sendable {
         /// Call order: 1 for the first render that reached the fake, and so on.
+        /// Numbered per instance, so another fake's request can carry the same id.
         public let id: Int
+        /// The fake that issued this request (`ObjectIdentifier` of it); only that
+        /// fake's `complete(_:with:)` accepts it.
+        public let origin: ObjectIdentifier
         public let library: any LibraryHandle
         public let input: SurfaceToken
         public let output: SurfaceToken
@@ -57,9 +61,11 @@ public final class FakeGPURenderer: GPURenderer, Sendable {
     public func render(
         library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms
     ) async -> Answer {
-        await withCheckedContinuation { (continuation: Continuation) in
+        let origin = ObjectIdentifier(self)
+        return await withCheckedContinuation { (continuation: Continuation) in
             let scripted = state.withLock { state -> Answer? in
-                let request = Request(id: state.nextID, library: library, input: input, output: output, uniforms: uniforms)
+                let request = Request(
+                    id: state.nextID, origin: origin, library: library, input: input, output: output, uniforms: uniforms)
                 state.nextID += 1
                 requests.append(request)
                 guard let answer = state.scripted else {
@@ -72,10 +78,15 @@ public final class FakeGPURenderer: GPURenderer, Sendable {
         }
     }
 
-    /// Resumes the suspended `render`; `false` when it is unknown or already answered.
+    /// Resumes the suspended `render`; `false` when it is unknown or already
+    /// answered. A request another fake issued is unknown here: ids are per
+    /// instance, so it is refused by its `origin` before its id can match one of
+    /// this fake's pending renders, which stay untouched.
     @discardableResult
     public func complete(_ request: Request, with answer: Answer) -> Bool {
-        guard let continuation = state.withLock({ $0.waiting.removeValue(forKey: request.id) }) else { return false }
+        guard request.origin == ObjectIdentifier(self),
+            let continuation = state.withLock({ $0.waiting.removeValue(forKey: request.id) })
+        else { return false }
         continuation.resume(returning: answer)
         return true
     }

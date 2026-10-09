@@ -51,10 +51,13 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `FakeGPURenderer` — one layer down, for the Repository suites: `render`
   suspends until `complete(_:with:)` (any order, exactly once) unless
   `respond(with:)` scripted an immediate answer; `requests` is a `Collector` in
-  call (`id`) order. Unlike `FakeEffectRuntimeRepository` it follows its live
-  counterpart on cancellation: `GPURenderDataSource` cannot withdraw a committed
-  pass, so a cancelled caller — even one cancelled before the call — is
-  recorded and keeps waiting; complete every request a test cancels.
+  call (`id`) order. Ids are per instance, so each request carries its `origin`
+  and `complete` returns `false` for one another `FakeGPURenderer` issued,
+  leaving every pending render untouched. Unlike `FakeEffectRuntimeRepository`
+  it follows its live counterpart on cancellation: `GPURenderDataSource` cannot
+  withdraw a committed pass, so a cancelled caller — even one cancelled before
+  the call — is recorded and keeps waiting; complete every request a test
+  cancels.
   The `GPURenderDataSource` suite itself drives the executor hop in two
   phases: it awaits `RecordingFrameExecutor.enqueued` (the render has queued its
   hop), asserts that no context, binding or command buffer exists and no answer
