@@ -13,6 +13,7 @@ import ExtensionInstallRepository
 import ExtensionInstallUseCase
 import FramePipelineUseCase
 import FrameTransportDataSource
+import GPURenderDataSource
 import MetalGateway
 import PreviewRepository
 import SystemExtensionGateway
@@ -71,6 +72,10 @@ extension FrameTransportKey: DependencyKey {
 
 extension CameraExtensionInstallerKey: DependencyKey {
     public static let liveValue: any CameraExtensionInstaller = ExtensionInstallDataSourceImpl()
+}
+
+extension GPURendererKey: DependencyKey {
+    public static let liveValue: any GPURenderer = GPURenderDataSourceImpl()
 }
 
 extension CaptureSessionGatewayKey: DependencyKey {
