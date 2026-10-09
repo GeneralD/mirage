@@ -77,6 +77,8 @@ struct ExtensionSide {
     let scheduler = ManualFrameScheduler()
     let clock = TestClock<Duration>()
     let stream = FakeStreamOutputGateway()
+    /// The extension's host-time axis (slate bases read it); a test moves it by hand.
+    let hostTime = FixedHostTime()
     let errors = RecordingLog()
     let developer = RecordingLog()
     let pool: SurfacePoolDataSourceImpl
@@ -87,6 +89,7 @@ struct ExtensionSide {
         let scheduler = scheduler
         let clock = clock
         let stream = stream
+        let hostTime = hostTime
         let errors = errors
         let developer = developer
         pool = withDependencies {
@@ -96,6 +99,7 @@ struct ExtensionSide {
         }
         let pool = pool
         relay = withDependencies {
+            $0.hostTime = hostTime
             $0.ioSurfaceGateway = ioSurface
             $0.machBootstrapGateway = kernel.bootstrap(for: .extension)
             $0.machMessageGateway = kernel.messaging(for: .extension)
@@ -144,8 +148,10 @@ extension LoopbackRig {
     @MainActor
     func startExtension(clientStreaming: Bool = true) async -> Task<Void, any Error> {
         let relay = ext.relay
+        // Relative, so a second run of the same extension (after an exit) waits for its own receive.
+        let receivesBefore = kernel.receiveCalls.count
         let task = Task { try await relay.run(descriptor: .hd720, frameRate: .standard) }
-        await tickUntil(tick: { ext.executor.drain() }, until: { kernel.receiveCalls.count >= 1 })
+        await tickUntil(tick: { ext.executor.drain() }, until: { kernel.receiveCalls.count > receivesBefore })
         guard clientStreaming else { return task }
         ext.stream.emit(.streamStarted)
         ext.executor.drain()
