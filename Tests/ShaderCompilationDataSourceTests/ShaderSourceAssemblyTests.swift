@@ -73,6 +73,32 @@ struct ShaderSourceAssemblyTests {
         #expect(ShaderSourceAssembly.authorRelative(message) == expected)
     }
 
+    @Test("program_source:<n>: inside the echoed source line or the message text is the author's text, not a location, and is kept")
+    func textThatOnlyLooksLikeALocation() {
+        // Verbatim from the real compiler (Apple M1 Max): the excerpt echoes the failing line as the author wrote it.
+        let withDirective = """
+            effect:2:20: error: expected expression
+                float x = 1.0 +; // was program_source:70: before
+                               ^
+
+            """
+        #expect(ShaderSourceAssembly.authorRelative(withDirective) == withDirective)
+
+        let withoutDirective = """
+            program_source:\(Self.offset + 2):20: error: expected expression
+                float x = 1.0 +; // was program_source:70: before
+                               ^
+            program_source:\(Self.offset + 4):1: error: unknown type name 'program_source:3:'
+            """
+        let expected = """
+            effect:2:20: error: expected expression
+                float x = 1.0 +; // was program_source:70: before
+                               ^
+            effect:4:1: error: unknown type name 'program_source:3:'
+            """
+        #expect(ShaderSourceAssembly.authorRelative(withoutDirective) == expected)
+    }
+
     @Test("text without a program_source location is left as it is")
     func untouchedText() {
         for message in ["no kernel named 'effect' in the compiled source", "effect:3:1: error: x", "program_source: no line", ""] {

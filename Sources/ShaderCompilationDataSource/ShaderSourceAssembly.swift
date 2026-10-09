@@ -11,7 +11,9 @@ import Domain
 /// source (`program_source:<line>:`) are rewritten as well: inside the author's
 /// part to `effect:<author line>:` — the safety net should a compiler ignore the
 /// directive — and inside the prelude to `prelude:<line>:`, so a note pointing
-/// at a prelude declaration says so.
+/// at a prelude declaration says so. Only a location that opens a diagnostic line
+/// is rewritten: the compiler echoes the failing source line verbatim, so the
+/// same text inside that excerpt or inside a message is the author's and is kept.
 public enum ShaderSourceAssembly {
     /// The file name the author's lines are reported under.
     public static let authorFileName = "effect"
@@ -37,10 +39,11 @@ public enum ShaderSourceAssembly {
         ShaderDiagnostics(message: authorRelative(diagnostics.message), code: diagnostics.code)
     }
 
-    /// `message` with every `program_source:<line>:` location rewritten; any
-    /// other text, `effect:<line>:` locations included, is left as it is.
+    /// `message` with every `program_source:<line>:` location at the start of a
+    /// line rewritten; any other text, `effect:<line>:` locations and the same
+    /// text in the middle of a line included, is left as it is.
     public static func authorRelative(_ message: String) -> String {
-        message.replacing(#/program_source:(\d+):/#) { match in
+        message.replacing(#/^program_source:(\d+):/#.anchorsMatchLineEndings()) { match in
             Int(match.output.1).map(location(ofAssembledLine:)) ?? String(match.output.0)
         }
     }
