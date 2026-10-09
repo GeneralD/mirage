@@ -103,6 +103,16 @@ Shared conventions:
 - Shells (`Apps/**`) hold only `main.swift` and assets; `make check` bounds
   their size. `Info.plist` and entitlements are generated from `project.yml`
   by `make generate` (gitignored), never hand-written.
+- Host absence: the extension detects it by frame gap (watchdog every
+  `frameGap / 4`) and by dead-name of the host's presence port; either yields
+  `hostLost`, and the relay then runs a black slate (`SlateSchedule`) with
+  strictly increasing PTS until a newer real frame arrives (older real frames
+  drop as `.nonMonotonic`). The host reconnects on `destinationLost` from
+  `FramePipelineUseCase` with `RetryPolicy.serviceLookup` backoff. The
+  kill -9 / -STOP / -CONT timings are not yet measured on a device (issue #3).
+- Install outcomes are typed: `InstallFailure` (`denied`, `canceled`,
+  `invalidBuild`, `other`) is mapped from raw `OSSystemExtensionError` codes in
+  `ExtensionInstallDataSource`, never in the gateway.
 - The Mach service name is declared once in `ProductIdentity`; host
   `mach-lookup`, extension `mach-register` and the constant are compared by
   `make check` (a mismatch makes `bootstrap_look_up` fail silently).
@@ -116,8 +126,13 @@ Shared conventions:
 - Frame flow is driven by the test: `FakeCaptureSessionGateway.emit(frame)`,
   `ManualFrameExecutor.drain()`, `FakeGPUGateway.complete(...)`. Interleavings
   are enumerated with seed-driven `forAll` / `@Test(arguments: Seeds...)`.
-- Time is `\.continuousClock` + `TestClock`; slate PTS is `n × (1/fps)` from
-  one base — never read from a wall clock.
+- Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
+  proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
+  wall clock.
+- Host IPC and host loss are tested on `InMemoryFrameTransport` (bootstrap
+  table, queue cap, presence ports, dead-name, `killHost()`); client counts on
+  `FakeStreamOutput.connectClient/disconnectClient`; wider seed sets via
+  `Seeds.range(0..<N)`.
 - Never `setenv`; inject paths through `AppDirectoriesProvider`.
 - Never `withMainSerialExecutor` / `uncheckedUseMainSerialExecutor`.
 - Build `@Dependency`-holding objects inside `withDependencies { } operation: { }`,

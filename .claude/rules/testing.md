@@ -32,14 +32,25 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
 - `ManualFrameScheduler.tick()` — one pipeline step.
 - `FakeGPUGateway.complete(pass:, with: GPUCompletion)` — completion timing
   and outcome are the test's; raw error codes are synthesized, never provoked.
-- `InMemoryFrameTransport` — host↔extension loopback with **separate surface
-  pools on each side**, `FakeMachPortToken` hand-off, a queue cap and the real
-  drop policy. A test that passes a `SurfaceToken` straight across is wrong.
+- `InMemoryFrameTransport` — the in-process Mach kernel behind the host↔extension
+  loopback (`Tests/FramePathIntegrationTests/LoopbackRig.swift` keeps
+  **separate surface pools on each side**). Hooks: a bootstrap table (look-up
+  fails until check-in and after the service port is destroyed;
+  `failNextLookUps(_:code:)`), a per-port queue cap (default 5, then
+  `.queueFull`), destroyed receive rights (`.destinationLost` on send,
+  `.portDied` on a pending receive), presence ports (destroying one delivers
+  `.deadName` to the registered notify port) and `killHost()` (the kill -9
+  model). A test that passes a `SurfaceToken` straight across is wrong.
+- `FakeStreamOutput.connectClient()` / `disconnectClient()` — client count and
+  `.streamStarted` / `.streamStopped`; `GatedClock` — a hand-stepped clock whose
+  `sleepers` collector fires once a sleep is registered, so a test advances time
+  only when the subject is parked (reconnect backoff proof).
 
 ## Property tests
 
-`forAll(seed:)` expands to `@Test(arguments: Seeds.range(0..<N))`; the seed
-is in the test name and failures reproduce by seed. Nightly widens `N`.
+`forAll(seeds:)` runs over `standardSeeds` (0..<32); `Seeds.range(0..<N)` names
+a wider set for `@Test(arguments:)`, where the seed is in the test name and
+failures reproduce by seed. Nightly widens `N`.
 Generators live in `Tests/TestSupport/Generators/`. Targets are listed in
 `docs/ARCHITECTURE.md` (Key Design Decisions → *Seeded property tests*).
 
