@@ -6,9 +6,10 @@ import TestSupport
 /// `completeApply(_:with:)` — each exactly once, with whatever result the test
 /// chooses, in any order. "A slow compile overtaken by a newer one" and "a GPU
 /// completion that lands after the next frame was captured" are therefore
-/// sequences the test writes down. A caller whose task is cancelled is resumed
-/// with `.failure(.internalError)`, so a stopped pipeline never leaks a
-/// continuation into the suite's time limit.
+/// sequences the test writes down. Like the live runtime, it ignores the
+/// caller's cancellation: a cancelled call is still recorded and still waits
+/// for its completion, so a suite that stops the pipeline mid-pass completes
+/// the pending request itself (`pendingCount` tells what is left).
 public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendable {
     public struct PrepareRequest: Sendable {
         public let id: Int
@@ -27,7 +28,6 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
     private struct State {
         var nextID = 1
         var waiting: [Int: Continuation] = [:]
-        var cancelledBeforeSuspending: Set<Int> = []
     }
 
     private let state = Locked(State())
@@ -68,31 +68,16 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
         }
     }
 
-    /// A request is recorded if and only if it was registered as waiting: both
-    /// happen in one critical section, so a cancellation can never leave a
-    /// recorded request that was already resumed, and a caller cancelled before
-    /// it suspended is never recorded at all. (`Collector` takes its own lock and
-    /// never calls back into `state`, so the nesting cannot deadlock.)
+    /// The request is registered as waiting and recorded in one critical
+    /// section, so a test that sees a recorded request can always complete it.
+    /// (`Collector` takes its own lock and never calls back into `state`, so the
+    /// nesting cannot deadlock.)
     private func suspend(_ id: Int, announce: @Sendable () -> Void) async -> Result<Void, EffectFailure> {
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: Continuation) in
-                let alreadyCancelled = state.withLock { state in
-                    guard state.cancelledBeforeSuspending.remove(id) == nil else { return true }
-                    state.waiting[id] = continuation
-                    announce()
-                    return false
-                }
-                guard !alreadyCancelled else { return continuation.resume(returning: .failure(.internalError)) }
+        await withCheckedContinuation { (continuation: Continuation) in
+            state.withLock { state in
+                state.waiting[id] = continuation
+                announce()
             }
-        } onCancel: {
-            let continuation = state.withLock { state -> Continuation? in
-                guard let waiting = state.waiting.removeValue(forKey: id) else {
-                    state.cancelledBeforeSuspending.insert(id)
-                    return nil
-                }
-                return waiting
-            }
-            continuation?.resume(returning: .failure(.internalError))
         }
     }
 

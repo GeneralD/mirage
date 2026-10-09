@@ -4,6 +4,9 @@ import Dependencies
 /// cache the handle) and apply it to one frame. Both run off the frame
 /// executor (`async`) and neither throws — every outcome is an `EffectFailure`
 /// the pipeline turns into a pass-through and `EffectHealthPolicy` counts.
+/// Cancelling the caller cuts neither call short: a compile or a GPU pass that
+/// has started runs to its end and the call answers with its real outcome, so
+/// the caller holds the leases it handed in until `apply` returns.
 /// The live value is `PassthroughEffectRuntimeRepository` (no effect loaded)
 /// until the real runtime lands in the same module (#19).
 public protocol EffectRuntimeRepository: Sendable {
