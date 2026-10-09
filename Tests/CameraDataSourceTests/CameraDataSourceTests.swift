@@ -357,6 +357,17 @@ struct CameraDataSourceTests {
         #expect(rig.ends.values == [.stopped])
     }
 
+    @Test("stop stays silent after the gateway already ended the session")
+    func stopAfterGatewayEndIsSilent() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.gateway.end(.deviceDisconnected)
+        rig.executor.drain()
+        rig.subject.stop()
+        rig.executor.drain()
+        #expect(rig.ends.values == [.deviceDisconnected])
+    }
+
     @Test("stop with nothing running reports nothing")
     func stopWithoutSessionIsSilent() {
         let rig = Rig()

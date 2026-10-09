@@ -15,8 +15,11 @@ import Domain
 public final class CameraDataSourceImpl: @unchecked Sendable {
     /// Identity token for one capture session; compared by reference. Keeps the
     /// session's `onEnd` so an explicit `stop` can report `.stopped` to its owner.
-    private final class Session: Sendable {
+    private final class Session: @unchecked Sendable {
         let onEnd: @Sendable (CaptureEnd) -> Void
+        // Executor-confined: set once the gateway has reported this session's end,
+        // so a later `stop` does not report a second one.
+        var hasEnded = false
 
         init(onEnd: @escaping @Sendable (CaptureEnd) -> Void) {
             self.onEnd = onEnd
@@ -99,7 +102,7 @@ extension CameraDataSourceImpl {
         retireHandle()
         current = nil
         lastPresentation = nil
-        guard reporting else { return }
+        guard reporting, !session.hasEnded else { return }
         session.onEnd(.stopped)
     }
 
@@ -110,7 +113,8 @@ extension CameraDataSourceImpl {
 
     /// Runs on the executor. The end of a session starts the next one from a clean floor.
     private func finish(_ reason: CaptureEnd, from session: Session, to onEnd: @Sendable (CaptureEnd) -> Void) {
-        guard session === current else { return }
+        guard session === current, !session.hasEnded else { return }
+        session.hasEnded = true
         lastPresentation = nil
         onEnd(reason)
     }
