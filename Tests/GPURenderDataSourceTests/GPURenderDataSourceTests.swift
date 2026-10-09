@@ -6,6 +6,38 @@ import Testing
 
 @Suite("GPURenderDataSource", .timeLimit(.minutes(1)))
 struct GPURenderDataSourceTests {
+    // MARK: - The executor hop
+
+    /// The live surface pool has no lock and is confined to the frame executor, so a
+    /// render that read it from its caller's thread would race the capture path.
+    @Test("nothing is resolved, bound or committed until the executor runs the hop")
+    func passWaitsForTheExecutor() async throws {
+        let fixture = RenderFixture()
+        let render = try await fixture.enqueue(input: fixture.lease(), output: fixture.lease())
+
+        #expect(fixture.executor.pendingCount == 1)
+        #expect(fixture.progress == Progress(contexts: 0, binds: 0, submissions: 0))
+
+        #expect(fixture.executor.drain() == 1)
+        #expect(fixture.progress == Progress(contexts: 1, binds: 2, submissions: 1))
+        #expect(render.answered.count == 0, "a committed pass answers from its completion, not from the hop")
+        try fixture.completePending(with: .finished)
+        #expect(await render.task.value == .success(GPUTiming(gpuStart: 10, gpuEnd: 10.004)))
+    }
+
+    @Test("even a stale lease is only discovered on the executor: no answer before the hop runs")
+    func staleLeaseWaitsForTheExecutor() async throws {
+        let fixture = RenderFixture()
+        let render = try await fixture.enqueue(input: fixture.staleLease(), output: fixture.lease())
+
+        #expect(fixture.executor.pendingCount == 1)
+        #expect(render.answered.count == 0)
+
+        fixture.executor.drain()
+        #expect(await render.task.value == .failure(.invalidResource))
+        #expect(fixture.progress == Progress(contexts: 0, binds: 0, submissions: 0))
+    }
+
     // MARK: - One effect, one command buffer
 
     @Test("a pass commits one command buffer: the library, input then output, the uniforms verbatim, a grid covering the output")

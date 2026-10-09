@@ -9,14 +9,14 @@ typealias RenderResult = Result<GPUTiming, EffectFailure>
 
 /// The subject wired to fakes: `FakeSurfacePool` holds the leases,
 /// `FakeTextureCacheGateway` counts the bindings, `FakeGPUGateway` holds every
-/// command buffer until the test completes it, and `ManualFrameExecutor` runs the
-/// executor hop only when the test drains it. The subject is built inside
+/// command buffer until the test completes it, and `RecordingFrameExecutor` runs
+/// the executor hop only when the test drains it. The subject is built inside
 /// `withDependencies` so it captures these fakes rather than the defaults.
 struct RenderFixture {
     let gpu = FakeGPUGateway()
     let textures = FakeTextureCacheGateway()
     let pool = FakeSurfacePool(capacity: 16)
-    let executor = ManualFrameExecutor()
+    let executor = RecordingFrameExecutor()
     let log = RecordingLog()
     let library = FakeLibraryHandle(source: "kernel void effect() {}")
     let subject: GPURenderDataSourceImpl
@@ -57,30 +57,82 @@ struct RenderFixture {
         try #require(pool.handle(for: token) as? FakeSurfaceHandle)
     }
 
-    /// Starts a render on its own task and runs the executor until the pass was
-    /// committed or the render has already answered (a pass that never reaches
-    /// the GPU answers from inside the drain).
-    func start(
+    /// Phase one: starts a render on its own task and returns once the render has
+    /// queued its hop on the executor. Nothing has run on the executor yet.
+    func enqueue(
         input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms = .sample, library: (any LibraryHandle)? = nil
-    ) async -> Task<RenderResult, Never> {
+    ) async -> StartedRender {
         let subject = subject
         let kernel = library ?? self.library
         let answered = Collector<RenderResult>()
-        let submittedBefore = gpu.submissions.count
+        let hopsBefore = executor.enqueued.count
         let task = Task {
             let result = await subject.render(library: kernel, input: input, output: output, uniforms: uniforms)
             answered.append(result)
             return result
         }
-        let gpu = gpu
-        let executor = executor
-        await tickUntil(tick: { executor.drain() }, until: { gpu.submissions.count > submittedBefore || answered.count > 0 })
-        return task
+        await executor.enqueued.waitForCount(hopsBefore + 1)
+        return StartedRender(task: task, answered: answered)
+    }
+
+    /// Both phases, with the hop pinned in between: once the render has queued its
+    /// hop and before the executor runs it, no context was made, nothing was bound
+    /// or committed and the render has not answered — even for a stale lease, which
+    /// is only discovered on the executor. Then one drain runs the hop, so the pass
+    /// is committed, or the render has its answer, by the time `start` returns.
+    func start(
+        input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms = .sample, library: (any LibraryHandle)? = nil
+    ) async -> Task<RenderResult, Never> {
+        let before = progress
+        let render = await enqueue(input: input, output: output, uniforms: uniforms, library: library)
+        #expect(progress == before, "nothing is resolved, bound or committed before the executor runs the hop")
+        #expect(render.answered.count == 0, "the render cannot answer before its hop has run")
+        #expect(executor.drain() == 1)
+        return render.task
+    }
+
+    /// What the gateways have been asked for so far.
+    var progress: Progress {
+        Progress(contexts: gpu.contextCount, binds: textures.bindCount, submissions: gpu.submissions.count)
     }
 
     /// Completes the only pending command buffer.
     func completePending(with completion: GPUCompletion) throws {
         #expect(gpu.complete(try #require(gpu.pending.first), with: completion))
+    }
+}
+
+/// A render started by `RenderFixture.enqueue`: its task and the answer it recorded, if any.
+struct StartedRender {
+    let task: Task<RenderResult, Never>
+    let answered: Collector<RenderResult>
+}
+
+/// The counters that move once a pass reaches the gateways.
+struct Progress: Equatable {
+    let contexts: Int
+    let binds: Int
+    let submissions: Int
+}
+
+/// `ManualFrameExecutor` that also records every enqueue, so a test can await the
+/// subject's hop instead of polling for it. Private to this suite: no other suite
+/// waits for work being queued.
+final class RecordingFrameExecutor: FrameExecutor, Sendable {
+    private let manual = ManualFrameExecutor()
+    /// One element per `run`, recorded after the work is queued.
+    let enqueued = Collector<Void>()
+
+    var pendingCount: Int { manual.pendingCount }
+
+    func run(_ work: @escaping @Sendable () -> Void) {
+        manual.run(work)
+        enqueued.append(())
+    }
+
+    @discardableResult
+    func drain() -> Int {
+        manual.drain()
     }
 }
 

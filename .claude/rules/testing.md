@@ -55,9 +55,11 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   counterpart on cancellation: `GPURenderDataSource` cannot withdraw a committed
   pass, so a cancelled caller — even one cancelled before the call — is
   recorded and keeps waiting; complete every request a test cancels.
-  The `GPURenderDataSource` suite itself drives the executor hop with
-  `tickUntil(tick: { executor.drain() }, …)` and completes passes through
-  `FakeGPUGateway`. `InMemoryPreviewSink` —
+  The `GPURenderDataSource` suite itself drives the executor hop in two
+  phases: it awaits `RecordingFrameExecutor.enqueued` (the render has queued its
+  hop), asserts that no context, binding or command buffer exists and no answer
+  arrived, then `drain()`s; passes complete through `FakeGPUGateway`. Removing
+  the hop turns that suite red. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
