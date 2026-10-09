@@ -9,13 +9,18 @@ paths:
 
 Everything that *decides* (pass-through, auto-disable, budget, in-flight cap,
 newest-wins compile) is tested against `FakeGPUGateway` and never needs a GPU.
-Only two things touch a real `MTLDevice`:
+Only three things touch a real `MTLDevice`:
 
-1. `MetalGateway` smoke — `makeLibrary(source:)` of the prelude + one effect,
+1. `MetalDeviceSmokeTests` — the issue #4 runner probe kept as a test: a
+   device exists, it is in the `mac2` family, and a kernel compiled from
+   source fills a buffer correctly. It predates `MetalGateway` (MVP-A) so the
+   CI job exists before the gateway does; `MetalDeviceProbe` next to it is
+   the one place the suites ask whether a device exists.
+2. `MetalGateway` smoke — `makeLibrary(source:)` of the prelude + one effect,
    one compute pass, output compared with the Swift reference implementation
    under a single fixed tolerance (`fastMathEnabled = false` is part of the
    compile options the port takes).
-2. Hash-noise parity — GPU vs Swift reference, same tolerance.
+3. Hash-noise parity — GPU vs Swift reference, same tolerance.
 
 ## Rules
 
@@ -40,8 +45,10 @@ Only two things touch a real `MTLDevice`:
   returns correct results. It is a VM's paravirtual GPU, not Apple silicon
   as seen by an app: `supportsFamily(.apple7) == false`, `.mac2 == true`
   (those two families are all the probe asked; the kernel it ran was a plain
-  buffer fill). So `make test-gpu` can run in CI as its own job — issue #9
-  adds the job once `Tests/GPUSmokeTests` exists — and GPU smoke tests are
-  written against the `mac2` family only: anything gated on an Apple family
-  (SIMD-group functions, Apple-family texture formats, …) is treated as
-  unavailable until a probe shows otherwise.
+  buffer fill). So `make test-gpu` **runs in CI** as the `test-gpu` job of
+  `.github/workflows/test.yml` (#9): `macos-latest`, its own process, 15-minute
+  outer bound, and it **fails if the suites skip** — a skip means the runner
+  lost its device, which must surface rather than pass as an empty run. GPU
+  smoke tests are written against the `mac2` family only: anything gated on
+  an Apple family (SIMD-group functions, Apple-family texture formats, …) is
+  treated as unavailable until a probe shows otherwise.

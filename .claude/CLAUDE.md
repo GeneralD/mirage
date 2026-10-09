@@ -14,7 +14,7 @@ tables, physical-abstraction table, and Key Design Decisions — lives in
 ```sh
 make build                 # release build of the shipped products only (never a bare `swift build`)
 make test                  # swift test (parallel, no GPU)
-make test-gpu              # GPU smoke suites in their own process (needs a Metal device; the CI runner has one, #9 adds the job)
+make test-gpu              # GPU smoke suites in their own process (needs a Metal device; CI runs it as the `test-gpu` job)
 make lint                  # swift-format lint --strict
 make format                # swift-format --in-place
 make check                 # import-boundary lint, physical-symbol lint, thin-live check, service-name check, product-name check
