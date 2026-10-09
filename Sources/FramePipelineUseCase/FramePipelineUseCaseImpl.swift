@@ -16,6 +16,8 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     @Dependency(\.surfaceRepository) private var surfaceRepository
     @Dependency(\.frameExecutor) private var frameExecutor
     @Dependency(\.frameScheduler) private var frameScheduler
+    @Dependency(\.workRunner) private var workRunner
+    @Dependency(\.continuousClock) private var clock
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
@@ -27,6 +29,17 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     private let snapshot = CurrentValueSubject<PipelineStats, Never>(.empty)
     private var tickCount = 0
     private var lastDropReason: FrameDropReason?
+    // Executor-confined, like the phase: the reconnect work (owned through the
+    // `WorkRunner` port, never an unstructured `Task` here), and the epoch that tells
+    // finished work apart from the one that replaced it.
+    private var reconnectWork: (any WorkHandle)?
+    private var reconnectEpoch = 0
+    // A loss that arrived while a connect (first or re-) was still settling: it is
+    // remembered and replayed when that connect finishes, never dropped.
+    private var lossPending = false
+    // Losses since a frame last reached the extension; paces the next reconnect.
+    private var lossStreak = 0
+    let phaseSubject = CurrentValueSubject<PipelinePhase, Never>(.idle)
 
     public init() {}
 
@@ -34,7 +47,16 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     /// `ManualFrameExecutor.drain()`.
     public var stats: PipelineStats { snapshot.value }
 
+    /// The link phase as of the last executor step.
+    var phase: PipelinePhase { phaseSubject.value }
+
     public func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
+        frameExecutor.run { [self] in
+            // A fresh run: nothing of a previous run's loss pacing carries over.
+            lossStreak = 0
+            lastDropReason = nil
+            phaseSubject.value = .connecting
+        }
         virtualCameraSink.observe { [weak self] event in self?.observed(event) }
         try cameraRepository.start(
             descriptor: descriptor,
@@ -50,8 +72,16 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     public func stop() {
         frameScheduler.stop()
         cameraRepository.stop()
+        // Cancel the reconnect work before the sink's generation moves: a task that
+        // reads the new generation afterwards is then already cancelled and cannot
+        // bring the transport back up after `stop`.
+        frameExecutor.run { [self] in
+            cancelReconnect()
+            lossStreak = 0
+        }
         virtualCameraSink.disconnect()
         frameExecutor.run { [self] in
+            phaseSubject.value = .stopped
             releaseLatest()
             surfaceRepository.releaseAll()
         }
@@ -79,6 +109,7 @@ extension FramePipelineUseCaseImpl {
         guard let frame = takeLatest() else { return }
         let outcome = virtualCameraSink.send(frame)
         update { $0.note(outcome) }
+        if outcome.wasSent { lossStreak = 0 }
         surfaceRepository.release(frame.token)
     }
 
@@ -109,6 +140,9 @@ extension FramePipelineUseCaseImpl {
                 lastDropReason = nil
                 developerLog.record(.transport, "connected to the extension")
             case .disconnected(.explicit): developerLog.record(.transport, "disconnected")
+            case .disconnected(.destinationLost):
+                errorLog.record(.transport, "disconnected: destinationLost")
+                startReconnect()
             case .disconnected(let reason): errorLog.record(.transport, "disconnected: \(reason)")
             case .frameDropped(let reason): noteDrop(reason)
             }
@@ -140,10 +174,101 @@ extension FramePipelineUseCaseImpl {
     private func connect() async throws {
         do {
             try await virtualCameraSink.connect()
+            frameExecutor.run { [self] in
+                settle(from: .connecting, to: .connected)
+                replayPendingLoss()
+            }
         } catch let cancellation as CancellationError {
             throw cancellation
         } catch {
             errorLog.record(.transport, "virtual camera sink did not connect: \(error)")
+            frameExecutor.run { [self] in
+                settle(from: .connecting, to: .disconnected)
+                lossPending = false
+            }
         }
+    }
+
+    /// Moves the phase only when it is still where the caller left it: a `stop`
+    /// that ran in between is not undone by a late result.
+    private func settle(from expected: PipelinePhase, to next: PipelinePhase) {
+        guard phaseSubject.value == expected else { return }
+        phaseSubject.value = next
+    }
+}
+
+// MARK: - Reconnect (executor-confined)
+
+extension FramePipelineUseCaseImpl {
+    /// The extension went away while the pipeline was up: look the service up again
+    /// (the sink's retry policy paces it on the injected clock) without blocking the
+    /// executor. One task at a time; an explicit disconnect or a failed first
+    /// look-up is not a loss and brings nothing back.
+    private func startReconnect() {
+        switch phaseSubject.value {
+        case .connecting, .reconnecting:
+            // The connect in flight has not settled yet; its loss is replayed once it has.
+            lossPending = true
+            return
+        case .connected, .disconnected:
+            break
+        case .idle, .stopped:
+            return
+        }
+        guard reconnectWork == nil else { return }
+        phaseSubject.value = .reconnecting
+        reconnectEpoch += 1
+        lossStreak += 1
+        let epoch = reconnectEpoch
+        let sink = virtualCameraSink
+        let pause = Self.pause(beforeReconnectAfterLosses: lossStreak)
+        let clock = clock
+        reconnectWork = workRunner.run { [weak self] in
+            let failure: (any Error)?
+            do {
+                // The first loss reconnects at once; a link that keeps dying before a
+                // single frame got through backs off like a failing look-up does.
+                if let pause { try await clock.sleep(for: pause) }
+                try await sink.connect()
+                failure = nil
+            } catch {
+                failure = error
+            }
+            self?.frameExecutor.run { [weak self] in self?.reconnectFinished(epoch: epoch, failure: failure) }
+        }
+    }
+
+    private static func pause(beforeReconnectAfterLosses losses: Int) -> Duration? {
+        losses > 1 ? RetryPolicy.serviceLookup.delay(afterFailure: losses - 1) : nil
+    }
+
+    private func reconnectFinished(epoch: Int, failure: (any Error)?) {
+        guard epoch == reconnectEpoch else { return }
+        reconnectWork = nil
+        switch failure {
+        case nil:
+            settle(from: .reconnecting, to: .connected)
+            replayPendingLoss()
+        case is CancellationError:
+            settle(from: .reconnecting, to: .disconnected)
+            lossPending = false
+        case let error?:
+            errorLog.record(.transport, "reconnect failed: \(error)")
+            settle(from: .reconnecting, to: .disconnected)
+            lossPending = false
+        }
+    }
+
+    private func replayPendingLoss() {
+        guard lossPending else { return }
+        lossPending = false
+        startReconnect()
+    }
+
+    private func cancelReconnect() {
+        reconnectEpoch += 1
+        lossPending = false
+        reconnectWork?.cancel()
+        reconnectWork = nil
     }
 }

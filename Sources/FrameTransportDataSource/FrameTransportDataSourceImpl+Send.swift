@@ -22,6 +22,11 @@ extension FrameTransportDataSourceImpl {
             return .sent
         } catch MachError.destinationLost {
             return lose(port)
+        } catch MachError.queueFull {
+            // The extension is slower than the host: a steady-state drop at frame pace, so
+            // not logged here; the link stays up and the observer tallies it per reason.
+            onEvent?(.frameDropped(.queueFull))
+            return .dropped(.queueFull)
         } catch MachError.sendFailed(let code) {
             return drop(code: code, "send refused")
         } catch {

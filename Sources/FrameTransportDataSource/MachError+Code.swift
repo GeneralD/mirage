@@ -8,7 +8,7 @@ extension MachError {
         case .bootstrapUnavailable(let code), .lookupFailed(let code), .checkInFailed(let code),
             .registerFailed(let code), .sendFailed(let code), .receiveFailed(let code):
             code
-        case .destinationLost, .portDied, .malformedMessage:
+        case .destinationLost, .queueFull, .portDied, .malformedMessage:
             -1
         }
     }

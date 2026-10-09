@@ -45,6 +45,34 @@ Guardrails:
   uninstall <team> <bundle id>` if the user does not want the extension to
   stay.
 
+### M0-c acceptance — host loss, slate and reconnect (pending the profiles of issue #3)
+
+Not yet run on a device: the signed build needs the profiles of issue #3, and
+the timings below are the budgets of issue #6, not measurements. With the
+camera selected in QuickTime Player (or Zoom) and frames flowing, stream the
+logs of both processes (subsystem from `ProductIdentity`):
+
+```sh
+log stream --level debug --style compact --predicate 'subsystem == "<log subsystem>"'
+# extension: process = the Camera Extension; host: process = the app
+# --level debug is required: only `host lost` and `destination lost` are error-level,
+# the slate, hello, connect and summary lines are debug-level and hidden otherwise.
+```
+
+| Step | Action | Expected lines (grep) | Budget |
+|---|---|---|---|
+| 1. Baseline | nothing | extension `frames=… received=… dropped=… maxGapMs=… slate=0`; host `connected to port` | — |
+| 2. Host killed | `kill -9 <host pid>` | extension `host lost: .*deadName` (kernel destroys the presence right) or, as backstop, `host lost: .*frameGap`; then `slate entered base=` (debug); the client shows black. The summary line is printed per second of *real* frames only, so no `slate=` line appears while the host is away | black frames within 1.25 × frameGap (2.5 s at the default 2 s gap); target well under 3 s |
+| 3. Host stalled | `kill -STOP <host pid>` | only `host lost: .*frameGap` (the presence right stays alive); `slate entered base=` | same budget |
+| 4. Host resumed | `kill -CONT <host pid>` | `slate left`; the first summary line after the resume shows the accumulated `slate=<n>`, which stays constant afterwards; picture back in the client without a restart (real PTS is re-timed above the slate, so frames are not dropped for a late capture time) | next frame after resume |
+| 5. Host relaunched | relaunch the app after step 2 | host `connected to port` (the extension stayed alive, so the first look-up normally succeeds; `look-up attempt <n> failed` appears only if it is not checked in); extension `hello received, watching presence right`; `slate left` | reconnect within a few seconds (backoff is 250 ms doubling to 5 s) |
+| 6. Extension gone | kill the extension process (`pkill -f <extension process name>`); expectation, not yet verified on a device | host `destination lost, port <n> released` (error), then `look-up attempt <n> failed` lines (debug) until the extension is back, then `connected to port`; no host restart needed | — |
+| 7. Client first | quit the host app, then open the virtual camera in the client (QuickTime/Zoom) before launching the host | extension `host lost: .*frameGap` (no frame ever arrived); `slate entered base=`; then after launching the app `hello received, watching presence right` and `slate left` | black frames within 1.25 × frameGap of the extension starting (2.5 s at the default gap), then the picture on host launch |
+
+Record the measured times next to the budgets once they exist; until then do
+not claim which detector fired for step 2 — the log line tells (`deadName` vs
+`frameGap`). `host lost: …` is the error-log copy of the same event.
+
 ## Lane 3 — destructive GPU scenarios: VM only
 
 Infinite-loop / out-of-bounds shaders, `accessRevoked` recovery, and anything

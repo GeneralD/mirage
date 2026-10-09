@@ -16,8 +16,8 @@ extension CameraAuthorizationGatewayImpl: CameraAuthorizationGateway {
             .denied: .denied,
             .restricted: .restricted,
         ]
-        // A status added by a future OS fails closed.
-        return mapping[AVCaptureDevice.authorizationStatus(for: .video)] ?? .denied
+        // A status added by a future OS fails closed as `.unrecognized`.
+        return mapping[AVCaptureDevice.authorizationStatus(for: .video)] ?? .unrecognized
     }
 
     public func requestAccess() async -> Bool {

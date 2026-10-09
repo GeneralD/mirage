@@ -55,6 +55,26 @@ struct SurfaceRepositoryTests {
         #expect(repository.liveCount == 0)
     }
 
+    @Test("allocate(filledWith:) forwards the byte and the descriptor to the pool")
+    func allocateFilledForwards() throws {
+        let pool = FakeSurfacePool(capacity: 2)
+        let repository = makeRepository(pool: pool)
+        let token = try #require(try repository.allocate(.hd720, filledWith: 0))
+        #expect((pool.handle(for: token) as? FakeSurfaceHandle)?.lastFill == 0)
+        #expect(repository.liveCount == 1)
+    }
+
+    @Test("a failing fill rethrows and leaves liveCount unchanged")
+    func allocateFilledThrows() {
+        let pool = FakeSurfacePool()
+        pool.failFill(with: SurfaceError.allocationFailed)
+        let repository = makeRepository(pool: pool)
+        #expect(throws: SurfaceError.allocationFailed) {
+            try repository.allocate(.hd720, filledWith: 0)
+        }
+        #expect(repository.liveCount == 0)
+    }
+
     @Test("release forwards, reporting false for a stale token")
     func releaseForwards() throws {
         let pool = FakeSurfacePool()

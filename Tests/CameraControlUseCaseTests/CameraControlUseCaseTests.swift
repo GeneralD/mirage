@@ -22,7 +22,9 @@ struct CameraControlUseCaseTests {
         #expect(repository.authorizationRequests.count == 1)
     }
 
-    @Test("an existing decision is returned as is, without a prompt", arguments: [CameraAuthorizationStatus.authorized, .denied, .restricted])
+    @Test(
+        "an existing decision is returned as is, without a prompt",
+        arguments: [CameraAuthorizationStatus.authorized, .denied, .restricted, .unrecognized])
     func keepsDecidedStatus(existing: CameraAuthorizationStatus) async {
         let repository = FakeCameraRepository(authorization: existing, requestDecision: .authorized)
         let status = await makeSubject(repository).ensureAuthorized()

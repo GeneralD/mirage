@@ -80,7 +80,7 @@ struct FrameTransportSendTests {
         try await fixture.connect()
 
         #expect(fixture.subject.send(try fixture.makeSurface(), descriptor: .hd720, presentationTime: .zero) == .sent)
-        #expect(fixture.messaging.sent.last?.port == MachPortToken(name: 0x2001))
+        #expect(fixture.messaging.sent.last?.port == MachPortToken(name: 0x2002))
     }
 
     @Test("a refused send drops the frame with the raw code, keeps the link and logs the failure")
@@ -96,6 +96,23 @@ struct FrameTransportSendTests {
         #expect(fixture.bootstrap.deallocated.count == 0)
         #expect(fixture.log.contains("code 5"))
         #expect(fixture.events.values == [.connected, .frameDropped(.sendFailed(code: 5))])
+    }
+
+    @Test("a full extension queue drops the frame as queueFull, keeps the link and does not flood the log")
+    func queueFull() async throws {
+        let fixture = TransportFixture()
+        try await fixture.connect()
+        fixture.messaging.failSend(with: .queueFull)
+
+        let outcome = fixture.subject.send(try fixture.makeSurface(), descriptor: .hd720, presentationTime: .zero)
+
+        #expect(outcome == .dropped(.queueFull))
+        #expect(fixture.subject.isConnected)
+        #expect(fixture.bootstrap.deallocated.count == 0)
+        #expect(!fixture.log.contains("dropped"))
+        #expect(fixture.events.values == [.connected, .frameDropped(.queueFull)])
+        fixture.messaging.failSend(with: nil)
+        #expect(fixture.subject.send(try fixture.makeSurface(), descriptor: .hd720, presentationTime: .zero) == .sent)
     }
 
     @Test("an unexpected gateway error drops the frame with code -1 and keeps the link")

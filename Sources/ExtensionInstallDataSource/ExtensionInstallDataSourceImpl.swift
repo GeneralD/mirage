@@ -17,6 +17,9 @@ public actor ExtensionInstallDataSourceImpl {
     private var subscribers: [Int: AsyncStream<InstallStatus>.Continuation] = [:]
     // Source of subscriber keys; bumped once per subscription.
     private var nextSubscriberID = 0
+    // Identifies the newest activation request; bumped per submission so a superseded
+    // request's late events cannot touch the one that replaced it.
+    private var generation = 0
 
     public init() {}
 }
@@ -38,7 +41,9 @@ extension ExtensionInstallDataSourceImpl: CameraExtensionInstaller {
             return stream
         }
         transition(to: .installing)
-        Task { await drive() }
+        generation += 1
+        let mine = generation
+        Task { await drive(generation: mine) }
         return stream
     }
 }
@@ -49,14 +54,30 @@ extension ExtensionInstallDataSourceImpl {
 
     private var isPending: Bool { current == .installing || current == .needsApproval }
 
-    /// Relays gateway events until one is terminal. A stream that ends first
-    /// is a failure: the delegate would otherwise leave callers waiting forever.
-    private func drive() async {
+    /// Relays gateway events of one request until its stream ends. A stream that ends
+    /// before a terminal status is a failure: the delegate would otherwise leave callers
+    /// waiting forever. The loop keeps reading after a terminal event so a late callback
+    /// of this request is consumed (and dropped) instead of leaking into a newer one.
+    private func drive(generation mine: Int) async {
         for await event in gateway.activate(extensionBundleID: ProductIdentity.extensionBundleID) {
-            transition(to: Self.status(for: event))
-            guard !current.isTerminal else { return }
+            guard mine == generation, !current.isTerminal else { continue }
+            apply(event)
         }
-        transition(to: .failed(reason: "activation ended without a result"))
+        guard mine == generation, !current.isTerminal else { return }
+        transition(to: .failed(.other(code: -1, description: "activation ended without a result")))
+    }
+
+    private func apply(_ event: SystemExtensionEvent) {
+        switch event {
+        case .willReplaceExisting:
+            // Informational: the request stays in flight. Re-yield only while installing; after
+            // needsApproval a fallback to .installing would hide the approval guidance.
+            developerLog.record(.install, "replacing the installed extension build")
+            guard current == .installing else { return }
+            transition(to: .installing)
+        case .needsApproval, .completed, .completesAfterReboot, .failed:
+            transition(to: Self.status(for: event))
+        }
     }
 
     /// A consumer that stops reading must not stay in the fan-out until the
@@ -83,14 +104,31 @@ extension ExtensionInstallDataSourceImpl {
         subscribers = [:]
     }
 
-    private static func status(for event: SystemExtensionEvent) -> InstallStatus {
+    static func status(for event: SystemExtensionEvent) -> InstallStatus {
         switch event {
         case .needsApproval: .needsApproval
         case .completed: .installed
         // Accepted, but not active until the next restart: terminal, yet not installed,
         // so the host does not start a pipeline against an extension that is not there.
         case .completesAfterReboot: .rebootRequired
-        case .failed(let reason): .failed(reason: reason)
+        case .failed(let code, let description): .failed(failure(code: code, description: description))
+        // Handled by the caller (it is not a status change); mapped here only to stay exhaustive.
+        case .willReplaceExisting: .installing
+        }
+    }
+
+    /// Classifies a raw `OSSystemExtensionError.Code` (kept as numbers so the gateway
+    /// stays a pass-through): 10 forbiddenBySystemPolicy; 11 requestCanceled and
+    /// 12 requestSuperseded; 2 missingEntitlement, 3 unsupportedParentBundleLocation,
+    /// 4 extensionNotFound, 5 extensionMissingIdentifier, 6 duplicateExtensionIdentifier,
+    /// 7 unknownExtensionCategory, 8 codeSignatureInvalid and 9 validationFailed describe
+    /// a wrong build. 1 unknown and 13 authorizationRequired stay `other`.
+    static func failure(code: Int, description: String) -> InstallFailure {
+        switch code {
+        case 10: .denied
+        case 11, 12: .canceled
+        case 2...9: .invalidBuild(code: code)
+        default: .other(code: code, description: description)
         }
     }
 }

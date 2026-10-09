@@ -18,6 +18,10 @@ extension FrameExecutorKey: DependencyKey {
     public static let liveValue: any FrameExecutor = liveFrameExecutor
 }
 
+extension WorkRunnerKey: DependencyKey {
+    public static let liveValue: any WorkRunner = WorkRunnerImpl()
+}
+
 extension FrameSchedulerKey: DependencyKey {
     public static let liveValue: any FrameScheduler = FrameSchedulerImpl(queue: liveFrameExecutor.queue)
 }

@@ -51,15 +51,47 @@ struct PresenceTests {
         try await rig.finish(task)
     }
 
-    @Test("the watchdog stays quiet before any frame has arrived")
-    func silentBeforeFirstFrame() async throws {
+    @Test("no host ever: quiet before the gap, hostLost(frameGap) once after it; a later frame connects and the next loss fires again")
+    func absentFromStart() async throws {
         let rig = ReceiverRig()
         let task = await rig.listen()
 
-        await rig.clock.advance(by: rig.frameGap * 3)
+        await rig.clock.advance(by: rig.frameGap / 2)
+        rig.executor.drain()
+        #expect(rig.events.values == [.listening], "quiet before the gap")
+
+        await rig.clock.advance(by: rig.frameGap)
+        rig.executor.drain()
+        await rig.clock.advance(by: rig.frameGap * 2)
+        rig.executor.drain()
+        #expect(rig.events.values == [.listening, .hostLost(.frameGap(rig.frameGap))], "reported once, never repeatedly")
+
+        try rig.deliver(id: 1, at: HostTimestamp(nanoseconds: 1))
+        await rig.machMessage.receiveCalls.waitForCount(2)
+        rig.executor.drain()
+        #expect(rig.events.values.suffix(1) == [.hostConnected])
+
+        await rig.clock.advance(by: rig.frameGap)
+        rig.executor.drain()
+        await rig.clock.advance(by: rig.frameGap)
+        rig.executor.drain()
+        #expect(rig.events.values.suffix(2) == [.hostConnected, .hostLost(.frameGap(rig.frameGap))])
+        try await rig.finish(task)
+    }
+
+    @Test("a frame before the gap elapses cancels the startup absence silently")
+    func frameCancelsStartupAbsence() async throws {
+        let rig = ReceiverRig()
+        let task = await rig.listen()
+
+        await rig.clock.advance(by: rig.frameGap / 2)
+        try rig.deliver(id: 1, at: HostTimestamp(nanoseconds: 1))
+        await rig.machMessage.receiveCalls.waitForCount(2)
+        rig.executor.drain()
+        await rig.clock.advance(by: rig.frameGap / 2)
         rig.executor.drain()
 
-        #expect(rig.events.values == [.listening])
+        #expect(rig.events.values == [.listening, .hostConnected])
         try await rig.finish(task)
     }
 
@@ -144,7 +176,6 @@ struct PresenceTests {
             }
         }
         #expect(zip(presence, presence.dropFirst()).allSatisfy { $0 != $1 }, "seed \(seed): \(presence)")
-        #expect(presence.first != false, "seed \(seed): a loss needs a prior connect")
         try await rig.finish(task)
     }
 }

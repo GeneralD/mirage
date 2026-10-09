@@ -5,7 +5,7 @@ import Testing
 
 /// The M0-b vertical slice without the process boundary: the host's
 /// `FramePipelineUseCase` and the extension's `ExtensionRelayUseCase`, each on
-/// its real repositories and data sources, joined by `LoopbackKernel` in place
+/// its real repositories and data sources, joined by `InMemoryFrameTransport` in place
 /// of Mach. What the real deployment adds is only the kernel and the OS
 /// gateways, which `MachGatewayTests` and the dev-verification lanes cover.
 @MainActor
@@ -30,8 +30,8 @@ struct FramePathIntegrationTests {
         #expect(rig.ioSurface.outstandingRights == 0, "the send right is consumed by the resolve")
         #expect(rig.host.pipeline.stats.framesSent == 1)
         #expect(rig.ext.relay.stats.framesSent == 1)
-        #expect(rig.kernel.bootstrap.checkIns.values == [ProductIdentity.machServiceName])
-        #expect(rig.kernel.bootstrap.lookUps.values == [ProductIdentity.machServiceName])
+        #expect(rig.kernel.checkIns.values == [ProductIdentity.machServiceName])
+        #expect(rig.kernel.lookUps.values == [ProductIdentity.machServiceName])
 
         try await rig.stopExtension(relay)
         rig.stopHost()
@@ -63,7 +63,7 @@ struct FramePathIntegrationTests {
 
     @Test func framesCapturedBeforeTheLookUpSucceedsAreDroppedNotQueued() async throws {
         let rig = LoopbackRig()
-        rig.kernel.bootstrap.scriptLookUp([.failure(.lookupFailed(code: 1102)), .success(rig.kernel.port)])
+        rig.kernel.failNextLookUps(1)
         let relay = await rig.startExtension()
         let pipeline = rig.host.pipeline
         let starting = Task { try await pipeline.start(descriptor: .hd720, frameRate: .standard) }
@@ -81,7 +81,7 @@ struct FramePathIntegrationTests {
         await rig.pumpExtension(untilReceived: 1)
 
         #expect(rig.streamedTimes == [2_000], "the first frame after the retry succeeds is the first one streamed")
-        #expect(rig.kernel.bootstrap.lookUps.count == 2)
+        #expect(rig.kernel.lookUps.count == 2)
 
         try await rig.stopExtension(relay)
         rig.stopHost()
@@ -130,12 +130,14 @@ struct FramePathIntegrationTests {
         try await rig.startHost()
         rig.capture(FakeSurfaceHandle(id: 1), at: 1_000)
         await rig.pumpExtension(untilReceived: 1)
+        let servicePort = try #require(rig.kernel.servicePort)
 
         try await rig.stopExtension(relay)
         rig.stopHost()
 
-        #expect(rig.kernel.bootstrap.destroyed.values == [rig.kernel.port], "the extension destroys its receive right")
-        #expect(rig.kernel.bootstrap.deallocated.values == [rig.kernel.port], "the host returns its send right")
+        let presence = try #require(rig.kernel.destroyed.values.first { $0 != servicePort })
+        #expect(Set(rig.kernel.destroyed.values) == [servicePort, presence], "the extension destroys its service port, the host its presence port")
+        #expect(rig.kernel.deallocated.values.contains(servicePort), "the host returns its send right")
         #expect(rig.host.pool.liveCount == 0)
         #expect(rig.ext.pool.liveCount == 0)
         #expect(rig.host.scheduler.isRunning == false)

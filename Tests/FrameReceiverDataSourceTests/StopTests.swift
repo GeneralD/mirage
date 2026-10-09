@@ -98,7 +98,13 @@ private struct StopOnCheckIn: MachBootstrapGateway {
     func lookUp(serviceName: String) throws -> MachPortToken { try inner.lookUp(serviceName: serviceName) }
     func register(serviceName: String) throws -> MachPortToken { try inner.register(serviceName: serviceName) }
     func deallocate(_ port: MachPortToken) { inner.deallocate(port) }
+    func releaseDeadName(_ port: MachPortToken) { inner.releaseDeadName(port) }
     func destroyReceiveRight(_ port: MachPortToken) { inner.destroyReceiveRight(port) }
+
+    func makePresencePort() throws -> PresencePort { try inner.makePresencePort() }
+    func requestDeadNameNotification(of right: MachSendRight, to notifyPort: MachPortToken) throws {
+        try inner.requestDeadNameNotification(of: right, to: notifyPort)
+    }
 
     func checkIn(serviceName: String) throws -> MachPortToken {
         onCheckIn()

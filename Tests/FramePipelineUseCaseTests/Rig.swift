@@ -22,6 +22,10 @@ final class SpySurfaceRepository: SurfaceRepository, Sendable {
         try inner.allocate(descriptor)
     }
 
+    func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
+        try inner.allocate(descriptor, filledWith: byte)
+    }
+
     @discardableResult
     func release(_ token: SurfaceToken) -> Bool {
         let accepted = inner.release(token)
@@ -52,6 +56,10 @@ struct Rig {
     let surfaces = SpySurfaceRepository()
     let executor = ManualFrameExecutor()
     let scheduler = ManualFrameScheduler()
+    /// Owns the reconnect work and records its starts, finishes and cancels.
+    let work = RecordingWorkRunner()
+    /// Paces the back-off between repeated reconnects; stepped by hand.
+    let clock = GatedClock()
     /// Separate sinks so a test can tell which channel a line went to: operational
     /// failures belong to `errors`, state transitions and statistics to `developer`.
     let errors = RecordingLog()
@@ -64,6 +72,8 @@ struct Rig {
         let surfaces = surfaces
         let executor = executor
         let scheduler = scheduler
+        let work = work
+        let clock = clock
         let errors = errors
         let developer = developer
         subject = withDependencies {
@@ -72,6 +82,8 @@ struct Rig {
             $0.surfaceRepository = surfaces
             $0.frameExecutor = executor
             $0.frameScheduler = scheduler
+            $0.workRunner = work
+            $0.continuousClock = clock
             $0.errorLog = errors
             $0.developerLog = developer
         } operation: {

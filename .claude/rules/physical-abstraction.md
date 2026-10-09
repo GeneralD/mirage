@@ -23,7 +23,7 @@ Interactor, Presenter, Domain and Entity sources:
 |---|---|
 | Time | `Date()`, `Date.now`, `ContinuousClock()`, `SuspendingClock()`, `.now` on a clock type, `Task.sleep`, `DispatchTime`, `mach_absolute_time`, `ProcessInfo.systemUptime`, `CFAbsoluteTimeGetCurrent`, `Timer` |
 | Randomness / identity | `.random(in:)`, `.randomElement()`, `.shuffled()`, `SystemRandomNumberGenerator`, `UUID()` |
-| Threads / queues | `DispatchQueue`, `DispatchSource`, `DispatchSemaphore`, `Thread`, `Task.detached`, unstructured `Task {` on the frame path, `OSAllocatedUnfairLock`, `NSLock` |
+| Threads / queues | `DispatchQueue`, `DispatchSource`, `DispatchSemaphore`, `Thread`, `Task.detached`, unstructured `Task {` on the frame path (start it through `WorkRunner`), `OSAllocatedUnfairLock`, `NSLock` |
 | Global state | `NotificationCenter.default`, `Bundle.main`, `FileManager`, `UserDefaults`, `ProcessInfo.processInfo`, `setenv`, `getenv` |
 | Output | `print(`, `debugPrint(`, `fputs(`, `os.Logger`, `NSLog` |
 | OS frameworks | `MTLCreateSystemDefaultDevice`, `AVCaptureSession`, `IOSurfaceCreate`, `bootstrap_look_up`, `OSSystemExtensionRequest`, `CMIOExtensionStream` and any `import` of AVFoundation, Metal, MetalKit, IOSurface, CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, `os` |
@@ -35,7 +35,9 @@ rejects it anywhere else.
 ## How each category is abstracted
 
 - **Time** → `\.continuousClock` for sleeping/timers/debounce; `HostTimeProvider`
-  for PTS. Slate PTS is `base + n × (1/fps)`; uniform `time` is `PTS − start`.
+  for PTS. Slate PTS is `base + n × (1/fps)` with
+  `base = max(hostTime.now(), lastEmitted + frameDuration)`; uniform `time` is
+  `PTS − start`.
 - **Randomness** → `RandomSource` (seeded). GPU hash-noise is a pure function
   of (coordinate, time, seed) with a Swift reference implementation.
 - **Execution context** → `FrameExecutor` (serial) and `FrameScheduler`
@@ -47,7 +49,9 @@ rejects it anywhere else.
 - **Files** → `FileSystemGateway` + `AppDirectoriesProvider` (paths are
   injected; never read from the environment).
 - **IPC** → `MachBootstrapGateway` / `MachMessageGateway`; the receive loop is
-  in `FrameReceiverDataSource`, one message per `receive()`.
+  in `FrameReceiverDataSource`, one `IncomingMessage` (frame / hello /
+  dead-name) per `receive(on:)`. The host's presence port, the watchdog and the
+  dead-name matching are DataSource logic, never Gateway logic.
 - **Logging** → `ErrorLog` / `DeveloperLog` (live: `UnifiedLog`).
 
 ## Thin-live rule for coverage-ignored Gateways

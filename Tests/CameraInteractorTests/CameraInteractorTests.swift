@@ -45,7 +45,7 @@ struct CameraInteractorTests {
         let authorization: CameraAuthorizationStatus
         let startFails: Bool
 
-        static let all: [Scenario] = [InstallStatus.installed, .rebootRequired, .failed(reason: "denied")].flatMap { install in
+        static let all: [Scenario] = [InstallStatus.installed, .rebootRequired, .failed(.denied)].flatMap { install in
             CameraAuthorizationStatus.allCases.flatMap { authorization in
                 [false, true].map { Scenario(install: install, authorization: authorization, startFails: $0) }
             }
@@ -68,7 +68,7 @@ struct CameraInteractorTests {
 
     @Test("camera permission is still requested when the install failed")
     func permissionAfterFailedInstall() async {
-        let rig = makeRig(install: .failed(reason: "denied"), authorization: .authorized)
+        let rig = makeRig(install: .failed(.denied), authorization: .authorized)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
         #expect(rig.camera.asks.count == 1)
         #expect(rig.pipeline.starts.count == 0)
@@ -83,14 +83,14 @@ struct CameraInteractorTests {
 
     @Test("a failed install still authorizes but never starts")
     func launchOrderAfterFailedInstall() async {
-        let rig = makeRig(install: .failed(reason: "denied"), authorization: .authorized)
+        let rig = makeRig(install: .failed(.denied), authorization: .authorized)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
         #expect(order.values == ["install", "authorize"])
     }
 
     @Test("every install status reaches the developer log and only a failure reaches the error log")
     func logsInstallProgress() async {
-        let rig = makeRig(install: .failed(reason: "denied"), authorization: .denied)
+        let rig = makeRig(install: .failed(.denied), authorization: .denied)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
         let progress = developerLog.messages(in: .install)
         #expect(progress.count == 2)
@@ -118,7 +118,7 @@ struct CameraInteractorTests {
 
     @Test("a skipped pipeline logs why, for developers only")
     func logsSkipReason() async {
-        let rig = makeRig(install: .failed(reason: "denied"), authorization: .denied)
+        let rig = makeRig(install: .failed(.denied), authorization: .denied)
         _ = await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
         let skip = developerLog.messages(in: .pipeline)
         #expect(skip.count == 1)

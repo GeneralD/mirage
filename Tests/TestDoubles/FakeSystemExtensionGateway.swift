@@ -2,9 +2,9 @@ import Domain
 import TestSupport
 
 /// Activation requests the test answers by hand: `emit` relays a delegate
-/// event to the most recent request's stream, `finish` ends it.
+/// event to a request's stream (the most recent one by default), `finish` ends it.
 public final class FakeSystemExtensionGateway: SystemExtensionGateway, Sendable {
-    private let continuation = Locked<AsyncStream<SystemExtensionEvent>.Continuation?>(nil)
+    private let continuations = Locked<[AsyncStream<SystemExtensionEvent>.Continuation]>([])
     public let activations = Collector<String>()
 
     public init() {}
@@ -14,16 +14,22 @@ public final class FakeSystemExtensionGateway: SystemExtensionGateway, Sendable 
     /// falling into the gap.
     public func activate(extensionBundleID: String) -> AsyncStream<SystemExtensionEvent> {
         let (stream, continuation) = AsyncStream<SystemExtensionEvent>.makeStream()
-        self.continuation.set(continuation)
+        continuations.withLock { $0.append(continuation) }
         activations.append(extensionBundleID)
         return stream
     }
 
-    public func emit(_ event: SystemExtensionEvent) {
-        continuation.current?.yield(event)
+    /// Relays `event` to request number `request` (0-based), or the latest one when omitted.
+    public func emit(_ event: SystemExtensionEvent, request: Int? = nil) {
+        continuation(of: request)?.yield(event)
     }
 
-    public func finish() {
-        continuation.current?.finish()
+    public func finish(request: Int? = nil) {
+        continuation(of: request)?.finish()
+    }
+
+    private func continuation(of request: Int?) -> AsyncStream<SystemExtensionEvent>.Continuation? {
+        let all = continuations.current
+        return request.map { all.indices.contains($0) ? all[$0] : nil } ?? all.last
     }
 }

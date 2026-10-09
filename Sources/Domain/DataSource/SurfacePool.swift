@@ -16,6 +16,9 @@ public protocol SurfacePool: Sendable {
     func adopt(_ handle: any SurfaceHandle, descriptor: SurfaceDescriptor) -> SurfaceToken?
     /// Allocates a fresh surface through the IOSurface gateway.
     func allocate(_ descriptor: SurfaceDescriptor) throws -> SurfaceToken?
+    /// Allocates a surface and fills every byte with `byte` (a black slate frame is `0`).
+    /// A fill failure releases the slot again and rethrows, so `liveCount` is unchanged.
+    func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken?
     func handle(for token: SurfaceToken) -> (any SurfaceHandle)?
     func descriptor(for token: SurfaceToken) -> SurfaceDescriptor?
     /// `false` when the token is stale (already released or never issued).
@@ -53,6 +56,11 @@ private struct UnimplementedSurfacePool: SurfacePool {
 
     func allocate(_ descriptor: SurfaceDescriptor) throws -> SurfaceToken? {
         reportIssue("SurfacePool.allocate not implemented")
+        return nil
+    }
+
+    func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
+        reportIssue("SurfacePool.allocate(filledWith:) not implemented")
         return nil
     }
 

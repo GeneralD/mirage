@@ -5,6 +5,8 @@ import Dependencies
 public protocol SurfaceRepository: Sendable {
     var liveCount: Int { get }
     func allocate(_ descriptor: SurfaceDescriptor) throws -> SurfaceToken?
+    /// As `allocate(_:)`, with every byte set to `byte` (slate frames); a failed fill leaves `liveCount` unchanged.
+    func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken?
     @discardableResult
     func release(_ token: SurfaceToken) -> Bool
     func releaseAll()
@@ -29,6 +31,11 @@ private struct UnimplementedSurfaceRepository: SurfaceRepository {
 
     func allocate(_ descriptor: SurfaceDescriptor) throws -> SurfaceToken? {
         reportIssue("SurfaceRepository.allocate not implemented")
+        return nil
+    }
+
+    func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
+        reportIssue("SurfaceRepository.allocate(filledWith:) not implemented")
         return nil
     }
 
