@@ -4,6 +4,10 @@ import Dependencies
 /// raw fills. Pool bookkeeping (slots, generations, capacity) is
 /// `SurfacePoolDataSource`'s job; this port never decides anything.
 public protocol IOSurfaceGateway: Sendable {
+    /// `descriptor.bytesPerRow` is a minimum. IOSurface keeps an explicit stride
+    /// exactly as given, so the live gateway aligns it up for the OS
+    /// (`IOSurfaceAlignProperty`) — Metal cannot bind rows that are not 16-byte
+    /// aligned — and `descriptor(_:)` reports what was allocated.
     func create(_ descriptor: SurfaceDescriptor) throws -> any SurfaceHandle
     /// `IOSurfaceCreateMachPort`: a new send right referencing the surface.
     func makeSendRight(_ surface: any SurfaceHandle) throws -> MachSendRight
@@ -13,7 +17,7 @@ public protocol IOSurfaceGateway: Sendable {
     /// `IOSurfaceGetID`: global, so the host and the extension can compare the
     /// IDs they see and prove the surface crossed without a copy (Q1).
     func identifier(_ surface: any SurfaceHandle) -> UInt32
-    /// The stride IOSurface actually allocated (it may round the request up).
+    /// The stride the surface was allocated with (`create` may have aligned the request up).
     func descriptor(_ surface: any SurfaceHandle) -> SurfaceDescriptor
     /// Fills every byte of the surface (slate frames, test fixtures).
     func fill(_ surface: any SurfaceHandle, with byte: UInt8) throws
