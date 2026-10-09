@@ -47,6 +47,9 @@ let package = Package(
         // Camera Extension bundle. Each shell's main.swift calls one entry point.
         .library(name: "App", targets: ["App"]),
         .library(name: "ExtensionApp", targets: ["ExtensionApp"]),
+        // `swift run dev-harness`: camera prompt + preview window, no extension.
+        // Not shipped; `make build-dev-harness` builds it, `make build` never does.
+        .executable(name: "dev-harness", targets: ["DevHarness"]),
     ],
     dependencies: [
         .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.9.0"),
@@ -177,6 +180,13 @@ let package = Package(
         // ── Entry ──
         .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
+        // The development harness (host graph only). `main.swift` launches AppKit;
+        // HarnessSession holds the behaviour, under test in DevHarnessTests.
+        .executableTarget(
+            name: "DevHarness",
+            dependencies: dependencies + ["HostDependencyInjection", "Views"]
+        ),
+        .testTarget(name: "DevHarnessTests", dependencies: ["DevHarness"] + testDependencies),
 
         // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──
         // Imports Metal and IOSurface directly: a test target, not a Gateway, so the
