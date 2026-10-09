@@ -65,6 +65,9 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   meet a running pass simply ticks before answering; one that wants an answer
   queued on the executor ahead of `stop()`'s cleanup answers, stops, then
   drains, with a sink whose teardown has not landed yet (`QueuedTeardownSink`).
+  A `stop()` that lands inside a tick, after the pass's work has started but
+  before the tick has recorded the pass, is staged with `Rig(runner:)` and a
+  runner whose `run` calls it before returning (`InterruptingWorkRunner`).
   `FakeEffectRuntimeRepository.pendingCount` shows that no `apply` was left
   waiting. `LoopbackRig.capture` answers the pass it
   started (pass-through by default, `effect:` to choose) and drains its result,

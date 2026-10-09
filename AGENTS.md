@@ -122,7 +122,9 @@ Shared conventions:
   between frames. `stop()` abandons the pass rather than cancelling it (the GPU
   may still use both surfaces): it bumps a stop count first, so no answer sends
   after it; the pass keeps its leases and the cap until its answer, which
-  releases both unsent; and `releaseAll()` waits for that answer.
+  releases both unsent; and `releaseAll()` waits for that answer. A pass
+  carries the count its run's `start()` read, never one a tick reads, so a
+  tick still running when `stop()` bumps the count cannot adopt the new one.
 - Shells (`Apps/**`) hold only `main.swift` and assets; `make check` bounds
   their size. `Info.plist` and entitlements are generated from `project.yml`
   by `make generate` (gitignored), never hand-written.
