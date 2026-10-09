@@ -25,7 +25,7 @@ struct HostAbsenceIntegrationTests {
         let rig = LoopbackRig()
         let relay = await rig.startExtension()
         try await rig.startHost()
-        await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 })
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 }))
 
         let presence = try #require(rig.kernel.presencePorts.values.first)
         let servicePort = try #require(rig.kernel.servicePort)
@@ -49,13 +49,13 @@ struct HostAbsenceIntegrationTests {
         let relay = await rig.startExtension()
         try await rig.startHost()
         rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
-        await rig.pumpExtension(untilReceived: 1)
-        await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 })
+        #expect(await rig.pumpExtension(untilReceived: 1))
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 }))
         // The extension's host-time reading is behind the last real frame: the base must not be.
         rig.ext.hostTime.set(.zero)
 
         rig.kernel.killHost()
-        await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.ext.developer.contains("slate entered") })
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.ext.developer.contains("slate entered") }))
 
         #expect(rig.ext.developer.messages(in: .receiver).contains { $0.contains("hostLost") && $0.contains("deadName") })
         #expect(rig.ext.errors.contains("host lost"))
@@ -84,7 +84,7 @@ struct HostAbsenceIntegrationTests {
         try await rig.startHost()
         rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
         rig.captureAndFlush(FakeSurfaceHandle(id: 2), at: ns(1_000_000_000, plus: 1))
-        await rig.pumpExtension(untilReceived: 2)
+        #expect(await rig.pumpExtension(untilReceived: 2))
         rig.ext.hostTime.set(HostTimestamp(nanoseconds: 10_000_000_000))
 
         // The host is stopped, not dead: nothing arrives. The watchdog looks every gap/4.
@@ -92,7 +92,7 @@ struct HostAbsenceIntegrationTests {
         let detectedAt = try await rig.advanceExtensionUntil(step: step, maxSteps: 5) { rig.ext.errors.contains("frameGap") }
         let steps = try #require(detectedAt)
         #expect(steps == 4, "silence reaches the gap on the fourth look, and no later than gap + gap/4")
-        await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.ext.developer.contains("slate entered") })
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.ext.developer.contains("slate entered") }))
         #expect(rig.ext.developer.contains("slate entered base=10000000000"))
 
         rig.ext.scheduler.tick(times: 3)
@@ -104,18 +104,18 @@ struct HostAbsenceIntegrationTests {
         // kill -CONT: the first frame the host sends is still stamped at capture time, behind the slate.
         let droppedBefore = rig.ext.relay.stats.framesDropped
         rig.captureAndFlush(FakeSurfaceHandle(id: 3), at: ns(10_000_000_000, plus: 1))
-        await rig.pumpExtension(untilReceived: 3)
+        #expect(await rig.pumpExtension(untilReceived: 3))
         #expect(rig.ext.relay.stats.framesDropped == droppedBefore + 1, "a real frame at or behind the last slate PTS is dropped once")
         #expect(rig.ext.scheduler.isRunning, "slate goes on until a newer real frame arrives")
         #expect(rig.streamedTimes.last == lastSlate)
 
         rig.captureAndFlush(FakeSurfaceHandle(id: 4), at: 11_000_000_000)
-        await rig.pumpExtension(untilReceived: 4)
+        #expect(await rig.pumpExtension(untilReceived: 4))
         #expect(rig.ext.scheduler.isRunning == false, "the first newer real frame ends slate")
         #expect(rig.ext.developer.contains("slate left"))
         #expect(rig.streamedTimes.last == 11_000_000_000)
         rig.captureAndFlush(FakeSurfaceHandle(id: 5), at: 12_000_000_000)
-        await rig.pumpExtension(untilReceived: 5)
+        #expect(await rig.pumpExtension(untilReceived: 5))
 
         let times = rig.streamedTimes
         #expect(times == times.sorted() && Set(times).count == times.count, "strictly increasing across the whole run")
@@ -135,31 +135,31 @@ struct HostAbsenceIntegrationTests {
         let relay = await rig.startExtension()
         try await rig.startHost()
         rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
-        await rig.pumpExtension(untilReceived: 1)
-        await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 })
+        #expect(await rig.pumpExtension(untilReceived: 1))
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 }))
         let oldPresence = try #require(rig.kernel.presencePorts.values.first)
 
         rig.stopHost()
         #expect(rig.kernel.destroyed.values.filter { $0 == oldPresence.receive }.count == 1, "the host destroys its presence right on quit")
         if pumpBetween {
-            await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.ext.developer.contains("slate entered") })
+            #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.ext.developer.contains("slate entered") }))
             #expect(rig.ext.developer.messages(in: .receiver).contains { $0.contains("deadName") })
             rig.ext.scheduler.tick()
             rig.ext.executor.drain()
         }
 
         try await rig.startHost()
-        await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 2 })
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 2 }))
         #expect(rig.kernel.presencePorts.count == 2)
         let newPresence = try #require(rig.kernel.presencePorts.values.last)
         #expect(newPresence != oldPresence)
         #expect(rig.kernel.deadNameRequests.values.last?.right == newPresence.send)
         #expect(
-            rig.kernel.deallocated.values.filter { $0.name == oldPresence.send.name }.count == 1,
+            rig.kernel.deallocated.values.filter { $0 == MachPortToken(name: oldPresence.send.name) }.count == 1,
             "the extension gives the old presence right back exactly once")
 
         rig.captureAndFlush(FakeSurfaceHandle(id: 2), at: 5_000_000_000)
-        await rig.pumpExtension(untilReceived: 2)
+        #expect(await rig.pumpExtension(untilReceived: 2))
         #expect(rig.streamedTimes.last == 5_000_000_000, "real frames resume")
         #expect(rig.ext.scheduler.isRunning == false)
         let times = rig.streamedTimes
@@ -180,8 +180,8 @@ struct HostAbsenceIntegrationTests {
         let first = await rig.startExtension()
         try await rig.startHost()
         rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
-        await rig.pumpExtension(untilReceived: 1)
-        await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 })
+        #expect(await rig.pumpExtension(untilReceived: 1))
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 }))
 
         try await rig.stopExtension(first)
         // The next send learns the destination is gone.
@@ -204,12 +204,13 @@ struct HostAbsenceIntegrationTests {
                 tick: { rig.host.executor.drain() }, until: { rig.kernel.lookUps.count > failedLookUps || rig.host.pipeline.phase == .connected })
             delays += 1
         }
-        await tickUntil(tick: { rig.host.executor.drain() }, until: { rig.host.pipeline.phase == .connected })
+        #expect(await tickUntil(tick: { rig.host.executor.drain() }, until: { rig.host.pipeline.phase == .connected }))
         #expect(rig.host.pipeline.phase == .connected)
 
         rig.captureAndFlush(FakeSurfaceHandle(id: 3), at: 3_000_000_000)
-        await rig.pumpExtension(untilReceived: 1)
-        await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 2 })
+        // Stats reset at the start of every run: 1 means the new instance received a frame.
+        #expect(await rig.pumpExtension(untilReceived: 1))
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 2 }))
         #expect(rig.streamedTimes == [1_000_000_000, 3_000_000_000], "the frame reaches the new extension instance, PTS monotonic")
         #expect(rig.kernel.announced.values.last?.port == newService, "the new presence is announced to the new service port")
 
@@ -358,7 +359,7 @@ extension LoopbackRig {
     func advanceExtensionUntil(step: Duration, maxSteps: Int, _ condition: () -> Bool) async throws -> Int? {
         for taken in 1...maxSteps {
             await ext.clock.advance(by: step)
-            await tickUntil(tick: { ext.executor.drain() }, until: { ext.executor.pendingCount == 0 })
+            #expect(await tickUntil(tick: { ext.executor.drain() }, until: { ext.executor.pendingCount == 0 }))
             for _ in 0..<5 {
                 ext.executor.drain()
                 await Task.yield()
