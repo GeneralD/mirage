@@ -87,7 +87,7 @@ struct SlateTests {
         try await rig.finish(task)
     }
 
-    @Test("a real frame older than the slate is dropped, its lease released, and the slate carries on")
+    @Test("a real frame older than the slate ends it, re-timed just above the last slate PTS, and nothing is dropped")
     func olderFrameInSlate() async throws {
         let rig = RelayRig()
         let task = await start(rig)
@@ -95,13 +95,15 @@ struct SlateTests {
         rig.receiver.emit(.hostLost(.deadName))
         rig.scheduler.tick(times: 2)
         let before = rig.stream.sent.count
+        let lastSlate = try #require(rig.stream.sent.values.last).presentationTime
 
         rig.receiver.emit(try rig.lease(at: 1_000_000_000 + Self.frame))
 
-        #expect(rig.stream.sent.count == before, "the stream never saw it")
-        #expect(rig.subject.stats.framesDropped == 1)
-        #expect(rig.surfaces.liveCount == 1, "only the slate surface is left")
-        #expect(rig.scheduler.isRunning)
+        #expect(rig.stream.sent.count == before + 1)
+        #expect(rig.stream.sent.values.last?.presentationTime == HostTimestamp(nanoseconds: lastSlate.nanoseconds + 1))
+        #expect(rig.subject.stats.framesDropped == 0)
+        #expect(rig.surfaces.liveCount == 0, "the slate surface and the real lease are both released")
+        #expect(!rig.scheduler.isRunning)
         try await rig.finish(task)
     }
 

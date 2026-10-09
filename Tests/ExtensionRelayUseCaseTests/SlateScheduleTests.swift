@@ -75,19 +75,41 @@ struct SlateScheduleTests {
         #expect(schedule.admit(time(101)) == .relay)
     }
 
-    @Test("slate resumes on a PTS beyond the last emitted slate PTS; older and equal are dropped")
+    @Test("the first real frame in slate resumes and is shifted just above the last slate PTS")
     func slateAdmission() {
         var schedule = schedule()
         schedule.enterSlate(base: time(500))
         _ = schedule.nextSlateTime()
         _ = schedule.nextSlateTime()
 
-        #expect(schedule.admit(time(600)) == .dropNonMonotonic, "equal to the last slate frame")
-        #expect(schedule.admit(time(100)) == .dropNonMonotonic)
-        #expect(schedule.isSlate)
+        #expect(schedule.admit(time(100)) == .resume, "older than the slate (camera latency): rebased, not dropped")
+        #expect(schedule.retimed(time(100)) == HostTimestamp(nanoseconds: 600_000_001))
+        #expect(schedule.phase == .live(lastEmitted: HostTimestamp(nanoseconds: 600_000_001)))
+        #expect(schedule.admit(time(133)) == .relay, "the shift is kept while live")
+        #expect(schedule.admit(time(133)) == .dropNonMonotonic)
+    }
 
+    @Test("a real frame beyond the slate keeps its own PTS")
+    func slateAdmissionAhead() {
+        var schedule = schedule()
+        schedule.enterSlate(base: time(500))
         #expect(schedule.admit(time(601)) == .resume)
-        #expect(schedule.phase == .live(lastEmitted: time(601)))
+        #expect(schedule.shift == 0)
+        #expect(schedule.retimed(time(601)) == time(601))
+    }
+
+    @Test("with a constant latency above one frame the stream recovers and then never drops again")
+    func latencyAboveOneFrame() {
+        var schedule = schedule()
+        #expect(schedule.admit(time(0)) == .relay)
+        schedule.enterSlate(base: schedule.slateBase(hostNow: time(1_000)) ?? time(1_000))
+        // The slate runs at wall clock; real frames arrive 250 ms (> 2 frames) behind it.
+        let admissions = (0..<20).map { index -> SlateSchedule.Admission in
+            _ = schedule.nextSlateTime()
+            return schedule.admit(time(UInt64(1_000 + index * 100) - 250))
+        }
+        #expect(admissions.first == .resume)
+        #expect(admissions.dropFirst().allSatisfy { $0 == .relay })
     }
 
     @Test("after resuming, a new episode starts above everything emitted")
@@ -98,6 +120,9 @@ struct SlateScheduleTests {
         #expect(schedule.admit(time(2_000)) == .resume)
 
         #expect(schedule.slateBase(hostNow: time(0)) == time(2_100))
+        schedule.enterSlate(base: time(2_100))
+        #expect(schedule.admit(time(50)) == .resume, "shift is recomputed from the raw PTS")
+        #expect(schedule.retimed(time(50)) == HostTimestamp(nanoseconds: 2_000_000_001))
     }
 
     @Test("reset forgets the episode and the last PTS")
@@ -107,6 +132,7 @@ struct SlateScheduleTests {
         schedule.reset()
 
         #expect(schedule.phase == .live(lastEmitted: nil))
+        #expect(schedule.shift == 0)
         #expect(schedule.admit(time(1)) == .relay)
     }
 
@@ -121,7 +147,7 @@ struct SlateScheduleTests {
             case 0:
                 let candidate = time(UInt64.random(in: 0..<5_000, using: &generator))
                 switch schedule.admit(candidate) {
-                case .relay, .resume: emitted.append(candidate)
+                case .relay, .resume: emitted.append(schedule.retimed(candidate))
                 case .dropNonMonotonic: break
                 }
             case 1, 2:

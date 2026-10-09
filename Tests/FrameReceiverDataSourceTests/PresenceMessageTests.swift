@@ -72,14 +72,15 @@ struct PresenceMessageTests {
         await deadName(rig, name: 0x77)
 
         #expect(rig.events.values == [.listening, .hostConnected, .hostLost(.deadName)])
-        #expect(rig.bootstrap.deallocated.values == [MachPortToken(name: 0x77)])
+        #expect(rig.bootstrap.deadNamesReleased.values == [MachPortToken(name: 0x77)], "the dead name is destroyed, not merely deallocated once")
+        #expect(rig.bootstrap.deallocated.values.isEmpty)
 
         // A duplicate notification (or the gap watchdog) must not report a second loss.
         await deadName(rig, name: 0x77)
         await rig.clock.advance(by: rig.frameGap * 2)
         rig.executor.drain()
         #expect(lossCount(rig) == 1)
-        #expect(rig.bootstrap.deallocated.values == [MachPortToken(name: 0x77)], "nothing is deallocated twice")
+        #expect(rig.bootstrap.deadNamesReleased.values == [MachPortToken(name: 0x77)], "nothing is released twice")
 
         try await frame(rig, id: 2)
         #expect(rig.events.values.suffix(1) == [.hostConnected], "the loop kept running")
@@ -103,6 +104,24 @@ struct PresenceMessageTests {
         // The real one still works afterwards: the spoof did not clear the held right.
         await deadName(rig, name: 0x77)
         #expect(rig.events.values.last == .hostLost(.deadName))
+        try await rig.finish(task)
+    }
+
+    @Test("a kernel notice (the old right given back on a replacing hello) changes nothing and the loop keeps running")
+    func noticeIsIgnored() async throws {
+        let rig = ReceiverRig()
+        let task = await rig.listen()
+        await hello(rig, name: 0x77)
+        try await frame(rig, id: 1)
+
+        let expected = rig.machMessage.receiveCalls.count + 1
+        rig.machMessage.deliver(.notice, on: port)
+        await rig.machMessage.receiveCalls.waitForCount(expected)
+        rig.executor.drain()
+
+        #expect(lossCount(rig) == 0)
+        try await frame(rig, id: 2)
+        #expect(rig.frames.count == 2, "the loop kept receiving")
         try await rig.finish(task)
     }
 

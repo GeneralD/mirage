@@ -65,10 +65,7 @@ struct HostReconnectClockTests {
         #expect(clock.sleepers.values == [.milliseconds(250)])
 
         clock.advance(by: .milliseconds(1))
-        await pollUntil {
-            executor.drain()
-            return pipeline.phase == .connected
-        }
+        #expect(await tickUntil(tick: { executor.drain() }, until: { pipeline.phase == .connected }))
         #expect(bootstrap.lookUps.count == 3)
         #expect(transport.isConnected)
         pipeline.stop()

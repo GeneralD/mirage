@@ -187,6 +187,10 @@ public final class InMemoryFrameTransport: Sendable {
             kernel.deallocated.append(port)
         }
 
+        func releaseDeadName(_ port: MachPortToken) {
+            kernel.deallocated.append(port)
+        }
+
         func destroyReceiveRight(_ port: MachPortToken) {
             kernel.destroyed.append(port)
             kernel.destroy(port.name)

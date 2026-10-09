@@ -1,6 +1,6 @@
 /// Port: MachMessageGateway (decode).
 /// OS API: mach_msg_header_t.msgh_id, mach_dead_name_notification_t.
-/// One receive buffer, three shapes, told apart by `msgh_id`; any other id is malformed.
+/// One receive buffer, three shapes (plus two kernel notices), told apart by `msgh_id`; any other id is malformed.
 import Darwin
 import Domain
 
@@ -14,6 +14,8 @@ extension IncomingMessage {
         FrameWire.messageID: { .frame(try $0.load(as: FrameWire.self).message()) },
         HelloWire.messageID: { .hello(try $0.load(as: HelloWire.self).presence()) },
         deadNameID: { try .deadName(deadName(in: $0)) },
+        portDeletedID: kernelNotice(size: portDeletedSize),
+        sendOnceID: kernelNotice(size: sendOnceSize),
     ]
 
     /// header + NDR + the port name, as the kernel sends it (36). Swift's imported struct is larger.

@@ -53,18 +53,20 @@ camera selected in QuickTime Player (or Zoom) and frames flowing, stream the
 logs of both processes (subsystem from `ProductIdentity`):
 
 ```sh
-log stream --style compact --predicate 'subsystem == "<log subsystem>"'
+log stream --level debug --style compact --predicate 'subsystem == "<log subsystem>"'
 # extension: process = the Camera Extension; host: process = the app
+# --level debug is required: only `host lost` and `destination lost` are error-level,
+# the slate, hello, connect and summary lines are debug-level and hidden otherwise.
 ```
 
 | Step | Action | Expected lines (grep) | Budget |
 |---|---|---|---|
 | 1. Baseline | nothing | extension `frames=… received=… dropped=… maxGapMs=… slate=0`; host `connected to port` | — |
-| 2. Host killed | `kill -9 <host pid>` | extension `host lost: .*deadName` (kernel destroys the presence right) or, as backstop, `host lost: .*frameGap`; then `slate entered base=`; summary `slate=<n>` grows | black frames within 1.25 × frameGap (2.5 s at the default 2 s gap); target well under 3 s |
+| 2. Host killed | `kill -9 <host pid>` | extension `host lost: .*deadName` (kernel destroys the presence right) or, as backstop, `host lost: .*frameGap`; then `slate entered base=` (debug); the client shows black. The summary line is printed per second of *real* frames only, so no `slate=` line appears while the host is away | black frames within 1.25 × frameGap (2.5 s at the default 2 s gap); target well under 3 s |
 | 3. Host stalled | `kill -STOP <host pid>` | only `host lost: .*frameGap` (the presence right stays alive); `slate entered base=` | same budget |
-| 4. Host resumed | `kill -CONT <host pid>` | `slate left`; summary `slate=` stops growing; picture back in the client without a restart (0–2 real frames may drop as non-monotonic) | next frame after resume |
-| 5. Host relaunched | relaunch the app after step 2 | host `look-up attempt <n> failed` while the extension is not yet checked in, then `connected to port`; extension `hello received, watching presence right`; `slate left` | reconnect within a few seconds (backoff is 250 ms doubling to 5 s) |
-| 6. Extension gone | kill the extension process (`pkill -f <extension process name>`); expectation, not yet verified on a device | host `destination lost, port <n> released`, then `look-up attempt` lines until the extension is back, then `connected to port`; no host restart needed | — |
+| 4. Host resumed | `kill -CONT <host pid>` | `slate left`; the first summary line after the resume shows the accumulated `slate=<n>`, which stays constant afterwards; picture back in the client without a restart (real PTS is re-timed above the slate, so frames are not dropped for a late capture time) | next frame after resume |
+| 5. Host relaunched | relaunch the app after step 2 | host `connected to port` (the extension stayed alive, so the first look-up normally succeeds; `look-up attempt <n> failed` appears only if it is not checked in); extension `hello received, watching presence right`; `slate left` | reconnect within a few seconds (backoff is 250 ms doubling to 5 s) |
+| 6. Extension gone | kill the extension process (`pkill -f <extension process name>`); expectation, not yet verified on a device | host `destination lost, port <n> released` (error), then `look-up attempt <n> failed` lines (debug) until the extension is back, then `connected to port`; no host restart needed | — |
 
 Record the measured times next to the budgets once they exist; until then do
 not claim which detector fired for step 2 — the log line tells (`deadName` vs

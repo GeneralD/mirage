@@ -13,23 +13,24 @@ public struct SlateSchedule: Sendable, Hashable {
         case slate(base: HostTimestamp, next: Int, lastEmitted: HostTimestamp)
     }
 
-    /// What to do with a real frame that arrived.
+    /// What to do with a real frame that arrived. Relay it at `retimed(_:)`.
     public enum Admission: Sendable, Hashable {
         /// Relay it; the phase stays live.
         case relay
         /// Relay it, after leaving slate (the phase is already live again).
         case resume
-        /// Its PTS does not advance past the last one emitted: drop it.
-        ///
-        /// Right after the host returns, the first frame or two can land here:
-        /// the slate PTS has advanced to wall-clock time while a real PTS is its
-        /// (slightly older) capture time. Accepted: strictly increasing PTS on
-        /// the stream matters more than those frames.
+        /// Its (shifted) PTS does not advance past the last one emitted: drop it.
         case dropNonMonotonic
     }
 
     public let frameRate: FrameRate
     public private(set) var phase: Phase = .live(lastEmitted: nil)
+    /// Nanoseconds added to every real PTS so it clears the slate PTS handed out
+    /// while the host was away. Slate PTS tracks wall-clock time, while a real
+    /// frame carries its (older) capture time; without the shift a camera whose
+    /// latency exceeds a frame would stay behind the slate for good. Set when a
+    /// real frame ends a slate episode; kept until the next one.
+    public private(set) var shift: UInt64 = 0
 
     public init(frameRate: FrameRate) {
         self.frameRate = frameRate
@@ -69,16 +70,24 @@ public struct SlateSchedule: Sendable, Hashable {
         return time
     }
 
-    /// Judges a real frame; an admitted one becomes the newest emitted PTS.
+    /// The PTS a real frame is emitted with: its own plus the current `shift`.
+    public func retimed(_ time: HostTimestamp) -> HostTimestamp {
+        HostTimestamp(nanoseconds: time.nanoseconds &+ shift)
+    }
+
+    /// Judges a real frame; an admitted one becomes the newest emitted PTS (at
+    /// `retimed`). The first real frame in slate always resumes: the shift is
+    /// recomputed from that frame so it lands just above the last slate PTS.
     public mutating func admit(_ time: HostTimestamp) -> Admission {
         switch phase {
         case .live(let last):
-            guard last.map({ time > $0 }) ?? true else { return .dropNonMonotonic }
-            phase = .live(lastEmitted: time)
+            let shifted = retimed(time)
+            guard last.map({ shifted > $0 }) ?? true else { return .dropNonMonotonic }
+            phase = .live(lastEmitted: shifted)
             return .relay
         case .slate(_, _, let last):
-            guard time > last else { return .dropNonMonotonic }
-            phase = .live(lastEmitted: time)
+            shift = time > last ? 0 : last.nanoseconds - time.nanoseconds + 1
+            phase = .live(lastEmitted: retimed(time))
             return .resume
         }
     }
@@ -86,5 +95,6 @@ public struct SlateSchedule: Sendable, Hashable {
     /// Forgets everything: the next run starts from nothing.
     public mutating func reset() {
         phase = .live(lastEmitted: nil)
+        shift = 0
     }
 }

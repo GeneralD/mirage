@@ -83,7 +83,8 @@ extension ExtensionRelayUseCaseImpl {
         case .relay:
             break
         }
-        let outcome = streamOutputRepository.send(frame)
+        let outgoing = FrameRef(token: frame.token, descriptor: frame.descriptor, presentationTime: schedule.retimed(frame.presentationTime))
+        let outcome = streamOutputRepository.send(outgoing)
         update { $0.note(outcome) }
         // The stream holds its own reference once `send` returns, so the lease
         // ends here whether the frame was sent or dropped.
