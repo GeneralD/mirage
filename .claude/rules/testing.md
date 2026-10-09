@@ -59,7 +59,9 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   never resumes a cancelled caller early: the caller waits for the test's
   completion and gets that result (the stale success after a newer compile can
   be written down), so a test completes every request it starts — one left
-  pending surfaces through the time limit. `HashNoiseReference`
+  pending surfaces through the time limit. Ids restart at 1 per instance, so a
+  request carries the compiler that issued it, and another instance refuses it
+  (`false` / `nil`) without touching its own pending compiles. `HashNoiseReference`
   (Tests/TestSupport) is the Swift twin of the prelude's `hash` / `noise`, for
   the parity GPU suite and the Swift-only property tests.
 - `InMemoryFrameTransport` — the in-process Mach kernel behind the host↔extension

@@ -25,6 +25,29 @@ struct FakeShaderCompilerTests {
         #expect(compiler.pendingCount == 0)
     }
 
+    @Test("a request from another compiler is refused and leaves this one's pending compile alone, though the ids match")
+    func refusesAnotherCompilersRequest() async throws {
+        let other = FakeShaderCompiler()
+        let mine = Task { await compiler.compile(slow) }
+        let theirs = Task { await other.compile(fast) }
+        await compiler.requests.waitForCount(1)
+        await other.requests.waitForCount(1)
+        let myRequest = try #require(compiler.requests.last)
+        let theirRequest = try #require(other.requests.last)
+        #expect(myRequest.id == theirRequest.id, "ids restart at 1 per instance")
+
+        let diagnostics = ShaderDiagnostics(message: "effect:1:1: error: x", code: 3)
+        #expect(!compiler.complete(theirRequest, with: .failure(diagnostics)))
+        #expect(compiler.succeed(theirRequest) == nil)
+        #expect(compiler.pendingCount == 1, "this compiler's own compile is still pending")
+        #expect(other.pendingCount == 1)
+
+        let myHandle = try #require(compiler.succeed(myRequest))
+        #expect(ObjectIdentifier(try await mine.value.get()) == ObjectIdentifier(myHandle))
+        #expect(other.complete(theirRequest, with: .failure(diagnostics)))
+        #expect(await theirs.value.failure == diagnostics)
+    }
+
     @Test("a newer compile can finish before an older one, and each caller gets its own result")
     func completesOutOfOrder() async throws {
         let results = Collector<(name: String, handle: FakeLibraryHandle?)>()
