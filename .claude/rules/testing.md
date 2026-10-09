@@ -44,17 +44,22 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   DataSource's exactly-once unbind is proven against the fake.
 - `FakeEffectRuntimeRepository` — `prepare` / `apply` suspend until
   `completePrepare(_:with:)` / `completeApply(_:with:)`, each exactly once,
-  in any order (a slow compile overtaken, a late GPU completion); a cancelled
-  caller resumes with `.failure(.internalError)`, and one cancelled before it
-  suspended is never recorded. Start concurrent callers one at a time
-  (`waitForCount(n)` between them) when the test depends on request order.
+  in any order (a slow compile overtaken, a late GPU completion). Like the live
+  runtime it ignores the caller's cancellation: a cancelled call is still
+  recorded and waits for its completion, so a test that stops the pipeline
+  mid-pass completes the pending request itself (`pendingCount`). Requests,
+  submissions and presentations carry the instance that issued them: ids restart
+  at 1 per fake, so one from another instance returns `false` (a reported issue
+  for `FakeGPUGateway`) and never resumes anything. Start
+  concurrent callers one at a time (`waitForCount(n)` between them) when the
+  test depends on request order.
   `FakeGPURenderer` — one layer down, for the Repository suites: `render`
   suspends until `complete(_:with:)` (any order, exactly once) unless
   `respond(with:)` scripted an immediate answer; `requests` is a `Collector` in
-  call (`id`) order. Ids are per instance, so each request carries its `origin`
-  and `complete` returns `false` for one another `FakeGPURenderer` issued,
-  leaving every pending render untouched. Unlike `FakeEffectRuntimeRepository`
-  it follows its live counterpart on cancellation: `GPURenderDataSource` cannot
+  call (`id`) order. Its requests carry their issuing instance the same way, so
+  `complete` returns `false` for another `FakeGPURenderer`'s request and leaves
+  every pending render untouched. Like `FakeEffectRuntimeRepository` it ignores
+  cancellation, as its live counterpart does: `GPURenderDataSource` cannot
   withdraw a committed pass, so a cancelled caller — even one cancelled before
   the call — is recorded and keeps waiting; complete every request a test
   cancels.
