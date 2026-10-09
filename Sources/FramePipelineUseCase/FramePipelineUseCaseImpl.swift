@@ -16,6 +16,7 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     @Dependency(\.surfaceRepository) private var surfaceRepository
     @Dependency(\.frameExecutor) private var frameExecutor
     @Dependency(\.frameScheduler) private var frameScheduler
+    @Dependency(\.continuousClock) private var clock
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
@@ -31,6 +32,11 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     // a finished task apart from the one that replaced it.
     private var reconnectTask: Task<Void, Never>?
     private var reconnectEpoch = 0
+    // A loss that arrived while a connect (first or re-) was still settling: it is
+    // remembered and replayed when that connect finishes, never dropped.
+    private var lossPending = false
+    // Losses since a frame last reached the extension; paces the next reconnect.
+    private var lossStreak = 0
     let phaseSubject = CurrentValueSubject<PipelinePhase, Never>(.idle)
 
     public init() {}
@@ -90,6 +96,7 @@ extension FramePipelineUseCaseImpl {
         guard let frame = takeLatest() else { return }
         let outcome = virtualCameraSink.send(frame)
         update { $0.note(outcome) }
+        if outcome.wasSent { lossStreak = 0 }
         surfaceRepository.release(frame.token)
     }
 
@@ -154,12 +161,18 @@ extension FramePipelineUseCaseImpl {
     private func connect() async throws {
         do {
             try await virtualCameraSink.connect()
-            frameExecutor.run { [self] in settle(from: .connecting, to: .connected) }
+            frameExecutor.run { [self] in
+                settle(from: .connecting, to: .connected)
+                replayPendingLoss()
+            }
         } catch let cancellation as CancellationError {
             throw cancellation
         } catch {
             errorLog.record(.transport, "virtual camera sink did not connect: \(error)")
-            frameExecutor.run { [self] in settle(from: .connecting, to: .disconnected) }
+            frameExecutor.run { [self] in
+                settle(from: .connecting, to: .disconnected)
+                lossPending = false
+            }
         }
     }
 
@@ -179,14 +192,30 @@ extension FramePipelineUseCaseImpl {
     /// executor. One task at a time; an explicit disconnect or a failed first
     /// look-up is not a loss and brings nothing back.
     private func startReconnect() {
-        guard reconnectTask == nil, phaseSubject.value == .connected || phaseSubject.value == .disconnected else { return }
+        switch phaseSubject.value {
+        case .connecting, .reconnecting:
+            // The connect in flight has not settled yet; its loss is replayed once it has.
+            lossPending = true
+            return
+        case .connected, .disconnected:
+            break
+        case .idle, .stopped:
+            return
+        }
+        guard reconnectTask == nil else { return }
         phaseSubject.value = .reconnecting
         reconnectEpoch += 1
+        lossStreak += 1
         let epoch = reconnectEpoch
         let sink = virtualCameraSink
+        let pause = Self.pause(beforeReconnectAfterLosses: lossStreak)
+        let clock = clock
         reconnectTask = Task { [weak self] in
             let failure: (any Error)?
             do {
+                // The first loss reconnects at once; a link that keeps dying before a
+                // single frame got through backs off like a failing look-up does.
+                if let pause { try await clock.sleep(for: pause) }
                 try await sink.connect()
                 failure = nil
             } catch {
@@ -196,22 +225,36 @@ extension FramePipelineUseCaseImpl {
         }
     }
 
+    private static func pause(beforeReconnectAfterLosses losses: Int) -> Duration? {
+        losses > 1 ? RetryPolicy.serviceLookup.delay(afterFailure: losses - 1) : nil
+    }
+
     private func reconnectFinished(epoch: Int, failure: (any Error)?) {
         guard epoch == reconnectEpoch else { return }
         reconnectTask = nil
         switch failure {
         case nil:
             settle(from: .reconnecting, to: .connected)
+            replayPendingLoss()
         case is CancellationError:
             settle(from: .reconnecting, to: .disconnected)
+            lossPending = false
         case let error?:
             errorLog.record(.transport, "reconnect failed: \(error)")
             settle(from: .reconnecting, to: .disconnected)
+            lossPending = false
         }
+    }
+
+    private func replayPendingLoss() {
+        guard lossPending else { return }
+        lossPending = false
+        startReconnect()
     }
 
     private func cancelReconnect() {
         reconnectEpoch += 1
+        lossPending = false
         reconnectTask?.cancel()
         reconnectTask = nil
     }
