@@ -91,6 +91,12 @@ Shared conventions:
   `// allow-physical: <PortName>` only inside the port's live module.
 - No layer skipping. An Interactor never holds a Gateway; a UseCase never
   holds a DataSource. Thread pass-through contracts through adjacent layers.
+- Every host port has a live value from the day its contract exists:
+  `EffectRuntimeRepository` and `PreviewSink` are registered as
+  `PassthroughEffectRuntimeRepository` (`prepare` and `apply` →
+  `.failure(.internalError)`, the pipeline passes the frame through) and `DiscardingPreviewSink`
+  (`present` completes at once) until the real ones replace them in the same
+  modules. A PR merged out of order never leaves the pipeline without a runtime.
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
   the owning UseCase module, never as a second UseCase.
@@ -133,8 +139,14 @@ Shared conventions:
   `pollUntil` (readable-only external state), `suspendUntilCancelled`
   (a double that must never answer) from `Tests/TestSupport`.
 - Frame flow is driven by the test: `FakeCaptureSessionGateway.emit(frame)`,
-  `ManualFrameExecutor.drain()`, `FakeGPUGateway.complete(...)`. Interleavings
-  are enumerated with seed-driven `forAll` / `@Test(arguments: Seeds...)`.
+  `ManualFrameExecutor.drain()`, `FakeGPUGateway.complete(submission, with:)`.
+  Interleavings are enumerated with seed-driven `forAll` / `@Test(arguments: Seeds...)`.
+- The GPU and effect fakes complete manually, in any order: `FakeGPUGateway`
+  (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
+  `completeApply`), `InMemoryPreviewSink` (`complete(presentation)`). Each
+  completion is exactly once; a second one returns `false`.
+  `FakeShaderLibraryGateway` reports an issue when called on the main thread;
+  `FakeTextureCacheGateway.isBalanced` is the bind/unbind invariant.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
   wall clock.
