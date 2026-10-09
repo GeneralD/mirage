@@ -80,10 +80,7 @@ struct FramePipelineReconnectTests {
         rig.sink.emit(.disconnected(.destinationLost))
         rig.executor.drain()
 
-        await pollUntil {
-            rig.executor.drain()
-            return rig.subject.phase == .connected && rig.sink.connectCount == 2
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.subject.phase == .connected && rig.sink.connectCount == 2 }))
         #expect(rig.sink.connectCount == 2)
         #expect(rig.subject.phase == .connected)
     }
@@ -168,24 +165,15 @@ struct FramePipelineReconnectTests {
         rig.sink.failConnect(with: .lookupFailed(code: 7))
 
         rig.sink.emit(.disconnected(.destinationLost))
-        await pollUntil {
-            rig.executor.drain()
-            return rig.subject.phase == .disconnected
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.subject.phase == .disconnected }))
         #expect(rig.errors.messages(in: .transport).contains { $0.contains("reconnect failed") })
 
         rig.sink.failConnect(with: nil)
         rig.sink.emit(.disconnected(.destinationLost))
         // Two losses in a row with no frame in between: the reconnect waits one policy step.
-        await pollUntil {
-            rig.executor.drain()
-            return rig.clock.sleepers.count == 1
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.clock.sleepers.count == 1 }))
         rig.clock.advance(by: .milliseconds(250))
-        await pollUntil {
-            rig.executor.drain()
-            return rig.subject.phase == .connected
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.subject.phase == .connected }))
         #expect(rig.sink.connectCount == 3)
     }
 
@@ -238,10 +226,7 @@ struct FramePipelineReconnectTests {
         sink.release(1)
         try await start.value
 
-        await pollUntil {
-            rig.executor.drain()
-            return sink.attempts.count == 2 && rig.subject.phase == .connected
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { sink.attempts.count == 2 && rig.subject.phase == .connected }))
         #expect(sink.attempts.values == [1, 2])
     }
 
@@ -258,19 +243,36 @@ struct FramePipelineReconnectTests {
         sink.emit(.disconnected(.destinationLost))
         rig.executor.drain()
         sink.release(2)
-        await pollUntil {
-            rig.executor.drain()
-            return rig.clock.sleepers.count == 1
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.clock.sleepers.count == 1 }))
         #expect(rig.clock.sleepers.values == [.milliseconds(250)], "the second loss in a row waits one policy step")
         #expect(sink.attempts.values == [1, 2])
         rig.clock.advance(by: .milliseconds(250))
 
-        await pollUntil {
-            rig.executor.drain()
-            return sink.attempts.count == 3 && rig.subject.phase == .connected
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { sink.attempts.count == 3 && rig.subject.phase == .connected }))
         #expect(sink.attempts.values == [1, 2, 3])
+    }
+
+    @Test("stop then start forgets the loss streak: the first loss of the new run reconnects at once")
+    func restartResetsStreak() async throws {
+        let rig = Rig()
+        try await rig.subject.start(descriptor: .hd720, frameRate: .standard)
+        rig.executor.drain()
+        rig.sink.emit(.disconnected(.destinationLost))
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == 2 && rig.subject.phase == .connected }))
+        rig.sink.emit(.disconnected(.destinationLost))
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.clock.sleepers.count == 1 }))
+        rig.clock.advance(by: .milliseconds(250))
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == 3 && rig.subject.phase == .connected }))
+
+        rig.subject.stop()
+        rig.executor.drain()
+        try await rig.subject.start(descriptor: .hd720, frameRate: .standard)
+        rig.executor.drain()
+        let sleepersBefore = rig.clock.sleepers.count
+        let connectsBefore = rig.sink.connectCount
+        rig.sink.emit(.disconnected(.destinationLost))
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == connectsBefore + 1 && rig.subject.phase == .connected }))
+        #expect(rig.clock.sleepers.count == sleepersBefore, "no back-off carried over from the previous run")
     }
 
     @Test("losses that follow each other without a delivered frame back off; a delivered frame resets it")
@@ -280,36 +282,21 @@ struct FramePipelineReconnectTests {
         rig.executor.drain()
 
         rig.sink.emit(.disconnected(.destinationLost))
-        await pollUntil {
-            rig.executor.drain()
-            return rig.sink.connectCount == 2 && rig.subject.phase == .connected
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == 2 && rig.subject.phase == .connected }))
         #expect(rig.clock.sleepers.count == 0, "the first loss reconnects at once")
 
         rig.sink.emit(.disconnected(.destinationLost))
-        await pollUntil {
-            rig.executor.drain()
-            return rig.clock.sleepers.count == 1
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.clock.sleepers.count == 1 }))
         #expect(rig.sink.connectCount == 2)
         rig.clock.advance(by: .milliseconds(250))
-        await pollUntil {
-            rig.executor.drain()
-            return rig.sink.connectCount == 3 && rig.subject.phase == .connected
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == 3 && rig.subject.phase == .connected }))
 
         rig.sink.emit(.disconnected(.destinationLost))
-        await pollUntil {
-            rig.executor.drain()
-            return rig.clock.sleepers.count == 2
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.clock.sleepers.count == 2 }))
         // The collector holds absolute deadlines: 250 ms, then 250 ms + 500 ms.
         #expect(rig.clock.sleepers.values == [.milliseconds(250), .milliseconds(750)])
         rig.clock.advance(by: .milliseconds(500))
-        await pollUntil {
-            rig.executor.drain()
-            return rig.sink.connectCount == 4 && rig.subject.phase == .connected
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == 4 && rig.subject.phase == .connected }))
 
         rig.emit(at: 1_000)
         rig.executor.drain()
@@ -317,10 +304,7 @@ struct FramePipelineReconnectTests {
         rig.executor.drain()
         #expect(rig.sink.sent.count == 1)
         rig.sink.emit(.disconnected(.destinationLost))
-        await pollUntil {
-            rig.executor.drain()
-            return rig.sink.connectCount == 5 && rig.subject.phase == .connected
-        }
+        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == 5 && rig.subject.phase == .connected }))
         #expect(rig.clock.sleepers.count == 2, "a delivered frame proved the link, so the next loss reconnects at once")
     }
 }
