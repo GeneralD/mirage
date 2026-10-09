@@ -66,12 +66,21 @@ import Testing
     @Test func aSleepCancelledOnEntryThrowsWithoutParking() async {
         let clock = GatedClock()
         let outcomes = Outcomes()
-        let task = sleep(clock, for: .seconds(1), into: outcomes)
-        task.cancel()
+        // The task cancels itself before entering sleep, so the order is fixed (no race with an external cancel()).
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                try await clock.sleep(for: .seconds(1))
+                outcomes.append(.success(()))
+            } catch {
+                outcomes.append(.failure(error))
+            }
+        }
         await outcomes.waitForCount(1)
         expectCancelled(outcomes.last)
         #expect(clock.parkedCount == 0)
         #expect(clock.sleepers.count == 0)
+        await task.value
     }
 
     @Test func cancellingAfterAdvanceDoesNothingExtra() async {
