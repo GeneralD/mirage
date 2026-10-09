@@ -238,7 +238,7 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 
 **Thin shells, thin lives.** `Apps/**` holds only `main.swift` and assets, plus the generated `Info.plist` / entitlements (`scripts/check-shell-thin.sh` bounds line counts and file kinds). Coverage-ignored Gateway modules obey decoy's thin-live rule: ≤ 50 lines per file, no `if`/`guard`/`switch`/`for`, no `var` (`scripts/check-live-thin.sh`).
 
-**Coverage.** codecov as lyra (`project: auto / 1%`, `patch: 80%`). Ignored: `Domain`, the three DI targets, `Views`, `Apps/**`, and the Gateway modules that cannot be exercised in CI — `MachGateway`, `SystemExtensionGateway`, `CMIOExtensionGateway`, `AVFoundationGateway`, `MetalGateway`, `MetalKitPreviewGateway` — fixed, never environment-conditional. GPU suites run in `make test-gpu` outside coverage.
+**Coverage.** codecov as lyra (`project: auto / 1%`, `patch: 80%`). Ignored: `Domain`, the three DI targets, `Views`, `Apps/**`, and the Gateway modules whose real backend is not exercised in the coverage run — `MachGateway`, `SystemExtensionGateway`, `CMIOExtensionGateway`, `AVFoundationGateway` (no extension, camera or CMIO on a runner) and `MetalGateway`, `MetalKitPreviewGateway` (GPU suites run in their own process and never feed codecov, even though the runner has a Metal device) — fixed, never environment-conditional. GPU suites run in `make test-gpu` outside coverage.
 
 **Decoy lessons carried as ADRs.** (1) IOSurface across actor boundaries crashes on Swift 6.3 → leases + no actors. (2) Service-name triple → lint. (3) `CMIOExtensionStream` needs `.hostTime` clock and real mach-uptime PTS. (4) `needsApproval` must be surfaced in UI with a Settings deep link; the app must sit under `/Applications` for activation. (5) Two Developer ID provisioning profiles are required; the release workflow had never run end-to-end in decoy.
 
@@ -247,4 +247,4 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 - Does the `SurfaceToken` zero-copy design survive the extension boundary, or is one copy at the transport required?
 - Does the extension's `mach-register` entitlement need an App Group prefix?
 - Does `systemextensionsctl developer on` require SIP off on the dev machine?
-- Is a Metal device available on GitHub-hosted macOS runners (decides whether `make test-gpu` can run in CI at all)?
+- ~~Is a Metal device available on GitHub-hosted macOS runners (decides whether `make test-gpu` can run in CI at all)?~~ **Resolved 2026-10-09 (#4)**: yes — one "Apple Paravirtual device" on both `macos-latest` and `macos-15`; shader compile and compute work; `supportsFamily(.apple7)` is false, `.mac2` true. `make test-gpu` gets its own CI job in #9; GPU smoke tests target the `mac2` family only (`.claude/rules/gpu-testing.md`).

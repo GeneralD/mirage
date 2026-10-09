@@ -39,7 +39,7 @@ webcam ──▶ mirage (host app) ──▶ Metal effect (.lens, compiled at ru
 
 ```sh
 make test              # deterministic suite, no GPU or camera required
-make test-gpu          # Metal smoke tests (local, needs a GPU)
+make test-gpu          # Metal smoke tests in their own process (needs a Metal device; CI has one)
 make lint && make check
 swift run dev-harness  # camera → effects → preview window, no extension needed (MVP-A; not in M0)
 ```
