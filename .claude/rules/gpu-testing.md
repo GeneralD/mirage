@@ -8,8 +8,9 @@ paths:
 # GPU Tests — Separate Process, CI-Capable
 
 Everything that *decides* (pass-through, auto-disable, budget, in-flight cap,
-newest-wins compile) is tested against `FakeGPUGateway` and never needs a GPU.
-Only three things touch a real `MTLDevice`:
+newest-wins compile, the preview's latest-wins and exactly-once completion) is
+tested against `FakeGPUGateway` / `FakePreviewGateway` and never needs a GPU.
+Only four things touch a real `MTLDevice`:
 
 1. `MetalDeviceSmokeTests` — the issue #4 runner probe kept as a test: a
    device exists, it is in the `mac2` family, and a kernel compiled from
@@ -28,6 +29,14 @@ Only three things touch a real `MTLDevice`:
    surface, a surface rebinds after `unbind`, and foreign handles are refused.
    `ShaderCompileOptions.precise` (→ `fastMathEnabled = false`) is the default.
 3. Hash-noise parity — GPU vs Swift reference, same tolerance.
+4. `PreviewSmokeTests` — the preview kernel's pixels, run as an ordinary
+   compute pass between two IOSurfaces so they can be read back (letterbox,
+   pillarbox, and an exact same-size copy that catches a flip, a swapped axis
+   or a half-texel shift); `MetalKitPreviewGateway.prepare` readying an
+   off-screen `MTKView` and `draw` completing once into its layer's drawable
+   (the drawable's pixels belong to the compositor and are not read back);
+   `PreviewDataSource` over the live gateways end to end; foreign handles
+   refused.
 
 ## Rules
 

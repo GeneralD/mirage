@@ -51,6 +51,12 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
+- `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
+  answers a `FakePreviewLayerHandle` (or `failPrepare(with:)`), `draw` records
+  a pending `Draw` until `complete(_:with:)`, exactly once, in any order
+  (`failDraw(with:)` makes the next one throw before commit). Foreign handles
+  are refused in the live order (`prepare`: target, then context; `draw`:
+  context, kernel, texture, layer).
 - `InMemoryFrameTransport` — the in-process Mach kernel behind the host↔extension
   loopback (`Tests/FramePathIntegrationTests/LoopbackRig.swift` keeps
   **separate surface pools on each side**). Hooks: a bootstrap table (look-up
