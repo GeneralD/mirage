@@ -276,6 +276,30 @@ struct HostAbsenceIntegrationTests {
 
     @Test("any interleaving of host and extension events keeps leases balanced and the stream strictly increasing", arguments: Seeds.range(0..<50))
     func leaseBalanceProperty(seed: UInt64) async throws {
+        _ = try await runLeaseScenario(seed: seed)
+    }
+
+    @Test("across the seeds every absence path is actually taken: slate, relaunch, frame gap, real frames")
+    func leaseBalancePropertyCoverage() async throws {
+        var all: [Coverage] = []
+        for seed in Seeds.range(0..<50) { all.append(try await runLeaseScenario(seed: seed)) }
+        #expect(all.map(\.slateEntries).reduce(0, +) > 0, "no seed ever entered slate")
+        #expect(all.map(\.relaunches).reduce(0, +) > 0, "no seed ever relaunched the host")
+        #expect(all.map(\.frameGaps).reduce(0, +) > 0, "no seed ever hit the frame gap")
+        #expect(all.map(\.hostLosses).reduce(0, +) > 0, "no seed ever lost the host")
+        #expect(all.map(\.realFramesStreamed).reduce(0, +) > 0, "no seed ever streamed a real frame")
+    }
+
+    private struct Coverage {
+        var slateEntries = 0
+        var relaunches = 0
+        var frameGaps = 0
+        var hostLosses = 0
+        var realFramesStreamed = 0
+    }
+
+    private func runLeaseScenario(seed: UInt64) async throws -> Coverage {
+        var coverage = Coverage()
         var generator = SeededGenerator(seed: seed)
         let rig = LoopbackRig()
         let relay = await rig.startExtension()
@@ -302,8 +326,15 @@ struct HostAbsenceIntegrationTests {
                 rig.ext.scheduler.tick()
                 rig.ext.executor.drain()
             case 5:
-                await rig.ext.clock.advance(by: .milliseconds(Int.random(in: 1...3) * 250))
-                rig.ext.executor.drain()
+                // Now and then a long silence (a stopped host): the watchdog looks every gap/4.
+                let steps = Int.random(in: 0..<3, using: &generator) == 0 ? 5 : 1
+                for _ in 0..<steps {
+                    await rig.ext.clock.advance(by: .milliseconds(Int.random(in: 1...3, using: &generator) * 250))
+                    for _ in 0..<3 {
+                        rig.ext.executor.drain()
+                        await Task.yield()
+                    }
+                }
             case 6:
                 guard hostUp else { break }
                 hostUp = false
@@ -316,6 +347,7 @@ struct HostAbsenceIntegrationTests {
                 guard !hostUp else { break }
                 try await rig.startHost()
                 hostUp = true
+                coverage.relaunches += 1
             default:
                 rig.ext.stream.emit(Bool.random(using: &generator) ? .streamStarted : .streamStopped)
                 rig.ext.hostTime.set(HostTimestamp(nanoseconds: pts + UInt64.random(in: 0...200_000_000, using: &generator)))
@@ -332,6 +364,11 @@ struct HostAbsenceIntegrationTests {
         try await rig.stopExtension(relay)
         rig.stopHost()
 
+        for presence in rig.kernel.presencePorts.values {
+            #expect(
+                rig.kernel.destroyed.values.filter { $0 == presence.receive }.count == 1,
+                "seed \(seed): presence \(presence.receive.name) receive right destroyed exactly once")
+        }
         #expect(rig.host.pool.liveCount == 0, "seed \(seed): host leases balanced")
         #expect(rig.ext.pool.liveCount == 0, "seed \(seed): extension leases balanced")
         let times = rig.streamedTimes
@@ -341,7 +378,12 @@ struct HostAbsenceIntegrationTests {
             let fromHost = minted.contains { $0 === handle }
             let slate = handle?.lastFill == 0 && !(handle.map { $0.id >= 1_000_000 } ?? false)
             #expect(fromHost || slate, "seed \(seed): the stream only sees a host surface (same identity) or an extension slate surface")
+            if fromHost { coverage.realFramesStreamed += 1 }
         }
+        coverage.slateEntries = rig.ext.developer.entries.values.filter { $0.message.contains("slate entered") }.count
+        coverage.frameGaps = rig.ext.errors.entries.values.filter { $0.message.contains("frameGap") }.count
+        coverage.hostLosses = rig.ext.errors.entries.values.filter { $0.message.contains("host lost") }.count
+        return coverage
     }
 }
 
