@@ -29,7 +29,6 @@ struct PreviewSmokeTests {
     private let metal = MetalGatewayImpl()
     private let surfaces = IOSurfaceGatewayImpl()
     private let preview = MetalKitPreviewGatewayImpl()
-    private static let black: [UInt8] = [0, 0, 0, 255]
 
     // MARK: - Kernel pixels
 
@@ -53,25 +52,42 @@ struct PreviewSmokeTests {
         return try Self.rows(of: output)
     }
 
-    @Test("a wide frame is letterboxed: scaled to the target's width, centred, black above and below")
-    func letterbox() async throws {
-        let input = try surfaces.create(.bgra(width: 8, height: 4))
-        try surfaces.fill(input, with: 0x80)
-        let rows = try await blit(input, into: try surfaces.create(.bgra(width: 8, height: 8)))
+    /// A frame size and the drawable it is scaled into.
+    struct Fit: Sendable, CustomTestStringConvertible {
+        let width: Int
+        let height: Int
+        let targetWidth: Int
+        let targetHeight: Int
+        var testDescription: String { "\(width)x\(height) into \(targetWidth)x\(targetHeight)" }
 
-        let frame: [UInt8] = [0x80, 0x80, 0x80, 0x80]
-        #expect(rows.map { Set($0) } == [[Self.black], [Self.black], [frame], [frame], [frame], [frame], [Self.black], [Self.black]])
+        /// Letterboxed ×2 and ×½, pillarboxed ×2 and ×½: the filter weights are
+        /// quarters and halves, which the GPU represents exactly. Widths stay
+        /// multiples of 4, so every BGRA row is 16-byte aligned as Metal requires.
+        static let all = [
+            Fit(width: 4, height: 2, targetWidth: 8, targetHeight: 8),
+            Fit(width: 16, height: 8, targetWidth: 8, targetHeight: 8),
+            Fit(width: 4, height: 8, targetWidth: 16, targetHeight: 16),
+            Fit(width: 8, height: 16, targetWidth: 8, targetHeight: 8),
+        ]
     }
 
-    @Test("a tall frame is pillarboxed: scaled to the target's height, centred, black left and right")
-    func pillarbox() async throws {
-        let input = try surfaces.create(.bgra(width: 4, height: 8))
-        try surfaces.fill(input, with: 0x40)
-        let rows = try await blit(input, into: try surfaces.create(.bgra(width: 8, height: 8)))
+    @Test(
+        "the frame is scaled to fit, keeping its aspect, centred, bilinearly, with opaque black bars",
+        arguments: Fit.all
+    )
+    func scaledToFit(_ fit: Fit) async throws {
+        let input = try surfaces.create(.bgra(width: fit.width, height: fit.height))
+        let pixel = { (x: Int, y: Int) in Self.gradient(x, y, width: fit.width, height: fit.height) }
+        try Self.write(input) { pixel($0, $1) }
+        let rows = try await blit(input, into: try surfaces.create(.bgra(width: fit.targetWidth, height: fit.targetHeight)))
 
-        let frame: [UInt8] = [0x40, 0x40, 0x40, 0x40]
-        let expected = [Self.black, Self.black, frame, frame, frame, frame, Self.black, Self.black]
-        #expect(rows.allSatisfy { $0 == expected })
+        let expected = Self.aspectFit(width: fit.width, height: fit.height, into: fit.targetWidth, fit.targetHeight, pixel: pixel)
+        let mismatches: [String] = (0..<fit.targetHeight).flatMap { y in
+            (0..<fit.targetWidth).filter { x in Self.differ(rows[y][x], expected[y][x]) }.map { x in
+                "(\(x), \(y)): \(rows[y][x]) vs \(expected[y][x])"
+            }
+        }
+        #expect(mismatches.isEmpty, "\(mismatches.count) pixels off by more than one step: \(mismatches.prefix(4))")
     }
 
     @Test("at the same size every pixel is copied in place: no flip, no swapped axis, no half-texel shift")
@@ -201,6 +217,40 @@ struct PreviewSmokeTests {
     }
 
     // MARK: - Pixels
+
+    /// Distinct texels in every channel: blue ramps across, green ramps down,
+    /// red is a 0 / 255 checkerboard, so a nearest-texel filter is off by half the range.
+    private static func gradient(_ x: Int, _ y: Int, width: Int, height: Int) -> [UInt8] {
+        [UInt8(20 + x * 200 / max(width - 1, 1)), UInt8(20 + y * 200 / max(height - 1, 1)), (x + y) % 2 == 0 ? 0 : 255, 255]
+    }
+
+    /// `previewBlit` in Swift: aspect-fit and centred, sampled at pixel centres with
+    /// bilinear filtering and clamp-to-edge, opaque black outside the fitted frame.
+    private static func aspectFit(width: Int, height: Int, into targetWidth: Int, _ targetHeight: Int, pixel: (Int, Int) -> [UInt8]) -> [[[Double]]] {
+        let (source, target) = (SIMD2(Double(width), Double(height)), SIMD2(Double(targetWidth), Double(targetHeight)))
+        let fitted = source * min(target.x / source.x, target.y / source.y)
+        return (0..<targetHeight).map { y in
+            (0..<targetWidth).map { x in
+                let uv = (SIMD2(Double(x), Double(y)) + 0.5 - (target - fitted) * 0.5) / fitted
+                guard (0...1).contains(uv.x), (0...1).contains(uv.y) else { return [0, 0, 0, 255] }
+                return bilinear(at: uv * source - 0.5, width: width, height: height, pixel: pixel)
+            }
+        }
+    }
+
+    /// One 8-bit step of tolerance per channel, as in `MetalGatewaySmokeTests`.
+    private static func differ(_ actual: [UInt8], _ expected: [Double]) -> Bool {
+        zip(actual.map(Double.init), expected).contains { abs($0 - $1) > 1 }
+    }
+
+    private static func bilinear(at texel: SIMD2<Double>, width: Int, height: Int, pixel: (Int, Int) -> [UInt8]) -> [Double] {
+        let (x0, y0) = (Int(texel.x.rounded(.down)), Int(texel.y.rounded(.down)))
+        let (fx, fy) = (texel.x - Double(x0), texel.y - Double(y0))
+        func at(_ x: Int, _ y: Int) -> [Double] { pixel(min(max(x, 0), width - 1), min(max(y, 0), height - 1)).map(Double.init) }
+        let top = zip(at(x0, y0), at(x0 + 1, y0)).map { $0 * (1 - fx) + $1 * fx }
+        let bottom = zip(at(x0, y0 + 1), at(x0 + 1, y0 + 1)).map { $0 * (1 - fx) + $1 * fx }
+        return zip(top, bottom).map { $0 * (1 - fy) + $1 * fy }
+    }
 
     private static func rows(of surface: any SurfaceHandle) throws -> [[[UInt8]]] {
         let raw = try #require(surface.backing as? IOSurface)
