@@ -159,6 +159,10 @@ public final class InMemoryFrameTransport: Sendable {
         if let notify { try? enqueue(.deadName(MachPortToken(name: name)), on: notify, kernelGenerated: true) }
     }
 
+    /// Known gap: the real `mach_port_request_notification` hands back the previous notification
+    /// port for the caller to deallocate, and a repeated request replaces it. This double keeps one
+    /// registration per port and returns no previous one, so a receiver that leaks a replaced
+    /// notification right is not caught here; model it when the phase 2 receiver re-registers.
     fileprivate func registerNotification(for right: MachSendRight, on notifyPort: MachPortToken) throws {
         deadNameRequests.append((right, notifyPort))
         let alreadyDead = try state.withLock { state -> Bool in
