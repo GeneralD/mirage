@@ -74,6 +74,7 @@ struct HostSide {
 /// and clock.
 struct ExtensionSide {
     let executor = ManualFrameExecutor()
+    let scheduler = ManualFrameScheduler()
     let clock = TestClock<Duration>()
     let stream = FakeStreamOutputGateway()
     let errors = RecordingLog()
@@ -83,6 +84,7 @@ struct ExtensionSide {
 
     init(kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int, frameGap: Duration) {
         let executor = executor
+        let scheduler = scheduler
         let clock = clock
         let stream = stream
         let errors = errors
@@ -99,6 +101,7 @@ struct ExtensionSide {
             $0.machMessageGateway = kernel.messaging(for: .extension)
             $0.surfacePool = pool
             $0.frameExecutor = executor
+            $0.frameScheduler = scheduler
             $0.continuousClock = clock
             $0.streamOutputGateway = stream
             $0.errorLog = errors
