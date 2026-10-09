@@ -47,6 +47,41 @@ import Testing
         stats.note(.dropped(.noClient))
         #expect(stats.summary == "frames=1 received=2 dropped=1 maxGapMs=40 slate=0")
     }
+
+    @Test func dropsAreAlsoCountedByReason() {
+        var stats = PipelineStats.empty
+        stats.note(.dropped(.inFlightCapReached))
+        stats.note(.dropped(.inFlightCapReached))
+        stats.note(.dropped(.sendFailed(code: 7)))
+        stats.note(.sent)
+        #expect(stats.framesDropped == 3)
+        #expect(stats.dropReasons == [.inFlightCapReached: 2, .sendFailed(code: 7): 1])
+    }
+
+    @Test func effectOutcomesSplitIntoAppliedAndFailuresByKind() {
+        var stats = PipelineStats.empty
+        stats.noteEffect(.success(()))
+        stats.noteEffect(.failure(.timeout))
+        stats.noteEffect(.failure(.timeout))
+        stats.noteEffect(.failure(.unknown(code: 9)))
+        #expect(stats.effectsApplied == 1)
+        #expect(stats.effectsFailed == 3)
+        #expect(stats.effectFailures == [.timeout: 2, .unknown(code: 9): 1])
+        #expect(stats.framesSent == 0, "an effect outcome is not a send; the frame it produced is noted separately")
+    }
+
+    @Test func effectSummaryAggregatesTheFailureKindsAndTheCapDrops() {
+        var stats = PipelineStats.empty
+        #expect(stats.effectSummary == "applied=0 failed=0 capDropped=0")
+        stats.noteEffect(.success(()))
+        stats.noteEffect(.failure(.timeout))
+        stats.noteEffect(.failure(.internalError))
+        stats.noteEffect(.failure(.internalError))
+        stats.noteEffect(.failure(.unknown(code: -5)))
+        stats.note(.dropped(.inFlightCapReached))
+        stats.note(.dropped(.notConnected))
+        #expect(stats.effectSummary == "applied=1 failed=4 internalError=2 timeout=1 unknown(-5)=1 capDropped=1")
+    }
 }
 
 @Suite struct RetryPolicyTests {

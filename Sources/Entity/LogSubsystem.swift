@@ -4,6 +4,10 @@ public enum LogSubsystem: String, Sendable, Hashable, CaseIterable {
     case camera
     case pipeline
     case surfaces
+    /// The host pipeline's effect stage: its per-second summary and its drops.
+    case effect
+    /// GPU work below the effect runtime (command buffers and their completions).
+    case gpu
     case transport
     case receiver
     case stream
