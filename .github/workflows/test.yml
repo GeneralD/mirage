@@ -151,3 +151,24 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ steps.generate_lcov.outputs.coverage_file }}
           fail_ci_if_error: false
+
+  test-gpu:
+    # GPU smoke suites in their own process, outside coverage
+    # (.claude/rules/gpu-testing.md). The runner exposes a Metal device (an
+    # "Apple Paravirtual device", measured in #4), so the suites must run, not
+    # skip: a skip means the runner lost its device and is reported as a failure.
+    runs-on: macos-latest
+    needs: preflight
+    if: needs.preflight.outputs.has_package == 'true'
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run GPU smoke tests
+        run: |
+          set -o pipefail
+          make test-gpu 2>&1 | tee "$RUNNER_TEMP/test-gpu.log"
+          if grep -qi "skipped" "$RUNNER_TEMP/test-gpu.log"; then
+            echo "::error::GPU smoke tests were skipped — MetalDeviceProbe found no device on the runner"
+            exit 1
+          fi

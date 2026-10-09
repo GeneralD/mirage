@@ -159,6 +159,11 @@ let package = Package(
         .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
 
+        // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──
+        // Imports Metal directly: a test target, not a Gateway, so the import
+        // allow-list (Sources/ only) does not apply. .claude/rules/gpu-testing.md.
+        .testTarget(name: "GPUSmokeTests"),
+
         // ── Test support ──
         .target(
             name: "TestSupport",
