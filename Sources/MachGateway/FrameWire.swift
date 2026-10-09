@@ -15,6 +15,7 @@ struct FramePayload {
 struct FrameWire {
     /// Shared by both processes; any other id is not a frame.
     static let messageID: mach_msg_id_t = 0x10001
+
     static let size = mach_msg_size_t(MemoryLayout<FrameWire>.size)
 
     let header: mach_msg_header_t

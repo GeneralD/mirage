@@ -5,13 +5,14 @@ import Darwin
 import Domain
 
 extension MachMessageGatewayImpl {
-    public func receive(on port: MachPortToken) async throws -> FrameMessage {
+    public func receive(on port: MachPortToken) async throws -> IncomingMessage {
         try await withCheckedThrowingContinuation { continuation in
             receiveQueue.async { continuation.resume(with: Result { try Self.blockingReceive(port) }) }
         }
     }
 
-    private static func blockingReceive(_ port: MachPortToken) throws -> FrameMessage {
+    /// The buffer is the frame shape plus the kernel's largest trailer: no other shape is bigger.
+    private static func blockingReceive(_ port: MachPortToken) throws -> IncomingMessage {
         let layout = MemoryLayout<FrameWireReceive>.self
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: layout.stride, alignment: layout.alignment)
         defer { buffer.deallocate() }
@@ -21,7 +22,7 @@ extension MachMessageGatewayImpl {
         try (code == MACH_MSG_SUCCESS).orThrow(failure(code))
         // A refused message is destroyed whole: the kernel releases every right it
         // carried, whatever their kind, so a malformed frame never leaks a port here.
-        return try Result { try buffer.load(as: FrameWireReceive.self).message.message() }
+        return try Result { try IncomingMessage.decode(buffer) }
             .mapError { error in
                 mach_msg_destroy(header)
                 return error

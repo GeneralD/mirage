@@ -27,6 +27,12 @@ public enum FrameDropReason: Sendable, Hashable {
     case sendFailed(code: Int)
     /// A previous frame is still in flight and the in-flight cap is reached.
     case inFlightCapReached
+    /// The extension's port queue is full (the extension is slower than the host);
+    /// the link stays up and the next frame is tried as usual.
+    case queueFull
+    /// The presentation time does not advance past the last one already on the
+    /// stream (extension side), so the frame is refused to keep PTS strictly increasing.
+    case nonMonotonic
 }
 
 /// Connection-level events from the host side transport.
