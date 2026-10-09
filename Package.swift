@@ -189,6 +189,9 @@ let package = Package(
             path: "Tests/TestDoubles"
         ),
         .testTarget(name: "TestSupportTests", dependencies: ["TestSupport", "TestDoubles"]),
+        // Contract tests of the fakes themselves: manual completion, ordering,
+        // provenance and the counters the DataSource suites rely on.
+        .testTarget(name: "TestDoublesTests", dependencies: testDependencies),
 
         // ── Integration (host → in-memory loopback → extension) ──
         .testTarget(
