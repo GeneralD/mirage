@@ -77,7 +77,9 @@ extension FrameReceiverDataSourceImpl {
     /// the earlier right is given back before the new one is watched.
     private func adopt(presence right: MachSendRight, notifying servicePort: MachPortToken) {
         releasePresence()
-        awaitingFirstHost = false
+        // A hello is not a frame: a host that greets and then stays silent (permission denied, hung at
+        // launch) must still be declared lost, so the startup wait stays armed and only restarts its count.
+        if awaitingFirstHost { sinceLastFrame = Self.stopwatch(on: clock) }
         presence = right
         do {
             try bootstrap.requestDeadNameNotification(of: right, to: servicePort)
@@ -97,6 +99,7 @@ extension FrameReceiverDataSourceImpl {
             return
         }
         hostPresent = false
+        awaitingFirstHost = false
         onEvent(.hostLost(.deadName))
         presence = nil
         bootstrap.releaseDeadName(name)
