@@ -14,12 +14,15 @@ import Domain
 /// sent, counted as a drop, or abandoned by `stop`. The pass's answer comes back
 /// on the executor: on success the rendered output goes to the sink, on any
 /// failure the input goes instead, unchanged — judged frame by frame, with no
-/// memory of earlier failures. Every lease ends exactly once: the input's when
-/// the runtime is done with it (or after the sink has seen it, on a failure),
-/// the output's after the sink has seen it, sent or not, because the extension
-/// holds its own reference. Only the answer ends a pass: one that `stop` gives up
-/// on keeps its leases and the in-flight cap until the answer arrives, then ends
-/// them without sending, because the GPU may still be reading or writing them.
+/// memory of earlier failures. Every lease ends exactly once, and only the
+/// answer ends a pass's two:
+/// - success: the input's at the answer, the runtime being done reading it; the
+///   output's after the send, sent or not, because the extension holds its own
+///   reference;
+/// - failure: the unused output's at the answer; the input's after the send;
+/// - abandoned by `stop`: both at the answer, with nothing sent or counted. Until
+///   then the pass keeps them, and the in-flight cap, because the GPU may still be
+///   reading or writing them.
 public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Sendable {
     @Dependency(\.cameraRepository) private var cameraRepository
     @Dependency(\.virtualCameraSink) private var virtualCameraSink
