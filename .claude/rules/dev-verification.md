@@ -20,7 +20,8 @@ camera → effects → preview window with the virtual camera sink replaced by
 cannot show anything about the Camera Extension.
 
 Today (#21, the lite harness) it has no camera frames and no effect: it asks
-for the camera once and keeps one solid frame in a preview window. Drive it
+for the camera once and keeps one solid frame in a preview window, and the
+usage string says only that (rewrite it when #24 wires capture). Drive it
 yourself only when the user is at the machine — the camera prompt is a modal
 dialog on their screen:
 

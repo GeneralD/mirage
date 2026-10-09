@@ -123,9 +123,11 @@ Shared conventions:
   `Tools/DevHarness/Info.plist`, linked into the `dev-harness` SwiftPM
   executable with `-sectcreate` (xcodegen never builds it); it carries no
   product name, and `make check` scans `Tools/` for one.
-- `DevHarness` keeps `main.swift` to AppKit's launch; its behaviour is
-  `HarnessSession`, tested against fakes (`Tests/DevHarnessTests`). It logs
-  through `DeveloperLog` / `ErrorLog` like every other module, never `print`.
+- `DevHarness` keeps `main.swift` to AppKit's launch and `HarnessSession` to
+  the lifecycle and the view wiring; it resolves only `HarnessInteractor`,
+  which drives `SolidFrameUseCase` and `CameraControlUseCase`. Each layer is
+  tested against fakes. It logs through `DeveloperLog` / `ErrorLog` like
+  every other module, never `print`.
 - Host absence: the extension detects it by frame gap (watchdog every
   `frameGap / 4`, counted from the last frame, or from `start` while no host
   has been seen yet, so a host that never launched is lost too) and by dead-name
