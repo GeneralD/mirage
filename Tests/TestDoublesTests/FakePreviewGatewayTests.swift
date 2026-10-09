@@ -100,6 +100,26 @@ struct FakePreviewGatewayTests {
         #expect(completed.count == 1)
     }
 
+    @Test("another gateway's draw with the same id is a reported issue, returns false and leaves this gateway's draw pending")
+    func strangersDrawIsRefused() throws {
+        let rig = try rig()
+        let completed = Collector<Void>()
+        try gateway.draw(rig.texture, with: rig.kernel, into: rig.layer, on: rig.context) { _ in completed.append(()) }
+        let other = FakePreviewGateway()
+        let otherLayer = try other.prepare(FakePreviewTargetHandle(), on: rig.context)
+        try other.draw(rig.texture, with: rig.kernel, into: otherLayer, on: rig.context) { _ in }
+        let stranger = try #require(other.pending.first)
+        let mine = try #require(gateway.pending.first)
+        #expect(stranger.id == mine.id)
+
+        let refused = Collector<Bool>()
+        withKnownIssue { refused.append(gateway.complete(stranger)) }
+        #expect(refused.values == [false])
+        #expect(completed.count == 0)
+        #expect(gateway.pending.map(\.id) == [mine.id])
+        #expect(other.pending.map(\.id) == [stranger.id])
+    }
+
     @Test("foreign handles are refused in the live order, and a scripted error after them, before anything is recorded")
     func drawRefusals() throws {
         let rig = try rig()

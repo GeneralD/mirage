@@ -31,6 +31,8 @@ public final class FakePreviewGateway: PreviewGateway, Sendable {
         public let kernel: FakeLibraryHandle
         public let layer: FakePreviewLayerHandle
         public let context: FakeGPUContextHandle
+        /// The gateway that issued it: ids restart at 1 per instance, so the id alone cannot tell a stranger's draw.
+        fileprivate let origin: ObjectIdentifier
     }
 
     private struct State {
@@ -86,16 +88,20 @@ public final class FakePreviewGateway: PreviewGateway, Sendable {
             let id = state.nextID
             state.nextID += 1
             state.pending[id] = completion
-            return Draw(id: id, texture: fakeTexture, kernel: fakeKernel, layer: fakeLayer, context: fakeContext)
+            return Draw(id: id, texture: fakeTexture, kernel: fakeKernel, layer: fakeLayer, context: fakeContext, origin: ObjectIdentifier(self))
         }
         draws.append(draw)
     }
 
     /// Delivers `completion` to the draw's handler, once. `false` when the draw
-    /// is unknown or was already completed — a double completion is a bug in
-    /// the test, and it is reported as one.
+    /// is unknown, came from another gateway, or was already completed — each
+    /// is a bug in the test, and it is reported as one.
     @discardableResult
     public func complete(_ draw: Draw, with completion: GPUCompletion = GPUCompletion(gpuStart: 0, gpuEnd: 0, error: nil)) -> Bool {
+        guard draw.origin == ObjectIdentifier(self) else {
+            reportIssue("FakePreviewGateway: draw \(draw.id) was issued by another gateway")
+            return false
+        }
         guard let handler = state.withLock({ $0.pending.removeValue(forKey: draw.id) }) else {
             reportIssue("FakePreviewGateway: draw \(draw.id) completed twice or never drawn")
             return false
