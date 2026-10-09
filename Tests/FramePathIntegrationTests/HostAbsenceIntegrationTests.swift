@@ -274,7 +274,44 @@ struct HostAbsenceIntegrationTests {
         #expect(rig.host.pool.liveCount == 0)
     }
 
-    // MARK: 7 Lease balance property
+    // MARK: 7 Host never started
+
+    @Test("the extension starts before any host: slate within gap + gap/4, then the host's first real frame leaves it")
+    func hostNeverConnectedEntersSlate() async throws {
+        let rig = LoopbackRig(frameGap: .seconds(2))
+        let relay = await rig.startExtension()
+        rig.ext.hostTime.set(HostTimestamp(nanoseconds: 10_000_000_000))
+
+        // Nobody has connected: the gap counts from start, and the look every gap/4 notices it.
+        let step = Duration.milliseconds(500)
+        let detectedAt = try await rig.advanceExtensionUntil(step: step, maxSteps: 5) { rig.ext.errors.contains("frameGap") }
+        #expect(try #require(detectedAt) == 4, "the fourth look sees the full gap, no later than gap + gap/4")
+        #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.ext.developer.contains("slate entered") }))
+        #expect(rig.ext.scheduler.isRunning)
+
+        rig.ext.scheduler.tick(times: 3)
+        rig.ext.executor.drain()
+        #expect(rig.ext.relay.stats.slateFrames > 0)
+        let slateTimes = rig.streamedTimes
+        #expect(slateTimes.count == 3)
+        #expect(zip(slateTimes, slateTimes.dropFirst()).allSatisfy { $0 < $1 }, "slate PTS strictly increasing, got \(slateTimes)")
+
+        // The host launches: its first real frame ends the slate, still strictly after it.
+        try await rig.startHost()
+        rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
+        #expect(await rig.pumpExtension(untilReceived: 1))
+        #expect(rig.ext.scheduler.isRunning == false, "the first real frame ends slate")
+        #expect(rig.ext.developer.contains("slate left"))
+        let times = rig.streamedTimes
+        #expect(times.count == 4 && zip(times, times.dropFirst()).allSatisfy { $0 < $1 }, "strictly increasing across the switch, got \(times)")
+
+        try await rig.stopExtension(relay)
+        rig.stopHost()
+        #expect(rig.ext.pool.liveCount == 0)
+        #expect(rig.host.pool.liveCount == 0)
+    }
+
+    // MARK: 8 Lease balance property
 
     @Test("any interleaving of host and extension events keeps leases balanced and the stream strictly increasing", arguments: Seeds.range(0..<50))
     func leaseBalanceProperty(seed: UInt64) async throws {
