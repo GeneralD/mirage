@@ -11,7 +11,8 @@ build:
 test:
 	swift test --skip GPUSmokeTests
 
-# GPU suites in a separate process, local by default (see .claude/rules/gpu-testing.md).
+# GPU suites in their own process, never in the coverage run; the CI runner has a
+# Metal device, the job itself arrives with GPUSmokeTests (#9, .claude/rules/gpu-testing.md).
 test-gpu:
 	swift test --filter GPUSmokeTests
 

@@ -38,8 +38,10 @@ Only two things touch a real `MTLDevice`:
   Pro (Virtual)"): `MTLCreateSystemDefaultDevice()` returns one **"Apple
   Paravirtual device"**, `makeLibrary(source:)` compiles, and a compute pass
   returns correct results. It is a VM's paravirtual GPU, not Apple silicon
-  as seen by an app: `supportsFamily(.apple7) == false`, `.mac2 == true`. So
-  `make test-gpu` can run in CI as its own job (issue #9 adds it together
-  with `Tests/GPUSmokeTests`), and GPU smoke tests are written against the
-  `mac2` family only — nothing may assume SIMD-group functions, Apple-family
-  texture formats or other apple-family-gated features.
+  as seen by an app: `supportsFamily(.apple7) == false`, `.mac2 == true`
+  (those two families are all the probe asked; the kernel it ran was a plain
+  buffer fill). So `make test-gpu` can run in CI as its own job — issue #9
+  adds the job once `Tests/GPUSmokeTests` exists — and GPU smoke tests are
+  written against the `mac2` family only: anything gated on an Apple family
+  (SIMD-group functions, Apple-family texture formats, …) is treated as
+  unavailable until a probe shows otherwise.

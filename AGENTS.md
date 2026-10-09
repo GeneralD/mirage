@@ -125,7 +125,7 @@ Shared conventions:
 - GPU suites run only via `make test-gpu`, in their own process, `.serialized`,
   gated by `.enabled(if: MetalDeviceProbe.isAvailable)`, excluded from coverage,
   and written against the `mac2` family only (the CI runner's "Apple
-  Paravirtual device" has no apple-family features; see #4).
+  Paravirtual device" reports `supportsFamily(.apple7) == false`; see #4).
 - Test doubles shared across layers live in `Tests/TestDoubles`; a double
   used by one suite stays private to that suite.
 
