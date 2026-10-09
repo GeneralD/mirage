@@ -25,7 +25,10 @@ Only three things touch a real `MTLDevice`:
    dropped `- 1`, a swapped axis or an unread uniform cannot hide inside the
    tolerance. Also: a syntax error and a missing entry point come back as
    `ShaderDiagnostics`, two commits on one context each write their own
-   surface, a surface rebinds after `unbind`, and foreign handles are refused.
+   surface, a surface rebinds after `unbind`, a 6-pixel-wide surface (rows
+   padded by `IOSurfaceGateway.create`'s alignment; unaligned rows abort the
+   process inside Metal) binds, fills and unbinds, and foreign handles are
+   refused.
    `ShaderCompileOptions.precise` (→ `fastMathEnabled = false`) is the default.
 3. Hash-noise parity — GPU vs Swift reference, same tolerance.
 
