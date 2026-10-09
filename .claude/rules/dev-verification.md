@@ -60,11 +60,11 @@ log stream --style compact --predicate 'subsystem == "<log subsystem>"'
 | Step | Action | Expected lines (grep) | Budget |
 |---|---|---|---|
 | 1. Baseline | nothing | extension `frames=… received=… dropped=… maxGapMs=… slate=0`; host `connected to port` | — |
-| 2. Host killed | `kill -9 <host pid>` | extension `host lost: hostLost(deadName)` (kernel destroys the presence right) or, as backstop, `hostLost(frameGap(`; then `slate entered base=`; summary `slate=<n>` grows | black frames within 1.25 × frameGap (2.5 s at the default 2 s gap); target well under 3 s |
-| 3. Host stalled | `kill -STOP <host pid>` | only `hostLost(frameGap(` (the presence right stays alive); `slate entered base=` | same budget |
+| 2. Host killed | `kill -9 <host pid>` | extension `host lost: .*deadName` (kernel destroys the presence right) or, as backstop, `host lost: .*frameGap`; then `slate entered base=`; summary `slate=<n>` grows | black frames within 1.25 × frameGap (2.5 s at the default 2 s gap); target well under 3 s |
+| 3. Host stalled | `kill -STOP <host pid>` | only `host lost: .*frameGap` (the presence right stays alive); `slate entered base=` | same budget |
 | 4. Host resumed | `kill -CONT <host pid>` | `slate left`; summary `slate=` stops growing; picture back in the client without a restart (0–2 real frames may drop as non-monotonic) | next frame after resume |
 | 5. Host relaunched | relaunch the app after step 2 | host `look-up attempt <n> failed` while the extension is not yet checked in, then `connected to port`; extension `hello received, watching presence right`; `slate left` | reconnect within a few seconds (backoff is 250 ms doubling to 5 s) |
-| 6. Extension gone | quit the last client of the camera so the extension exits | host `destination lost, port <n> released`, then `look-up attempt` lines until the extension is back, then `connected to port`; no host restart needed | — |
+| 6. Extension gone | kill the extension process (`pkill -f <extension process name>`); expectation, not yet verified on a device | host `destination lost, port <n> released`, then `look-up attempt` lines until the extension is back, then `connected to port`; no host restart needed | — |
 
 Record the measured times next to the budgets once they exist; until then do
 not claim which detector fired for step 2 — the log line tells (`deadName` vs
