@@ -58,7 +58,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         let input = try #require(rig.emit(at: 1_000))
         rig.scheduler.tick()
-        let request = await rig.applyRequest(0)
+        let request = try await rig.applyRequest(0)
 
         #expect(request.input == input)
         #expect(request.output.token != input.token)
@@ -84,7 +84,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         let input = try #require(rig.emit(at: 1_000))
         rig.scheduler.tick()
-        let request = await rig.applyRequest(0)
+        let request = try await rig.applyRequest(0)
         probe.watch([input.token, request.output.token], in: rig.surfaces.inner.pool)
 
         #expect(await rig.answer(request, with: .success(())))
@@ -104,7 +104,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         let input = try #require(rig.emit(at: 1_000))
         rig.scheduler.tick()
-        let request = await rig.applyRequest(0)
+        let request = try await rig.applyRequest(0)
         probe.watch([input.token, request.output.token], in: rig.surfaces.inner.pool)
 
         #expect(await rig.answer(request, with: .failure(.timeout)))
@@ -122,7 +122,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         let input = try #require(rig.emit(at: 1_000))
         rig.scheduler.tick()
-        let request = await rig.applyRequest(0)
+        let request = try await rig.applyRequest(0)
 
         #expect(await rig.answer(request, with: .failure(failure)))
         #expect(rig.sink.sent.values == [input], "the camera's frame goes on unchanged")
@@ -142,11 +142,12 @@ struct FramePipelineEffectTests {
         try await started(rig)
         let first = try #require(rig.emit(at: 1_000))
         rig.scheduler.tick()
-        #expect(await rig.answer(await rig.applyRequest(0), with: .failure(.compileFailed)))
+        let compile = try await rig.applyRequest(0)
+        #expect(await rig.answer(compile, with: .failure(.compileFailed)))
 
         let second = try #require(rig.emit(at: 2_000))
         rig.scheduler.tick()
-        let request = await rig.applyRequest(1)
+        let request = try await rig.applyRequest(1)
         #expect(request.input == second, "the failure did not switch the effect stage off")
         #expect(await rig.answer(request, with: .success(())))
 
@@ -165,7 +166,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
-        let running = await rig.applyRequest(0)
+        let running = try await rig.applyRequest(0)
 
         let late = try #require(rig.emit(at: 2_000))
         rig.scheduler.tick()
@@ -183,7 +184,7 @@ struct FramePipelineEffectTests {
 
         let next = try #require(rig.emit(at: 3_000))
         rig.scheduler.tick()
-        let request = await rig.applyRequest(1)
+        let request = try await rig.applyRequest(1)
         #expect(request.input == next, "with the cap free again the next tick starts a pass")
         #expect(request.frameContext.frameIndex == 1)
         #expect(await rig.answer(request, with: .failure(.internalError)))
@@ -198,7 +199,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
-        let running = await rig.applyRequest(0)
+        let running = try await rig.applyRequest(0)
 
         let older = try #require(rig.emit(at: 2_000))
         let newer = try #require(rig.emit(at: 3_000))
@@ -207,7 +208,7 @@ struct FramePipelineEffectTests {
         #expect(await rig.answer(running, with: .success(())))
 
         rig.scheduler.tick()
-        let request = await rig.applyRequest(1)
+        let request = try await rig.applyRequest(1)
         #expect(request.input == newer)
         #expect(await rig.answer(request, with: .success(())))
         #expect(rig.sink.sent.values == [running.output, request.output])
@@ -227,7 +228,7 @@ struct FramePipelineEffectTests {
             let base = UInt64(pass + 1) * 10_000
             #expect(rig.emit(at: base) != nil)
             rig.scheduler.tick()
-            let request = await rig.applyRequest(pass)
+            let request = try await rig.applyRequest(pass)
             // While the pass runs: one frame held in the slot, then a newer one replaces it —
             // the newer is leased before the older is released, so four are live for a moment.
             #expect(rig.emit(at: base + 1) != nil)
@@ -285,7 +286,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
-        let request = await rig.applyRequest(0)
+        let request = try await rig.applyRequest(0)
 
         rig.subject.stop()
         rig.executor.drain()
@@ -308,7 +309,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
-        let request = await rig.applyRequest(0)
+        let request = try await rig.applyRequest(0)
         let stray = try #require(rig.surfaces.inner.frame(at: HostTimestamp(nanoseconds: 9)))
 
         rig.subject.stop()
@@ -327,7 +328,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
-        let request = await rig.applyRequest(0)
+        let request = try await rig.applyRequest(0)
         #expect(rig.effects.completeApply(request, with: .success(())))
         await rig.work.finished.waitForCount(1)
 
@@ -348,7 +349,7 @@ struct FramePipelineEffectTests {
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
-        let abandoned = await rig.applyRequest(0)
+        let abandoned = try await rig.applyRequest(0)
         rig.subject.stop()
         rig.executor.drain()
 
@@ -366,7 +367,7 @@ struct FramePipelineEffectTests {
         #expect(rig.surfaces.inner.pool.handle(for: waiting.token) != nil)
 
         rig.scheduler.tick()
-        let current = await rig.applyRequest(1)
+        let current = try await rig.applyRequest(1)
         #expect(current.input == waiting, "the freed cap lets the next tick start a pass")
         #expect(current.frameContext.frameIndex == 0, "a new run counts its frames from zero")
         #expect(await rig.answer(current, with: .failure(.pageFault)))
@@ -384,7 +385,7 @@ struct FramePipelineEffectTests {
         for (index, time) in [10_000, 20_000, 30_000].enumerated() {
             rig.emit(at: UInt64(time))
             rig.scheduler.tick()
-            let request = await rig.applyRequest(index)
+            let request = try await rig.applyRequest(index)
             #expect(request.frameContext == FrameContext(presentationTime: HostTimestamp(nanoseconds: UInt64(time)), frameIndex: UInt32(index)))
             #expect(await rig.answer(request, with: .success(())))
         }

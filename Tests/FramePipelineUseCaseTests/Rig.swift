@@ -113,10 +113,16 @@ struct Rig {
 // MARK: - Effect passes
 
 extension Rig {
-    /// The `index`-th `apply` the runtime was asked for (from 0), once the pass's work has made the call.
-    func applyRequest(_ index: Int) async -> FakeEffectRuntimeRepository.ApplyRequest {
+    /// The `index`-th `apply` the runtime was asked for (from 0), once the pass's work has
+    /// made the call. A call that never comes fails the test when the time limit ends the
+    /// wait, rather than crashing the whole test process on an index out of range.
+    func applyRequest(_ index: Int) async throws -> FakeEffectRuntimeRepository.ApplyRequest {
+        try #require(await requested(index), "apply \(index) was never requested")
+    }
+
+    private func requested(_ index: Int) async -> FakeEffectRuntimeRepository.ApplyRequest? {
         await effects.applyRequests.waitForCount(index + 1)
-        return effects.applyRequests.values[index]
+        return effects.applyRequests.values.dropFirst(index).first
     }
 
     /// Answers `request` with `result` and drains the executor until the pipeline has
@@ -147,7 +153,10 @@ extension Rig {
             defer { count += 1 }
             return count
         }
-        let request = await applyRequest(index)
+        guard let request = await requested(index) else {
+            Issue.record("apply \(index) was never requested")
+            return
+        }
         #expect(await answer(request, with: result), "the pipeline took the answer to pass \(index)")
     }
 }

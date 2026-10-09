@@ -13,6 +13,7 @@ import SurfacePoolDataSource
 import SurfaceRepository
 import TestDoubles
 import TestSupport
+import Testing
 import VirtualCameraRepository
 
 /// The host process: camera → pipeline (effect stage on a fake runtime) →
@@ -191,7 +192,12 @@ extension LoopbackRig {
         host.scheduler.tick()
         guard host.work.started.count > item else { return }
         await host.effects.applyRequests.waitForCount(requests + 1)
-        host.effects.completeApply(host.effects.applyRequests.values[requests], with: effect)
+        // Read without subscripting: if the time limit ends the wait, the test fails rather than crashing.
+        guard let request = host.effects.applyRequests.values.dropFirst(requests).first else {
+            Issue.record("the tick started a pass but its apply never came")
+            return
+        }
+        host.effects.completeApply(request, with: effect)
         await host.work.finished.waitFor { $0 == item }
         host.executor.drain()
     }

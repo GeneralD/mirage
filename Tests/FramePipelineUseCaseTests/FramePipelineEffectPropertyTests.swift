@@ -213,7 +213,7 @@ struct FramePipelineEffectPropertyTests {
     /// executor until the next drain.
     private func answer(_ result: Result<Void, EffectFailure>, model: inout EffectModel, rig: Rig) async throws {
         guard let pass = model.pass, pass.answer == nil else { return }
-        let request = await rig.applyRequest(pass.index)
+        let request = try await rig.applyRequest(pass.index)
         #expect(request.input == pass.input)
         #expect(request.output.presentationTime == pass.input.presentationTime)
         #expect(request.frameContext == FrameContext(presentationTime: pass.input.presentationTime, frameIndex: pass.frameIndex))
