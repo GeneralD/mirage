@@ -177,7 +177,7 @@ let package = Package(
         // import allow-list (Sources/ only) does not apply. .claude/rules/gpu-testing.md.
         .testTarget(
             name: "GPUSmokeTests",
-            dependencies: dependencies + ["MetalGateway", "IOSurfaceGateway", "TestDoubles"]
+            dependencies: dependencies + ["MetalGateway", "IOSurfaceGateway", "ShaderCompilationDataSource", "TestDoubles", "TestSupport"]
         ),
 
         // ── Test support ──
