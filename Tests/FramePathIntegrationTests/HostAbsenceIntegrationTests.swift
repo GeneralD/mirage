@@ -77,7 +77,7 @@ struct HostAbsenceIntegrationTests {
 
     // MARK: 3 kill -STOP / -CONT
 
-    @Test("kill -STOP: the frame gap is noticed within gap + gap/4, slate runs, and the resumed host takes over monotonically")
+    @Test("kill -STOP: the frame gap is noticed within gap + gap/4, slate runs, and the resumed host takes over re-timed and monotonically")
     func stopAndContinue() async throws {
         let rig = LoopbackRig(frameGap: .seconds(2))
         let relay = await rig.startExtension()
@@ -102,24 +102,26 @@ struct HostAbsenceIntegrationTests {
         #expect(rig.ext.relay.stats.summary.contains("slate=3"))
 
         // kill -CONT: the first frame the host sends is still stamped at capture time, behind the slate.
+        // It is re-timed just above the last slate PTS instead of dropped, and the shift stays for the run.
         let droppedBefore = rig.ext.relay.stats.framesDropped
-        rig.captureAndFlush(FakeSurfaceHandle(id: 3), at: ns(10_000_000_000, plus: 1))
+        let captured = ns(10_000_000_000, plus: 1)
+        rig.captureAndFlush(FakeSurfaceHandle(id: 3), at: captured)
         #expect(await rig.pumpExtension(untilReceived: 3))
-        #expect(rig.ext.relay.stats.framesDropped == droppedBefore + 1, "a real frame at or behind the last slate PTS is dropped once")
-        #expect(rig.ext.scheduler.isRunning, "slate goes on until a newer real frame arrives")
-        #expect(rig.streamedTimes.last == lastSlate)
+        #expect(rig.ext.relay.stats.framesDropped == droppedBefore, "a laggy first frame is re-timed, not dropped")
+        #expect(rig.ext.scheduler.isRunning == false, "the first real frame ends slate")
+        #expect(rig.ext.developer.contains("slate left"))
+        let shift = lastSlate - captured + 1
+        #expect(rig.streamedTimes.last == lastSlate + 1)
 
         rig.captureAndFlush(FakeSurfaceHandle(id: 4), at: 11_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 4))
-        #expect(rig.ext.scheduler.isRunning == false, "the first newer real frame ends slate")
-        #expect(rig.ext.developer.contains("slate left"))
-        #expect(rig.streamedTimes.last == 11_000_000_000)
+        #expect(rig.streamedTimes.last == 11_000_000_000 + shift)
         rig.captureAndFlush(FakeSurfaceHandle(id: 5), at: 12_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 5))
 
         let times = rig.streamedTimes
         #expect(times == times.sorted() && Set(times).count == times.count, "strictly increasing across the whole run")
-        #expect(times.suffix(2) == [11_000_000_000, 12_000_000_000])
+        #expect(times.suffix(2) == [11_000_000_000 + shift, 12_000_000_000 + shift])
 
         try await rig.stopExtension(relay)
         rig.stopHost()
