@@ -99,6 +99,9 @@ let package = Package(
         .testTarget(name: "StreamOutputDataSourceTests", dependencies: ["StreamOutputDataSource"] + testDependencies),
         .target(name: "ExtensionInstallDataSource", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallDataSourceTests", dependencies: ["ExtensionInstallDataSource"] + testDependencies),
+        // Host only (it drives MetalGateway through the GPU ports): one effect pass, one command buffer.
+        .target(name: "GPURenderDataSource", dependencies: dependencies),
+        .testTarget(name: "GPURenderDataSourceTests", dependencies: ["GPURenderDataSource"] + testDependencies),
 
         // ── Repository ──
         .target(name: "CameraRepository", dependencies: dependencies),
