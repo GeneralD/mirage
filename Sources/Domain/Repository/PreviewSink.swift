@@ -14,7 +14,9 @@ public protocol PreviewTargetHandle: AnyObject, Sendable {
 /// caller releases the lease afterwards; a sink that is slower than the camera
 /// is visible to the pipeline as completions that lag. Until a target is
 /// attached every frame completes at once. `attach` runs on the main thread,
-/// because the target is a view. The live value is `PreviewRepositoryImpl`
+/// because the target is a view; returning from it does not promise drawing —
+/// a preview kernel that fails to compile afterwards leaves no target attached
+/// (logged, not thrown), and frames complete at once again. The live value is `PreviewRepositoryImpl`
 /// over `PreviewDataSource`.
 public protocol PreviewSink: Sendable {
     @MainActor

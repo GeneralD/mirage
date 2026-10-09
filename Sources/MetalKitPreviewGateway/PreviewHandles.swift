@@ -4,12 +4,15 @@
 import Domain
 import MetalKit
 
-/// `PreviewLayerHandle`: the prepared view's layer.
+/// `PreviewLayerHandle`: the prepared view's layer, and the view's delegate that
+/// keeps the layer at the view's size for as long as the handle is held.
 public final class MetalLayerBox: PreviewLayerHandle, @unchecked Sendable {
     public let backing: AnyObject
+    private let sizeForwarder: DrawableSizeForwarder
 
-    public init(_ layer: CAMetalLayer) {
+    init(_ layer: CAMetalLayer, sizeForwarder: DrawableSizeForwarder) {
         backing = layer
+        self.sizeForwarder = sizeForwarder
     }
 }
 

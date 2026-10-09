@@ -1,6 +1,6 @@
 /// `PreviewGateway` live implementation, view half.
 /// OS API: `MTKView.device` / `colorPixelFormat` / `framebufferOnly` / `isPaused` /
-/// `enableSetNeedsDisplay`, the view's `CAMetalLayer`. What is drawn and when is `PreviewDataSource`'s.
+/// `enableSetNeedsDisplay` / `delegate`, the view's `CAMetalLayer`. What is drawn and when is `PreviewDataSource`'s.
 import Domain
 import MetalKit
 
@@ -12,6 +12,8 @@ extension MetalKitPreviewGatewayImpl: PreviewGateway {
     /// BGRA8 like every frame-path texture; `framebufferOnly = false` because the
     /// preview kernel writes the drawable from compute. Paused, with no
     /// `setNeedsDisplay` loop: the view never draws on its own, frames are pushed.
+    /// A paused view stops sizing its layer, so its delegate does that instead,
+    /// kept alive by the returned handle (the view holds its delegate weakly).
     /// Every handle is resolved before the view is touched, so a refusal leaves it as it was.
     @MainActor
     public func prepare(_ target: any PreviewTargetHandle, on context: any GPUContextHandle) throws -> any PreviewLayerHandle {
@@ -23,6 +25,8 @@ extension MetalKitPreviewGatewayImpl: PreviewGateway {
         view.framebufferOnly = false
         view.isPaused = true
         view.enableSetNeedsDisplay = false
-        return MetalLayerBox(layer)
+        let forwarder = DrawableSizeForwarder(layer)
+        view.delegate = forwarder
+        return MetalLayerBox(layer, sizeForwarder: forwarder)
     }
 }

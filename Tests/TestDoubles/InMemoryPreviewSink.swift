@@ -1,7 +1,8 @@
 import Domain
 import TestSupport
 
-/// The drawable `InMemoryPreviewSink` accepts; identity is the object itself.
+/// Stands in for the preview view: the target `InMemoryPreviewSink.attach` and
+/// `FakePreviewGateway.prepare` accept; identity is the object itself.
 public final class FakePreviewTargetHandle: PreviewTargetHandle, Sendable {
     public init() {}
 
