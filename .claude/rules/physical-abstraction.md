@@ -23,7 +23,7 @@ Interactor, Presenter, Domain and Entity sources:
 |---|---|
 | Time | `Date()`, `Date.now`, `ContinuousClock()`, `SuspendingClock()`, `.now` on a clock type, `Task.sleep`, `DispatchTime`, `mach_absolute_time`, `ProcessInfo.systemUptime`, `CFAbsoluteTimeGetCurrent`, `Timer` |
 | Randomness / identity | `.random(in:)`, `.randomElement()`, `.shuffled()`, `SystemRandomNumberGenerator`, `UUID()` |
-| Threads / queues | `DispatchQueue`, `DispatchSource`, `DispatchSemaphore`, `Thread`, `Task.detached`, unstructured `Task {` on the frame path, `OSAllocatedUnfairLock`, `NSLock` |
+| Threads / queues | `DispatchQueue`, `DispatchSource`, `DispatchSemaphore`, `Thread`, `Task.detached`, unstructured `Task {` on the frame path (start it through `WorkRunner`), `OSAllocatedUnfairLock`, `NSLock` |
 | Global state | `NotificationCenter.default`, `Bundle.main`, `FileManager`, `UserDefaults`, `ProcessInfo.processInfo`, `setenv`, `getenv` |
 | Output | `print(`, `debugPrint(`, `fputs(`, `os.Logger`, `NSLog` |
 | OS frameworks | `MTLCreateSystemDefaultDevice`, `AVCaptureSession`, `IOSurfaceCreate`, `bootstrap_look_up`, `OSSystemExtensionRequest`, `CMIOExtensionStream` and any `import` of AVFoundation, Metal, MetalKit, IOSurface, CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, `os` |
