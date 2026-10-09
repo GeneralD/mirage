@@ -9,9 +9,13 @@ import Dependencies
 /// `WorkRunner` port. Nothing is cached here: the compile cache and "newest
 /// wins" belong to `EffectRuntimeRepository`.
 public protocol ShaderCompiler: Sendable {
-    /// One compile of `effect.source` with `effect.options`. A compile, once
-    /// started, runs to completion even if the caller is cancelled — the compiler
-    /// cannot be interrupted, and discarding a stale result is the caller's call.
+    /// One compile of `effect.source` with `effect.options`.
+    ///
+    /// Cancellation does not shorten it: a compile, once started, runs to
+    /// completion even if the caller is cancelled — the compiler cannot be
+    /// interrupted — and the cancelled caller stays suspended until then and
+    /// receives the real result, handle or diagnostics, never an early or
+    /// synthesized failure. Discarding a stale result is the caller's call.
     func compile(_ effect: EffectSource) async -> Result<any LibraryHandle, ShaderDiagnostics>
 }
 

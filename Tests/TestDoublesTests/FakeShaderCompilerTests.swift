@@ -70,26 +70,38 @@ struct FakeShaderCompilerTests {
         #expect(gpu.pending.count == 1)
     }
 
-    @Test("a cancelled caller is resumed with FakeShaderCompiler.cancelled and leaves nothing pending")
-    func cancellationResumes() async throws {
-        let task = Task { await compiler.compile(slow) }
+    @Test("a cancelled caller is not resumed early: its old compile can still succeed after a newer one, and it gets that handle")
+    func cancelledCallerWaitsForItsResult() async throws {
+        let old = Task { await compiler.compile(slow) }
         await compiler.requests.waitForCount(1)
-        task.cancel()
+        let new = Task { await compiler.compile(fast) }
+        await compiler.requests.waitForCount(2)
+        let requests = compiler.requests.values
 
-        #expect(await task.value.failure == FakeShaderCompiler.cancelled)
+        old.cancel()
+        // Cancellation handlers run inside `cancel()`, so an early resume would already show here.
+        #expect(compiler.pendingCount == 2, "the cancelled caller is still suspended")
+
+        let newHandle = try #require(compiler.succeed(requests[1]))
+        #expect(ObjectIdentifier(try await new.value.get()) == ObjectIdentifier(newHandle))
+        let oldHandle = try #require(compiler.succeed(requests[0]), "the cancelled request is still the test's to complete")
+        #expect(ObjectIdentifier(try await old.value.get()) == ObjectIdentifier(oldHandle), "the stale result reaches its cancelled caller")
         #expect(compiler.pendingCount == 0)
-        let request = try #require(compiler.requests.last)
-        #expect(compiler.succeed(request) == nil, "already resumed by the cancellation")
     }
 
-    @Test("a caller cancelled before it suspends is answered at once and never recorded")
-    func cancelledBeforeSuspending() async {
+    @Test("a caller cancelled before it suspends is still recorded and waits for the test's result")
+    func cancelledBeforeSuspending() async throws {
         let task = Task {
             withUnsafeCurrentTask { $0?.cancel() }
             return await compiler.compile(slow)
         }
-        #expect(await task.value.failure == FakeShaderCompiler.cancelled)
-        #expect(compiler.requests.count == 0)
+        await compiler.requests.waitForCount(1)
+        let request = try #require(compiler.requests.last)
+        #expect(request.effect == slow)
+
+        let diagnostics = ShaderDiagnostics(message: "effect:1:1: error: x", code: 3)
+        #expect(compiler.complete(request, with: .failure(diagnostics)))
+        #expect(await task.value.failure == diagnostics)
         #expect(compiler.pendingCount == 0)
     }
 }

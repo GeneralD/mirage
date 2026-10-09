@@ -6,25 +6,25 @@ import TestSupport
 /// in any order, so "a slow compile overtaken by a newer one" is a sequence the
 /// test writes down (`EffectRuntimeRepository`'s newest-wins). `succeed(_:)` is
 /// the common completion: a fresh `FakeLibraryHandle` of the request's source,
-/// which `FakeGPUGateway` accepts. A caller whose task is cancelled is resumed
-/// with `FakeShaderCompiler.cancelled`, so a stopped caller never leaks a
-/// continuation into the suite's time limit; one cancelled before it suspended
-/// is never recorded.
+/// which `FakeGPUGateway` accepts.
+///
+/// Cancellation is the port's contract, as live: a cancelled caller is neither
+/// resumed early nor dropped. It stays suspended until the test completes its
+/// request and then receives that result, so "the old compile succeeds after
+/// its caller was cancelled" can be written down too. Every request a test
+/// starts must therefore be completed; one left pending is reported by the
+/// suite's time limit, never hidden.
 public final class FakeShaderCompiler: ShaderCompiler, Sendable {
     public struct Request: Sendable {
         public let id: Int
         public let effect: EffectSource
     }
 
-    /// What a cancelled caller receives.
-    public static let cancelled = ShaderDiagnostics(message: "FakeShaderCompiler: caller cancelled", code: -1)
-
     private typealias Continuation = CheckedContinuation<Result<any LibraryHandle, ShaderDiagnostics>, Never>
 
     private struct State {
         var nextID = 1
         var waiting: [Int: Continuation] = [:]
-        var cancelledBeforeSuspending: Set<Int> = []
     }
 
     private let state = Locked(State())
@@ -37,30 +37,15 @@ public final class FakeShaderCompiler: ShaderCompiler, Sendable {
     public var pendingCount: Int { state.current.waiting.count }
 
     public func compile(_ effect: EffectSource) async -> Result<any LibraryHandle, ShaderDiagnostics> {
-        let id = state.withLock { state in
-            defer { state.nextID += 1 }
-            return state.nextID
-        }
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: Continuation) in
-                // Recorded if and only if registered as waiting, in one critical section.
-                let alreadyCancelled = state.withLock { state in
-                    guard state.cancelledBeforeSuspending.remove(id) == nil else { return true }
-                    state.waiting[id] = continuation
-                    requests.append(Request(id: id, effect: effect))
-                    return false
-                }
-                guard !alreadyCancelled else { return continuation.resume(returning: .failure(Self.cancelled)) }
+        await withCheckedContinuation { (continuation: Continuation) in
+            // Registered as waiting and recorded in one critical section, so a test
+            // that sees the request can always complete it.
+            state.withLock { state in
+                let id = state.nextID
+                state.nextID += 1
+                state.waiting[id] = continuation
+                requests.append(Request(id: id, effect: effect))
             }
-        } onCancel: {
-            let continuation = state.withLock { state -> Continuation? in
-                guard let waiting = state.waiting.removeValue(forKey: id) else {
-                    state.cancelledBeforeSuspending.insert(id)
-                    return nil
-                }
-                return waiting
-            }
-            continuation?.resume(returning: .failure(Self.cancelled))
         }
     }
 
