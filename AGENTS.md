@@ -151,7 +151,8 @@ Shared conventions:
   (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
   `completeApply`), `FakeShaderCompiler` (`complete(request, with:)` /
   `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`). Each
-  completion is exactly once; a second one returns `false`.
+  completion is exactly once; a second `complete…` returns `false`, a second
+  `succeed` returns `nil`.
   `FakeShaderLibraryGateway` reports an issue when called on the main thread;
   `FakeTextureCacheGateway.isBalanced` is the bind/unbind invariant.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
