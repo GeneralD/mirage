@@ -7,7 +7,8 @@ import Domain
 struct EffectPass {
     let input: FrameRef
     let output: FrameRef
-    /// The pipeline's stop count when the pass started. A `stop` since then has
-    /// abandoned the pass: its answer only ends the two leases.
+    /// The stop count the pass's run started under, as that run's `start` read it —
+    /// never a value read by the tick. A `stop` since then has abandoned the pass: its
+    /// answer only ends the two leases.
     let epoch: Int
 }

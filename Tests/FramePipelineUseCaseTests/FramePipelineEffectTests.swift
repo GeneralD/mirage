@@ -59,6 +59,30 @@ private final class QueuedTeardownSink: VirtualCameraSink, Sendable {
     }
 }
 
+/// A `WorkRunner` that starts each item as `RecordingWorkRunner` does, then runs a
+/// one-shot hook before handing the handle back — while the tick that started the
+/// pass is still on its way to recording it. In the live pipeline the tick runs on
+/// the executor's queue and `stop` on the caller's thread, so a `stop` can land
+/// exactly there.
+private final class InterruptingWorkRunner: WorkRunner, Sendable {
+    let inner = RecordingWorkRunner()
+    private let hook = Locked<(@Sendable () -> Void)?>(nil)
+
+    func onNextRun(_ body: @escaping @Sendable () -> Void) {
+        hook.set(body)
+    }
+
+    func run(_ work: @escaping @Sendable () async -> Void) -> any WorkHandle {
+        let handle = inner.run(work)
+        let body = hook.withLock { current -> (@Sendable () -> Void)? in
+            defer { current = nil }
+            return current
+        }
+        body?()
+        return handle
+    }
+}
+
 @Suite("FramePipelineUseCaseImpl effect stage", .timeLimit(.minutes(1)))
 struct FramePipelineEffectTests {
     private func started(_ rig: Rig, frameRate: FrameRate = .standard) async throws {
@@ -357,6 +381,54 @@ struct FramePipelineEffectTests {
         #expect(sink.sent.count == 0, "stop abandoned the pass at once, before its queued answer ran")
         #expect(rig.subject.stats.effectPasses == 0)
         #expect(rig.subject.stats.framesDropped == 0)
+        #expect(rig.surfaces.liveCount == 0)
+        #expect(rig.surfaces.refusedReleases == 0)
+    }
+
+    @Test(
+        "a stop that lands while a tick is starting a pass abandons that pass too: the tick cannot adopt the stop count stop has just moved to",
+        arguments: [Result<Void, EffectFailure>.success(()), .failure(.internalError)])
+    func stopDuringTheTickAbandonsItsPass(answer: Result<Void, EffectFailure>) async throws {
+        let runner = InterruptingWorkRunner()
+        let sink = QueuedTeardownSink()
+        let rig = Rig(sink: sink, runner: runner, capacity: 4)
+        try await started(rig)
+        rig.emit(at: 1_000)
+        let stray = try #require(rig.surfaces.inner.frame(at: HostTimestamp(nanoseconds: 9)))
+        let subject = rig.subject
+        runner.onNextRun { subject.stop() }
+
+        // The pass's work has started when `stop` runs; the tick records the pass after.
+        rig.scheduler.tick()
+        rig.executor.drain()
+        let request = try await rig.applyRequest(0)
+        #expect(rig.surfaces.liveCount == 3, "the pass keeps its two leases, so stop's pool reset waits")
+
+        #expect(await rig.answerAbandoned(request, with: answer))
+        #expect(sink.sent.count == 0, "a pass of the stopped run is never sent")
+        #expect(rig.subject.stats.effectPasses == 0, "an abandoned pass counts as neither applied nor failed")
+        #expect(rig.surfaces.inner.pool.handle(for: stray.token) == nil, "the reset stop deferred ran with the answer")
+        #expect(rig.surfaces.liveCount == 0)
+        #expect(rig.surfaces.refusedReleases == 0)
+    }
+
+    @Test("a pass a stopping tick started is not adopted by the next run: after a restart its answer is still not sent")
+    func stopDuringTheTickThenRestart() async throws {
+        let runner = InterruptingWorkRunner()
+        let rig = Rig(runner: runner, capacity: 4)
+        try await started(rig)
+        rig.emit(at: 1_000)
+        let subject = rig.subject
+        runner.onNextRun { subject.stop() }
+        rig.scheduler.tick()
+        rig.executor.drain()
+        let abandoned = try await rig.applyRequest(0)
+
+        try await started(rig)
+        #expect(rig.sink.isConnected)
+        #expect(await rig.answerAbandoned(abandoned, with: .success(())))
+        #expect(rig.sink.sent.count == 0, "the old run's pass is not sent into the new run")
+        #expect(rig.subject.stats.effectPasses == 0)
         #expect(rig.surfaces.liveCount == 0)
         #expect(rig.surfaces.refusedReleases == 0)
     }

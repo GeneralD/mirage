@@ -61,7 +61,7 @@ struct Rig {
     let effects = FakeEffectRuntimeRepository()
     let executor = ManualFrameExecutor()
     let scheduler = ManualFrameScheduler()
-    /// Owns the reconnect work and the effect passes, and records their starts, finishes and cancels.
+    /// Owns the reconnect work and the effect passes, and records their starts, finishes and cancels (unless `init` was given another runner).
     let work = RecordingWorkRunner()
     /// Paces the back-off between repeated reconnects; stepped by hand.
     let clock = GatedClock()
@@ -73,7 +73,7 @@ struct Rig {
     /// How many passes `completeEffect` has answered; the next one it answers is the next request.
     private let completed = Locked(0)
 
-    init(sink override: (any VirtualCameraSink)? = nil, capacity: Int = 4) {
+    init(sink override: (any VirtualCameraSink)? = nil, runner: (any WorkRunner)? = nil, capacity: Int = 4) {
         surfaces = SpySurfaceRepository(inner: FakeSurfaceRepository(pool: FakeSurfacePool(capacity: capacity)))
         let camera = camera
         let sink = sink
@@ -92,7 +92,7 @@ struct Rig {
             $0.effectRuntimeRepository = effects
             $0.frameExecutor = executor
             $0.frameScheduler = scheduler
-            $0.workRunner = work
+            $0.workRunner = runner ?? work
             $0.continuousClock = clock
             $0.errorLog = errors
             $0.developerLog = developer

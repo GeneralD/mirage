@@ -61,7 +61,10 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     private var frameIndex: UInt32 = 0
     /// How many times `stop` was called. `stop` bumps it first thing, from the caller's
     /// context (the subject synchronizes its `value`; `stop` is its only writer), and
-    /// the executor compares a pass's epoch with it before sending anything.
+    /// the executor compares a pass's epoch with it before sending anything. A pass's
+    /// epoch is the value its run's `start` read, never one a tick reads: a tick still
+    /// running when `stop` bumps the count would otherwise adopt the new value and send
+    /// after `stop`.
     private let stopEpoch = CurrentValueSubject<Int, Never>(0)
     let phaseSubject = CurrentValueSubject<PipelinePhase, Never>(.idle)
 
@@ -75,6 +78,10 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     var phase: PipelinePhase { phaseSubject.value }
 
     public func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
+        // The run this call begins, as the stop count it begins under. Every tick of the
+        // run carries it, so the next `stop` abandons every pass the run starts, even one
+        // a tick already under way when `stop` is called starts afterwards.
+        let run = stopEpoch.value
         frameExecutor.run { [self] in
             // A fresh run: nothing of a previous run's loss pacing or drop logging
             // carries over, and the effect counts frames from zero again.
@@ -90,15 +97,16 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
             onEnd: { [weak self] end in self?.captureEnded(end) }
         )
         frameScheduler.start(frameRate: frameRate) { [weak self] in
-            self?.tick(summaryEvery: frameRate.framesPerSecond)
+            self?.tick(summaryEvery: frameRate.framesPerSecond, run: run)
         }
         try await connect()
     }
 
     public func stop() {
-        // First, from the caller's context: every pass started before this moment is
-        // abandoned now, so an answer already queued on the executor ahead of the
-        // cleanup below can no longer send — whenever the sink's own teardown lands.
+        // First, from the caller's context: every pass of the run this ends is abandoned
+        // now — one already started, or one a tick still under way starts after this
+        // line — so an answer already queued on the executor ahead of the cleanup below
+        // can no longer send, whenever the sink's own teardown lands.
         stopEpoch.value += 1
         frameScheduler.stop()
         cameraRepository.stop()
@@ -128,9 +136,9 @@ extension FramePipelineUseCaseImpl {
         update { $0.noteReceived(at: frame.presentationTime) }
     }
 
-    private func tick(summaryEvery interval: Int) {
+    private func tick(summaryEvery interval: Int, run: Int) {
         tickCount += 1
-        flushLatest()
+        flushLatest(run: run)
         guard tickCount.isMultiple(of: interval) else { return }
         developerLog.record(.pipeline, snapshot.value.summary)
         developerLog.record(.effect, snapshot.value.effectSummary)
@@ -139,10 +147,10 @@ extension FramePipelineUseCaseImpl {
     /// Takes the latest frame into the effect stage. A pass still running means the
     /// in-flight cap is reached: the frame drops here rather than waiting behind
     /// the GPU, and the next tick takes whatever is newest by then.
-    private func flushLatest() {
+    private func flushLatest(run: Int) {
         guard let frame = takeLatest() else { return }
         guard inFlight == nil else { return drop(frame, because: .inFlightCapReached) }
-        startEffect(on: frame)
+        startEffect(on: frame, run: run)
     }
 
     /// Hands one frame to the sink and ends its lease, sent or not.
@@ -193,7 +201,7 @@ extension FramePipelineUseCaseImpl {
     /// answer hops back onto the executor. With no output surface there is nothing to
     /// render into, so the frame drops as `.poolExhausted`, as the pool's contract
     /// asks of every caller it refuses.
-    private func startEffect(on input: FrameRef) {
+    private func startEffect(on input: FrameRef, run: Int) {
         let output: FrameRef
         do {
             output = try leaseOutput(like: input)
@@ -209,7 +217,7 @@ extension FramePipelineUseCaseImpl {
             let result = await runtime.apply(input: input, output: output, frameContext: context)
             self?.frameExecutor.run { [weak self] in self?.effectFinished(with: result) }
         }
-        inFlight = EffectPass(input: input, output: output, epoch: stopEpoch.value)
+        inFlight = EffectPass(input: input, output: output, epoch: run)
     }
 
     /// The output carries the input's geometry and presentation time, so the stream
@@ -223,8 +231,8 @@ extension FramePipelineUseCaseImpl {
     /// The runtime's answer, back on the executor; it frees the in-flight cap. On
     /// success the input's lease ends now that the runtime is done reading it and the
     /// output goes on; on any failure the unused output is given back first and the
-    /// input goes on unchanged. A pass a `stop` has abandoned since it started is
-    /// only ended, even when its answer was already queued before that `stop`.
+    /// input goes on unchanged. A pass whose run a `stop` has ended is only ended,
+    /// even when its answer was already queued before that `stop`.
     private func effectFinished(with result: Result<Void, EffectFailure>) {
         guard let pass = inFlight else { return }
         inFlight = nil
