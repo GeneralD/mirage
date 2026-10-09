@@ -32,13 +32,14 @@ the corresponding kinds of changes.
 
 ```sh
 make build
+make build-dev-harness  # the dev-harness product only; not shipped, never part of `make build`
 make test
 make test-gpu
 make lint
 make format
 make check
 make generate
-swift run dev-harness   # MVP-A; not in M0
+swift run dev-harness   # preview window + camera prompt (a solid frame until #24); .claude/rules/dev-verification.md Lane 1
 ```
 
 ## Project Summary
@@ -118,7 +119,13 @@ Shared conventions:
   retain/release pair.
 - Shells (`Apps/**`) hold only `main.swift` and assets; `make check` bounds
   their size. `Info.plist` and entitlements are generated from `project.yml`
-  by `make generate` (gitignored), never hand-written.
+  by `make generate` (gitignored), never hand-written. The one exception is
+  `Tools/DevHarness/Info.plist`, linked into the `dev-harness` SwiftPM
+  executable with `-sectcreate` (xcodegen never builds it); it carries no
+  product name, and `make check` scans `Tools/` for one.
+- `DevHarness` keeps `main.swift` to AppKit's launch; its behaviour is
+  `HarnessSession`, tested against fakes (`Tests/DevHarnessTests`). It logs
+  through `DeveloperLog` / `ErrorLog` like every other module, never `print`.
 - Host absence: the extension detects it by frame gap (watchdog every
   `frameGap / 4`, counted from the last frame, or from `start` while no host
   has been seen yet, so a host that never launched is lost too) and by dead-name

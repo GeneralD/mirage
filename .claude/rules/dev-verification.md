@@ -12,11 +12,44 @@ Three lanes, by what is being verified.
 
 ## Lane 1 — effects and preview (no extension): `swift run dev-harness`
 
-`DevHarness` embeds `Info.plist` via `-sectcreate` so the camera permission is
-keyed to a stable bundle identifier. It runs camera → effects → preview
-window with the virtual camera sink replaced by `InMemoryVirtualCameraSink`.
-Use it for shader work, hot reload and parameter UI. It cannot show anything
-about the Camera Extension.
+`DevHarness` links `Tools/DevHarness/Info.plist` into its binary
+(`-sectcreate __TEXT __info_plist`) so the camera prompt has a usage string
+and a stable bundle identifier (`com.generald.dev-harness`). With #24 it runs
+camera → effects → preview window with the virtual camera sink replaced by
+`InMemoryVirtualCameraSink`, for shader work, hot reload and parameter UI. It
+cannot show anything about the Camera Extension.
+
+Today (#21, the lite harness) it has no camera frames and no effect: it asks
+for the camera once and keeps one solid frame in a preview window. Drive it
+yourself only when the user is at the machine — the camera prompt is a modal
+dialog on their screen:
+
+```sh
+make build-dev-harness
+swift run dev-harness
+log stream --level debug --style compact --predicate 'subsystem == "<log subsystem>"'   # second terminal
+```
+
+| Check | Expected |
+|---|---|
+| Window | a 640 × 480 window titled "Dev Harness": a mid-grey 16:9 frame with black bars above and below (the preview kernel's aspect fit), still filled after a resize. Empty or all black means the frame never reached a drawable; look for `preview window not attached` / `frame not shown` lines |
+| Camera prompt | on the first run, a camera dialog naming the harness (bundle `com.generald.dev-harness`) or the terminal app. Then `camera authorization: authorized` (category `camera`); anything else is followed by a `camera access not granted (…)` error line |
+| Summary | every 30 ticks (about once a second) `solid frame: ticks=… presented=… skipped=…` (category `preview`) |
+| Occluded window | cover the window or move it to another Space for a while: summary lines further apart than a second mean `nextDrawable` blocked the frame executor (`docs/ARCHITECTURE.md` → *Preview*); record what you see |
+| Quit | ⌘Q or closing the window ends the process |
+
+**When TCC ignores the linked plist.** A process started from a terminal is
+attributed to the terminal app (its "responsible process"), so the prompt may
+name the terminal instead of the harness, or no prompt may appear and the
+status comes back `denied`. Then:
+
+1. System Settings → Privacy & Security → Camera: turn the terminal app on
+   (Terminal, iTerm2, Ghostty, …), quit and reopen it, and run the harness again.
+2. To see the prompt again, reset the decision for whichever identity was
+   recorded: `tccutil reset Camera com.generald.dev-harness` and/or
+   `tccutil reset Camera <terminal bundle id>` (e.g. `com.apple.Terminal`).
+3. Record which identity the dialog named, and whether granting the terminal
+   was required, in the #21 PR so this section can state it as fact.
 
 ## Lane 2 — the virtual camera (extension): signed `.app` under `/Applications`
 
