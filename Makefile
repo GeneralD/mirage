@@ -31,6 +31,7 @@ check:
 	scripts/check-shell-thin.sh
 	scripts/check-service-names.sh
 	scripts/check-product-name.sh
+	scripts/check-extension-no-metal.sh
 
 # The Xcode project, Info.plists and entitlements are gitignored output
 # regenerated from project.yml (the one place bundle IDs live). A no-op until

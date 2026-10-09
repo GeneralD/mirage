@@ -17,7 +17,7 @@ make test                  # swift test (parallel, no GPU)
 make test-gpu              # GPU smoke suites in their own process (needs a Metal device; CI runs it as the `test-gpu` job)
 make lint                  # swift-format lint --strict
 make format                # swift-format --in-place
-make check                 # import-boundary lint, physical-symbol lint, thin-live check, service-name check, product-name check
+make check                 # import-boundary lint, physical-symbol lint, thin-live check, service-name check, product-name check, extension-no-Metal check
 make generate              # xcodegen → *.xcodeproj (gitignored thin shell for the .app + Camera Extension)
 swift run dev-harness      # camera → effects → preview window, no virtual camera (arrives with MVP-A; not in M0)
 ```
