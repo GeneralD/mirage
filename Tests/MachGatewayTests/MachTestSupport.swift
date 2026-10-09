@@ -100,6 +100,12 @@ extension FrameWire {
     }
 }
 
+extension HelloWire {
+    func replacing(body: mach_msg_body_t? = nil, port: mach_msg_port_descriptor_t? = nil) -> HelloWire {
+        HelloWire(header: header, body: body ?? self.body, port: port ?? self.port)
+    }
+}
+
 extension FramePayload {
     func replacing(fourCC: UInt32) -> FramePayload {
         FramePayload(nanoseconds: nanoseconds, width: width, height: height, bytesPerRow: bytesPerRow, fourCC: fourCC)

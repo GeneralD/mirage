@@ -5,6 +5,9 @@ import Testing
 
 @testable import MachGateway
 
+/// The presence protocol on real ports. Host and extension share one task here, so a moved
+/// right lands on the same name as the receive right it came from; across two processes the
+/// names differ (and so does the dead-name `not_port`), which only the profile run can show.
 /// The presence protocol on real ports: the host's hello, the kernel's dead-name
 /// notification, and the queue limit. Serialized for the same reason as the loopback suite.
 @Suite("Mach presence", .serialized, .timeLimit(.minutes(1)))
@@ -63,6 +66,13 @@ struct MachPresenceTests {
         loopback.bootstrap.deallocate(MachPortToken(name: frame.surface.name))
     }
 
+    /// Receives through `receive` itself: `receiveFrame` turns every non-frame result into
+    /// `malformedMessage`, which would hide a hello that wrongly decoded.
+    private func expectMalformed(_ loopback: MachLoopback, _ status: mach_msg_return_t) async {
+        #expect(status == MACH_MSG_SUCCESS)
+        await #expect(throws: MachError.malformedMessage) { try await loopback.messaging.receive(on: loopback.receive) }
+    }
+
     @Test("a hello without its descriptor is malformedMessage")
     func helloWithoutDescriptor() async throws {
         let loopback = try MachLoopback()
@@ -71,9 +81,55 @@ struct MachPresenceTests {
         let header = hello.header.replacing(
             size: mach_msg_size_t(MemoryLayout<mach_msg_header_t>.size), bits: mach_msg_bits_t(MACH_MSG_TYPE_COPY_SEND))
 
-        #expect(sendRaw(header) == MACH_MSG_SUCCESS)
+        await expectMalformed(loopback, sendRaw(header))
+    }
 
-        await #expect(throws: MachError.malformedMessage) { try await loopback.receiveFrame() }
+    @Test("a hello with a zero descriptor count is malformedMessage")
+    func helloZeroDescriptors() async throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+        let hello = HelloWire(MachSendRight(name: 0), to: loopback.send)
+
+        await expectMalformed(loopback, sendRaw(hello.replacing(body: mach_msg_body_t(msgh_descriptor_count: 0))))
+    }
+
+    @Test("a hello whose disposition is not a send right is malformedMessage")
+    func helloWrongDisposition() async throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+        let hello = HelloWire(MachSendRight(name: 0), to: loopback.send)
+        let port = mach_msg_port_descriptor_t(
+            name: 0, pad1: 0, pad2: 0, disposition: mach_msg_type_name_t(MACH_MSG_TYPE_MOVE_RECEIVE),
+            type: mach_msg_descriptor_type_t(MACH_MSG_PORT_DESCRIPTOR))
+
+        await expectMalformed(loopback, sendRaw(hello.replacing(port: port)))
+    }
+
+    @Test("a dead-name notification forged with the wrong size is malformedMessage")
+    func forgedDeadNameSize() async throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+        let header = mach_msg_header_t(
+            msgh_bits: mach_msg_bits_t(MACH_MSG_TYPE_COPY_SEND), msgh_size: mach_msg_size_t(MemoryLayout<mach_msg_header_t>.size),
+            msgh_remote_port: loopback.send.name, msgh_local_port: mach_port_t(MACH_PORT_NULL), msgh_voucher_port: 0,
+            msgh_id: IncomingMessage.deadNameID)
+
+        await expectMalformed(loopback, sendRaw(header))
+    }
+
+    @Test("a dead-name notification forged with an otherwise valid shape but a size the kernel never sends is malformedMessage")
+    func forgedDeadNameOversized() async throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+        let size = mach_msg_size_t(MemoryLayout<mach_dead_name_notification_t>.size)  // 56, not the kernel's 36
+        var forged = mach_dead_name_notification_t()
+        forged.not_header = mach_msg_header_t(
+            msgh_bits: mach_msg_bits_t(MACH_MSG_TYPE_COPY_SEND), msgh_size: size,
+            msgh_remote_port: loopback.send.name, msgh_local_port: mach_port_t(MACH_PORT_NULL), msgh_voucher_port: 0,
+            msgh_id: IncomingMessage.deadNameID)
+        forged.not_port = 0x1234
+
+        await expectMalformed(loopback, sendRaw(forged))
     }
 
     @Test("a send beyond a small queue limit is queueFull and releases the surface right")

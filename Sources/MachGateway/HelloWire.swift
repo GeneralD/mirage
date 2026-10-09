@@ -14,6 +14,10 @@ struct HelloWire {
     let body: mach_msg_body_t
     let port: mach_msg_port_descriptor_t
 
+    init(header: mach_msg_header_t, body: mach_msg_body_t, port: mach_msg_port_descriptor_t) {
+        (self.header, self.body, self.port) = (header, body, port)
+    }
+
     /// Copies the destination right (the host keeps it) and moves the presence right.
     init(_ presence: MachSendRight, to destination: MachPortToken) {
         header = mach_msg_header_t(
