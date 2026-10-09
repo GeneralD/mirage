@@ -102,10 +102,14 @@ extension FrameTransportDataSourceImpl {
             developerLog.record(.transport, "look-up result discarded: disconnected meanwhile")
             return
         }
-        release()
+        // The new hello goes out before the old presence port dies, so the extension never
+        // sees the old host's dead name while this host is alive and already announced.
+        let previous = (port: connection.value, presence: presence)
+        presence = nil
         connection.value = found
         developerLog.record(.transport, "connected to port \(found.name)")
         announcePresence(to: found)
+        giveBack(port: previous.port, presence: previous.presence)
         onEvent?(.connected)
     }
 
@@ -121,7 +125,8 @@ extension FrameTransportDataSourceImpl {
             return
         }
         do {
-            // The kernel consumes (or deallocates) the moved send right even when the send fails.
+            // `MachMessageGateway.announce` contract: the moved send right is consumed on success
+            // and deallocated by the gateway on failure, so only the receive right is left to destroy.
             try messaging.announce(made.send, to: port)
             presence = made
         } catch {
@@ -137,9 +142,14 @@ extension FrameTransportDataSourceImpl {
     /// Gives the send right back and forgets it, and destroys the presence receive
     /// right, which tells the extension this host is gone.
     func release() {
-        _ = connection.value.map(bootstrap.deallocate)
+        let previous = (port: connection.value, presence: presence)
         connection.value = nil
-        _ = presence.map { bootstrap.destroyReceiveRight($0.receive) }
         presence = nil
+        giveBack(port: previous.port, presence: previous.presence)
+    }
+
+    private func giveBack(port: MachPortToken?, presence: PresencePort?) {
+        _ = port.map(bootstrap.deallocate)
+        _ = presence.map { bootstrap.destroyReceiveRight($0.receive) }
     }
 }

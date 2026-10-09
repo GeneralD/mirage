@@ -269,6 +269,32 @@ struct FrameTransportPresenceTests {
         #expect(fixture.messaging.announced.count == 2)
     }
 
+    @Test("a replacing connect announces the new presence before it destroys the old one")
+    func replaceOrder() async throws {
+        let bootstrap = FakeMachBootstrapGateway()
+        let probe = DestroyedAtAnnounce(inner: FakeMachMessageGateway(), bootstrap: bootstrap)
+        let executor = ManualFrameExecutor()
+        let subject = withDependencies {
+            $0.machBootstrapGateway = bootstrap
+            $0.machMessageGateway = probe
+            $0.ioSurfaceGateway = FakeIOSurfaceGateway()
+            $0.frameExecutor = executor
+            $0.continuousClock = RecordingClock()
+            $0.errorLog = RecordingLog()
+            $0.developerLog = RecordingLog()
+        } operation: {
+            FrameTransportDataSourceImpl()
+        }
+
+        try await subject.connect()
+        executor.drain()
+        try await subject.connect()
+        executor.drain()
+
+        #expect(probe.destroyedCounts.values == [0, 0], "nothing is destroyed yet when either hello goes out")
+        #expect(bootstrap.destroyed.count == 1)
+    }
+
     @Test("a presence port that cannot be made is logged and the link still comes up")
     func makeFails() async throws {
         let fixture = TransportFixture()
@@ -315,4 +341,25 @@ struct FrameTransportPresenceTests {
         #expect(fixture.messaging.announced.count == 0)
         #expect(fixture.bootstrap.destroyed.count == 0)
     }
+}
+
+/// Records how many receive rights had been destroyed when each hello was sent.
+private final class DestroyedAtAnnounce: MachMessageGateway, Sendable {
+    let inner: FakeMachMessageGateway
+    let bootstrap: FakeMachBootstrapGateway
+    let destroyedCounts = Collector<Int>()
+
+    init(inner: FakeMachMessageGateway, bootstrap: FakeMachBootstrapGateway) {
+        self.inner = inner
+        self.bootstrap = bootstrap
+    }
+
+    func send(_ message: FrameMessage, to port: MachPortToken) throws { try inner.send(message, to: port) }
+
+    func announce(_ presence: MachSendRight, to port: MachPortToken) throws {
+        destroyedCounts.append(bootstrap.destroyed.count)
+        try inner.announce(presence, to: port)
+    }
+
+    func receive(on port: MachPortToken) async throws -> IncomingMessage { try await inner.receive(on: port) }
 }
