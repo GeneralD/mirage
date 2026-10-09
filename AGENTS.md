@@ -152,10 +152,10 @@ Shared conventions:
 - The GPU and effect fakes complete manually, in any order: `FakeGPUGateway`
   (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
   `completeApply`), `FakeGPURenderer` (`complete(request, with:)`, or a
-  scripted `respond(with:)`; like the live renderer it ignores cancellation, and
-  it refuses a request another instance issued),
-  `InMemoryPreviewSink` (`complete(presentation)`). Each
-  completion is exactly once; a second one returns `false`.
+  scripted `respond(with:)`), `InMemoryPreviewSink` (`complete(presentation)`).
+  Each completion is exactly once; a second one, or one another instance
+  issued, returns `false`. Like their live counterparts, the runtime and
+  renderer fakes ignore cancellation.
   `FakeShaderLibraryGateway` reports an issue when called on the main thread;
   `FakeTextureCacheGateway.isBalanced` is the bind/unbind invariant.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
