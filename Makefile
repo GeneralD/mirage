@@ -1,4 +1,4 @@
-.PHONY: build test test-gpu lint format check generate clean
+.PHONY: build build-dev-harness test test-gpu lint format check generate clean
 
 # Build the shipped SPM products, one invocation each: `--product` takes a
 # single value and a repeated flag is last-one-wins, so one command would
@@ -6,6 +6,11 @@
 build:
 	swift build --disable-sandbox -c release --product App
 	swift build --disable-sandbox -c release --product ExtensionApp
+
+# The development harness, in the configuration `swift run dev-harness` uses.
+# Never part of `make build`: it is not shipped.
+build-dev-harness:
+	swift build --product dev-harness
 
 # The main run skips GPU suites; they need a Metal device and their own process.
 test:
