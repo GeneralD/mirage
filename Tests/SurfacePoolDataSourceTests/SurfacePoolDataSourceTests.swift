@@ -97,6 +97,35 @@ struct SurfacePoolDataSourceTests {
         #expect(try pool.allocate(.hd720) != nil)
     }
 
+    @Test("allocate(filledWith:) fills the surface through the gateway with the given byte")
+    func allocateFilled() throws {
+        let pool = makePool()
+        let token = try #require(try pool.allocate(.hd720, filledWith: 0x7F))
+        let handle = try #require(pool.handle(for: token) as? FakeSurfaceHandle)
+        #expect(handle.lastFill == 0x7F)
+        #expect(pool.liveCount == 1)
+    }
+
+    @Test("allocate(filledWith:) on a full pool returns nil and creates nothing")
+    func allocateFilledFull() throws {
+        let gateway = FakeIOSurfaceGateway()
+        let pool = makePool(capacity: 1, gateway: gateway)
+        _ = try pool.allocate(.hd720)
+        #expect(try pool.allocate(.hd720, filledWith: 0) == nil)
+        #expect(gateway.createdCount == 1)
+    }
+
+    @Test("a failing fill releases the slot, rethrows, and leaves liveCount unchanged")
+    func allocateFilledRollsBack() throws {
+        let gateway = FakeIOSurfaceGateway()
+        let pool = makePool(capacity: 1, gateway: gateway)
+        gateway.failFill(with: .allocationFailed)
+        #expect(throws: SurfaceError.allocationFailed) { try pool.allocate(.hd720, filledWith: 0) }
+        #expect(pool.liveCount == 0)
+        gateway.failFill(with: nil)
+        #expect(try pool.allocate(.hd720, filledWith: 0) != nil)
+    }
+
     @Test("release frees the slot, and a second release of the same token is false")
     func releaseOnce() throws {
         let pool = makePool()

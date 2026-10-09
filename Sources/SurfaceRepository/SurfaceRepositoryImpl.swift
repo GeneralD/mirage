@@ -18,6 +18,10 @@ extension SurfaceRepositoryImpl: SurfaceRepository {
         try pool.allocate(descriptor)
     }
 
+    public func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
+        try pool.allocate(descriptor, filledWith: byte)
+    }
+
     @discardableResult
     public func release(_ token: SurfaceToken) -> Bool {
         pool.release(token)

@@ -31,6 +31,7 @@ public final class FakeIOSurfaceGateway: IOSurfaceGateway, Sendable {
         var rights: [UInt32: FakeSurfaceHandle] = [:]
         var created: [FakeSurfaceHandle] = []
         var createError: SurfaceError?
+        var fillError: SurfaceError?
     }
 
     private let state = Locked(State())
@@ -42,6 +43,10 @@ public final class FakeIOSurfaceGateway: IOSurfaceGateway, Sendable {
 
     public func failCreation(with error: SurfaceError?) {
         state.withLock { $0.createError = error }
+    }
+
+    public func failFill(with error: SurfaceError?) {
+        state.withLock { $0.fillError = error }
     }
 
     public func create(_ descriptor: SurfaceDescriptor) throws -> any SurfaceHandle {
@@ -77,6 +82,7 @@ public final class FakeIOSurfaceGateway: IOSurfaceGateway, Sendable {
     }
 
     public func fill(_ surface: any SurfaceHandle, with byte: UInt8) throws {
+        if let error = state.current.fillError { throw error }
         try (surface as? FakeSurfaceHandle).orThrow(SurfaceError.foreignHandle).fill(with: byte)
     }
 }

@@ -14,6 +14,7 @@ public final class FakeSurfacePool: SurfacePool, Sendable {
         var slots: [Slot]
         var nextID: UInt32 = 1
         var allocateError: (any Error)?
+        var fillError: (any Error)?
 
         func slot(for token: SurfaceToken) -> Slot? {
             guard slots.indices.contains(token.index) else { return nil }
@@ -37,6 +38,11 @@ public final class FakeSurfacePool: SurfacePool, Sendable {
         state.withLock { $0.allocateError = error }
     }
 
+    /// Makes `allocate(_:filledWith:)` fail after the slot was taken, like a gateway fill error.
+    public func failFill(with error: (any Error)?) {
+        state.withLock { $0.fillError = error }
+    }
+
     public func adopt(_ handle: any SurfaceHandle, descriptor: SurfaceDescriptor) -> SurfaceToken? {
         state.withLock { state -> SurfaceToken? in
             guard let index = state.slots.firstIndex(where: { $0.handle == nil }) else { return nil }
@@ -54,6 +60,16 @@ public final class FakeSurfacePool: SurfacePool, Sendable {
             return FakeSurfaceHandle(id: state.nextID, descriptor: descriptor)
         }
         return adopt(handle, descriptor: descriptor)
+    }
+
+    public func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
+        guard let token = try allocate(descriptor) else { return nil }
+        if let error = state.current.fillError {
+            release(token)
+            throw error
+        }
+        (handle(for: token) as? FakeSurfaceHandle)?.fill(with: byte)
+        return token
     }
 
     public func handle(for token: SurfaceToken) -> (any SurfaceHandle)? {
