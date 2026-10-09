@@ -5,6 +5,9 @@ import TestSupport
 /// sleep is registered. Waiting on it therefore proves the subject is parked, which
 /// no other observable (a log line, a call count) does: those happen before the
 /// subject reaches `sleep`, and advancing time in that gap is lost.
+///
+/// Sleeps honour task cancellation the way `ContinuousClock` does, so a test can
+/// prove that cancelling a parked task ends the sleep with `CancellationError`.
 public final class GatedClock: Clock, @unchecked Sendable {
     public struct Instant: InstantProtocol {
         public let offset: Duration
@@ -18,29 +21,56 @@ public final class GatedClock: Clock, @unchecked Sendable {
 
     private struct Sleeper {
         let deadline: Instant
-        let continuation: CheckedContinuation<Void, Never>
+        let continuation: CheckedContinuation<Void, any Error>
     }
+
+    private enum Registration { case due, parked }
 
     /// One entry per registered sleep, holding the deadline it asked for.
     public let sleepers = Collector<Duration>()
 
     private let lock = NSLock()
     private var current = Instant(offset: .zero)
-    private var parked: [Sleeper] = []
+    private var parked: [UInt64: Sleeper] = [:]
+    private var nextID: UInt64 = 0
 
     public init() {}
 
     public var now: Instant { lock.withLock { current } }
     public var minimumResolution: Duration { .zero }
 
+    /// How many sleeps are parked right now: registered, neither woken nor cancelled.
+    public var parkedCount: Int { lock.withLock { parked.count } }
+
+    /// A sleep that is already cancelled on entry throws before parking; cancelling a
+    /// parked sleep removes it and throws `CancellationError`. Whoever removes the
+    /// sleeper from `parked` under the lock is the only one to resume it, so a
+    /// cancellation racing `advance` resumes it exactly once.
     public func sleep(until deadline: Instant, tolerance: Duration?) async throws {
-        await withCheckedContinuation { continuation in
-            let due = lock.withLock {
-                let due = deadline <= current
-                parked += due ? [] : [Sleeper(deadline: deadline, continuation: continuation)]
-                return due
+        try Task.checkCancellation()
+        let id = lock.withLock {
+            defer { nextID += 1 }
+            return nextID
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                let registration = lock.withLock { () -> Registration in
+                    guard deadline > current else { return .due }
+                    parked[id] = Sleeper(deadline: deadline, continuation: continuation)
+                    return .parked
+                }
+                switch registration {
+                case .due:
+                    continuation.resume()
+                case .parked:
+                    sleepers.append(deadline.offset)
+                    // A cancellation that ran before the sleeper was registered found
+                    // nothing to remove; the flag it set is still visible here.
+                    if Task.isCancelled { cancel(id) }
+                }
             }
-            _ = due ? continuation.resume() : sleepers.append(deadline.offset)
+        } onCancel: {
+            cancel(id)
         }
     }
 
@@ -48,11 +78,15 @@ public final class GatedClock: Clock, @unchecked Sendable {
     public func advance(by duration: Duration) {
         let woken = lock.withLock {
             current = current.advanced(by: duration)
-            let split = parked.partition { $0.deadline <= current }
-            let woken = Array(parked[split...])
-            parked.removeSubrange(split...)
-            return woken
+            let due = parked.filter { $0.value.deadline <= current }
+            for id in due.keys { parked.removeValue(forKey: id) }
+            return Array(due.values)
         }
         for sleeper in woken { sleeper.continuation.resume() }
+    }
+
+    private func cancel(_ id: UInt64) {
+        let sleeper = lock.withLock { parked.removeValue(forKey: id) }
+        sleeper?.continuation.resume(throwing: CancellationError())
     }
 }

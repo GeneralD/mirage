@@ -30,6 +30,7 @@ struct HostReconnectClockTests {
             $0.cameraRepository = FakeCameraRepository()
             $0.frameExecutor = executor
             $0.frameScheduler = ManualFrameScheduler()
+            $0.workRunner = RecordingWorkRunner()
             $0.continuousClock = clock
             $0.errorLog = errors
             $0.developerLog = developer

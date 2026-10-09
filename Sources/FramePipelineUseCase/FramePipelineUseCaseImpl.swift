@@ -16,6 +16,7 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     @Dependency(\.surfaceRepository) private var surfaceRepository
     @Dependency(\.frameExecutor) private var frameExecutor
     @Dependency(\.frameScheduler) private var frameScheduler
+    @Dependency(\.workRunner) private var workRunner
     @Dependency(\.continuousClock) private var clock
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
@@ -28,9 +29,10 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     private let snapshot = CurrentValueSubject<PipelineStats, Never>(.empty)
     private var tickCount = 0
     private var lastDropReason: FrameDropReason?
-    // Executor-confined, like the phase: the reconnect task, and the epoch that tells
-    // a finished task apart from the one that replaced it.
-    private var reconnectTask: Task<Void, Never>?
+    // Executor-confined, like the phase: the reconnect work (owned through the
+    // `WorkRunner` port, never an unstructured `Task` here), and the epoch that tells
+    // finished work apart from the one that replaced it.
+    private var reconnectWork: (any WorkHandle)?
     private var reconnectEpoch = 0
     // A loss that arrived while a connect (first or re-) was still settling: it is
     // remembered and replayed when that connect finishes, never dropped.
@@ -70,7 +72,7 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     public func stop() {
         frameScheduler.stop()
         cameraRepository.stop()
-        // Cancel the reconnect task before the sink's generation moves: a task that
+        // Cancel the reconnect work before the sink's generation moves: a task that
         // reads the new generation afterwards is then already cancelled and cannot
         // bring the transport back up after `stop`.
         frameExecutor.run { [self] in
@@ -213,7 +215,7 @@ extension FramePipelineUseCaseImpl {
         case .idle, .stopped:
             return
         }
-        guard reconnectTask == nil else { return }
+        guard reconnectWork == nil else { return }
         phaseSubject.value = .reconnecting
         reconnectEpoch += 1
         lossStreak += 1
@@ -221,7 +223,7 @@ extension FramePipelineUseCaseImpl {
         let sink = virtualCameraSink
         let pause = Self.pause(beforeReconnectAfterLosses: lossStreak)
         let clock = clock
-        reconnectTask = Task { [weak self] in
+        reconnectWork = workRunner.run { [weak self] in
             let failure: (any Error)?
             do {
                 // The first loss reconnects at once; a link that keeps dying before a
@@ -242,7 +244,7 @@ extension FramePipelineUseCaseImpl {
 
     private func reconnectFinished(epoch: Int, failure: (any Error)?) {
         guard epoch == reconnectEpoch else { return }
-        reconnectTask = nil
+        reconnectWork = nil
         switch failure {
         case nil:
             settle(from: .reconnecting, to: .connected)
@@ -266,7 +268,7 @@ extension FramePipelineUseCaseImpl {
     private func cancelReconnect() {
         reconnectEpoch += 1
         lossPending = false
-        reconnectTask?.cancel()
-        reconnectTask = nil
+        reconnectWork?.cancel()
+        reconnectWork = nil
     }
 }

@@ -44,7 +44,11 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
 - `FakeStreamOutput.connectClient()` / `disconnectClient()` — client count and
   `.streamStarted` / `.streamStopped`; `GatedClock` — a hand-stepped clock whose
   `sleepers` collector fires once a sleep is registered, so a test advances time
-  only when the subject is parked (reconnect backoff proof).
+  only when the subject is parked (reconnect backoff proof); its sleeps honour
+  task cancellation like `ContinuousClock`. `RecordingWorkRunner` — the
+  `WorkRunner` double: starts each work item as a real `Task` at once and
+  records `started` / `finished` / `cancelled`, so a test awaits
+  `work.finished.waitForCount(n)` instead of polling.
 
 ## Property tests
 

@@ -20,6 +20,7 @@ import VirtualCameraRepository
 struct HostSide {
     let executor = ManualFrameExecutor()
     let scheduler = ManualFrameScheduler()
+    let work = RecordingWorkRunner()
     let clock = TestClock<Duration>()
     let camera = FakeCameraSource()
     let errors = RecordingLog()
@@ -30,6 +31,7 @@ struct HostSide {
     init(kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int) {
         let executor = executor
         let scheduler = scheduler
+        let work = work
         let clock = clock
         let camera = camera
         let errors = errors
@@ -49,6 +51,7 @@ struct HostSide {
             $0.surfacePool = pool
             $0.frameExecutor = executor
             $0.frameScheduler = scheduler
+            $0.workRunner = work
             $0.continuousClock = clock
             $0.cameraSource = camera
             $0.cameraPermission = FakeCameraPermission(status: .authorized)

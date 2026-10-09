@@ -94,7 +94,10 @@ Shared conventions:
   `ErrorLog` and `DeveloperLog`. Live is `os.Logger` (`UnifiedLog`); neither
   the host app nor the extension has a usable stderr. Never `print`.
 - Frame-path callbacks run on the `FrameExecutor` port. UseCase state on the
-  frame path is a single-threaded state machine; no locks in UseCases.
+  frame path is a single-threaded state machine; no locks in UseCases. Async
+  work the frame path must start (the host reconnect) goes through the
+  `WorkRunner` port and its `WorkHandle`, never an unstructured `Task {` in a
+  UseCase.
 - Surface lifetime is owned by `SurfaceRepository`: `allocate` hands out a
   `SurfaceToken`, `release(token)` gives the slot back and reports whether the
   token was still live, `liveCount` is the invariant. A UseCase releases the

@@ -143,6 +143,38 @@ struct FramePipelineReconnectTests {
         #expect(rig.subject.phase == .stopped)
     }
 
+    @Test("stop while the reconnect is parked in its back-off ends the sleep, and later time never reconnects")
+    func stopDuringBackoff() async throws {
+        let rig = Rig()
+        try await rig.subject.start(descriptor: .hd720, frameRate: .standard)
+        rig.executor.drain()
+        rig.sink.emit(.disconnected(.destinationLost))
+        rig.executor.drain()
+        await rig.work.finished.waitForCount(1)
+        rig.executor.drain()
+        #expect(rig.sink.connectCount == 2)
+
+        // The second loss in a row parks the reconnect in the back-off sleep.
+        rig.sink.emit(.disconnected(.destinationLost))
+        rig.executor.drain()
+        await rig.clock.sleepers.waitForCount(1)
+        #expect(rig.subject.phase == .reconnecting)
+        #expect(rig.clock.parkedCount == 1)
+
+        rig.subject.stop()
+        rig.executor.drain()
+        await rig.work.finished.waitForCount(2)
+        rig.executor.drain()
+
+        #expect(rig.work.cancelled.values == [1])
+        #expect(rig.clock.parkedCount == 0)
+        #expect(rig.subject.phase == .stopped)
+        rig.clock.advance(by: .seconds(60))
+        rig.executor.drain()
+        #expect(rig.sink.connectCount == 2, "the cancelled back-off never reaches the sink")
+        #expect(rig.subject.phase == .stopped)
+    }
+
     @Test("an explicit disconnect and a failed look-up do not reconnect")
     func notALoss() async throws {
         let rig = Rig()
