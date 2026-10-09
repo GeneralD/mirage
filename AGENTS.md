@@ -105,14 +105,21 @@ Shared conventions:
   the host app nor the extension has a usable stderr. Never `print`.
 - Frame-path callbacks run on the `FrameExecutor` port. UseCase state on the
   frame path is a single-threaded state machine; no locks in UseCases. Async
-  work the frame path must start (the host reconnect) goes through the
-  `WorkRunner` port and its `WorkHandle`, never an unstructured `Task {` in a
-  UseCase.
+  work the frame path must start (the host reconnect, the effect `apply`) goes
+  through the `WorkRunner` port and its `WorkHandle`, never an unstructured
+  `Task {` in a UseCase.
 - Surface lifetime is owned by `SurfaceRepository`: `allocate` hands out a
   `SurfaceToken`, `release(token)` gives the slot back and reports whether the
   token was still live, `liveCount` is the invariant. A UseCase releases the
   token it was given exactly once; it never sees an `IOSurface` or a
   retain/release pair.
+- Host frame path: camera → latest-frame slot (newest wins) → one effect pass
+  per tick → sink. At most one pass is in flight; a tick that finds one running
+  drops its frame as `.inFlightCapReached`. A pass holds two leases: on success
+  the input is released when the answer arrives and the output after the send;
+  on any failure the output is released at once and the input is sent
+  unchanged, then released. No failure state is kept between frames. `stop()`
+  ignores the pass's late answer, releases both leases and calls `releaseAll()`.
 - Shells (`Apps/**`) hold only `main.swift` and assets; `make check` bounds
   their size. `Info.plist` and entitlements are generated from `project.yml`
   by `make generate` (gitignored), never hand-written.
@@ -147,6 +154,9 @@ Shared conventions:
   completion is exactly once; a second one returns `false`.
   `FakeShaderLibraryGateway` reports an issue when called on the main thread;
   `FakeTextureCacheGateway.isBalanced` is the bind/unbind invariant.
+- The pipeline's in-flight cap is driven by answering its `apply` by hand: a
+  pipeline test answers each pass (`Rig.completeEffect` / `answer`), and
+  `LoopbackRig.capture` answers with pass-through unless told otherwise.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
   wall clock.

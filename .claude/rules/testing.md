@@ -51,6 +51,17 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
+- The pipeline's in-flight cap is driven by **manual completion**: the fake
+  runtime never answers on its own, so a tick only starts a pass and the test
+  decides when (and how) it ends. In `Tests/FramePipelineUseCaseTests/Rig.swift`,
+  `applyRequest(n)` awaits the n-th `apply`, `answer(_:with:)` completes it and
+  drains until the pipeline has taken the answer, and `completeEffect(with:)`
+  answers the next pass in order (pass-through by default). A test that wants a
+  tick to meet a running pass simply ticks before answering. A runner that
+  ignores `cancel` (wrap `RecordingWorkRunner` via `Rig(runner:)`) is how a late
+  answer after `stop()` is produced. `LoopbackRig.capture` answers the pass it
+  started (pass-through by default, `effect:` to choose) and drains its result,
+  so integration tests stay one frame per call.
 - `InMemoryFrameTransport` — the in-process Mach kernel behind the host↔extension
   loopback (`Tests/FramePathIntegrationTests/LoopbackRig.swift` keeps
   **separate surface pools on each side**). Hooks: a bootstrap table (look-up
