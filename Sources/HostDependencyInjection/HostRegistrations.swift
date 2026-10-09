@@ -15,6 +15,7 @@ import FramePipelineUseCase
 import FrameTransportDataSource
 import MetalGateway
 import PreviewRepository
+import ShaderCompilationDataSource
 import SystemExtensionGateway
 import VirtualCameraRepository
 
@@ -71,6 +72,10 @@ extension FrameTransportKey: DependencyKey {
 
 extension CameraExtensionInstallerKey: DependencyKey {
     public static let liveValue: any CameraExtensionInstaller = ExtensionInstallDataSourceImpl()
+}
+
+extension ShaderCompilerKey: DependencyKey {
+    public static let liveValue: any ShaderCompiler = ShaderCompilationDataSourceImpl()
 }
 
 extension CaptureSessionGatewayKey: DependencyKey {

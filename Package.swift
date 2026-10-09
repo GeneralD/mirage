@@ -154,6 +154,7 @@ let package = Package(
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
+                "ShaderCompilationDataSource",
                 "AVFoundationGateway", "MetalGateway", "SystemExtensionGateway",
             ]
         ),
