@@ -137,6 +137,9 @@ let package = Package(
         .testTarget(name: "ExtensionInstallUseCaseTests", dependencies: ["ExtensionInstallUseCase"] + testDependencies),
         .target(name: "ExtensionRelayUseCase", dependencies: dependencies),
         .testTarget(name: "ExtensionRelayUseCaseTests", dependencies: ["ExtensionRelayUseCase"] + testDependencies),
+        // Host only: the lite dev harness's solid frame (#21), until #24 runs the harness on the pipeline.
+        .target(name: "SolidFrameUseCase", dependencies: dependencies),
+        .testTarget(name: "SolidFrameUseCaseTests", dependencies: ["SolidFrameUseCase"] + testDependencies),
 
         // ── Interactor ──
         .target(name: "CameraInteractor", dependencies: dependencies),
@@ -155,7 +158,7 @@ let package = Package(
             dependencies: dependencies + [
                 "CommonDependencyInjection",
                 "CameraInteractor",
-                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase",
+                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase", "SolidFrameUseCase",
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
