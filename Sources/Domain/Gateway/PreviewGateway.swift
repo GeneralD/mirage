@@ -4,8 +4,9 @@ import Dependencies
 /// whose `nextDrawable()` may be called off the main thread), in the shape of
 /// the other handles: `backing` is the OS object as `AnyObject`, the gateway
 /// that minted it casts it back and throws `PreviewError.foreignTarget` for
-/// anything else. It owns nothing the OS must be told about, so it is given
-/// back by dropping it.
+/// anything else. Holding it keeps the layer's drawable size in step with the
+/// view (live: it holds the view's delegate, which the view holds weakly); it
+/// owns nothing the OS must be told about, so it is given back by dropping it.
 public protocol PreviewLayerHandle: AnyObject, Sendable {
     var backing: AnyObject { get }
 }
@@ -16,7 +17,8 @@ public protocol PreviewLayerHandle: AnyObject, Sendable {
 public protocol PreviewGateway: Sendable {
     /// Points the target view at the context's device with BGRA8 drawables a
     /// compute kernel can write, stops it from drawing on its own and returns
-    /// the layer `draw` writes to. On the main thread, because the target is a
+    /// the layer `draw` writes to, sized to the view whenever the view resizes
+    /// (a paused view no longer sizes its layer). On the main thread, because the target is a
     /// view. `PreviewError.foreignTarget` for a target this gateway cannot draw
     /// on, `GPUError.foreignHandle` for a context another gateway produced.
     @MainActor

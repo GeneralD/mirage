@@ -35,6 +35,7 @@ Only four things touch a real `MTLDevice`:
    or a half-texel shift); `MetalKitPreviewGateway.prepare` readying an
    off-screen `MTKView` and `draw` completing once into its layer's drawable
    (the drawable's pixels belong to the compositor and are not read back);
+   a paused view resized between two draws getting a drawable of its new size;
    `PreviewDataSource` over the live gateways end to end; foreign handles
    refused.
 

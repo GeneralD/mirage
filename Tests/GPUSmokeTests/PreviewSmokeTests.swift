@@ -103,6 +103,16 @@ struct PreviewSmokeTests {
         #expect(throws: GPUError.foreignHandle) { try preview.prepare(PreviewViewTarget(MTKView(frame: .zero)), on: FakeGPUContextHandle()) }
     }
 
+    /// Draws once and waits for the completion.
+    private func drawOnce(
+        _ texture: any TextureHandle, with kernel: any LibraryHandle, into layer: any PreviewLayerHandle, on context: any GPUContextHandle
+    ) async throws -> GPUCompletion {
+        let completions = Collector<GPUCompletion>()
+        try preview.draw(texture, with: kernel, into: layer, on: context) { completions.append($0) }
+        await completions.waitForCount(1)
+        return try #require(completions.values.first)
+    }
+
     @Test("draw runs the kernel into the layer's next drawable and reports one clean completion; foreign handles are refused")
     @MainActor
     func drawCompletesOnce() async throws {
@@ -127,6 +137,25 @@ struct PreviewSmokeTests {
         #expect(throws: PreviewError.foreignTarget) {
             try preview.draw(texture, with: kernel, into: ForeignLayer(), on: context) { _ in }
         }
+        try metal.unbind(texture)
+    }
+
+    @Test("a resized view's next draw gets a drawable of the new size, though the view is paused")
+    @MainActor
+    func resizeReachesTheLayer() async throws {
+        let context = try metal.makeContext()
+        let view = MTKView(frame: CGRect(x: 0, y: 0, width: 32, height: 18))
+        let layer = try preview.prepare(PreviewViewTarget(view), on: context)
+        let metalLayer = try #require(layer.backing as? CAMetalLayer)
+        let kernel = try metal.compile(source: PreviewKernel.source, options: PreviewKernel.options, on: context).get()
+        let texture = try metal.bind(try surfaces.create(.bgra(width: 64, height: 36)), on: context)
+
+        #expect(try await drawOnce(texture, with: kernel, into: layer, on: context).error == nil)
+        #expect(metalLayer.drawableSize == CGSize(width: 32, height: 18))
+
+        view.setFrameSize(NSSize(width: 18, height: 32))
+        #expect(try await drawOnce(texture, with: kernel, into: layer, on: context).error == nil)
+        #expect(metalLayer.drawableSize == CGSize(width: 18, height: 32))
         try metal.unbind(texture)
     }
 
