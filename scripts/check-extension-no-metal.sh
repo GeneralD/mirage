@@ -3,7 +3,8 @@
 # "Three DI targets"; epic #14, D15).
 #
 # Walks the package graph from the extension's composition root and its DI
-# target and fails when a Metal gateway module is reachable. Reads
+# target and fails when a Metal gateway module, or the preview DataSource that
+# carries the preview kernel's MSL, is reachable. Reads
 # `swift package dump-package`, which evaluates the manifest only — no
 # dependency resolution, no build — so it is cheap enough for `make check`.
 
@@ -16,7 +17,7 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 ROOTS="ExtensionApp ExtensionDependencyInjection"
-FORBIDDEN="MetalGateway MetalKitPreviewGateway"
+FORBIDDEN="MetalGateway MetalKitPreviewGateway PreviewDataSource"
 
 if ! manifest=$(swift package dump-package 2>/dev/null); then
     echo "check-extension-no-metal: swift package dump-package failed" >&2

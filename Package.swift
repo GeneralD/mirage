@@ -99,6 +99,9 @@ let package = Package(
         .testTarget(name: "StreamOutputDataSourceTests", dependencies: ["StreamOutputDataSource"] + testDependencies),
         .target(name: "ExtensionInstallDataSource", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallDataSourceTests", dependencies: ["ExtensionInstallDataSource"] + testDependencies),
+        // Host only: the preview kernel and the draw order (scripts/check-extension-no-metal.sh).
+        .target(name: "PreviewDataSource", dependencies: dependencies),
+        .testTarget(name: "PreviewDataSourceTests", dependencies: ["PreviewDataSource"] + testDependencies),
 
         // ── Repository ──
         .target(name: "CameraRepository", dependencies: dependencies),
