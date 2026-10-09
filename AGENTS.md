@@ -128,6 +128,14 @@ Shared conventions:
 - Install outcomes are typed: `InstallFailure` (`denied`, `canceled`,
   `invalidBuild`, `other`) is mapped from raw `OSSystemExtensionError` codes in
   `ExtensionInstallDataSource`, never in the gateway.
+- GPU outcomes are typed the same way: `GPURenderDataSource` (port
+  `GPURenderer`) maps raw command-buffer codes onto `EffectFailure` in the pure
+  `GPUCompletionMapping` (only in `MTLCommandBufferErrorDomain`; anything else
+  is `unknown(code:)`), never in `MetalGateway`. One render is one command
+  buffer; a stale lease is `.invalidResource` and reaches no gateway; every
+  bound texture is unbound exactly once on every path. It keeps no failure
+  history (health policy is MVP-D) and packs no uniform bytes: the gateway
+  sends `EffectUniforms` itself, pinned to the MSL layout by a property test.
 - The Mach service name is declared once in `ProductIdentity`; host
   `mach-lookup`, extension `mach-register` and the constant are compared by
   `make check` (a mismatch makes `bootstrap_look_up` fail silently).
@@ -143,7 +151,8 @@ Shared conventions:
   Interleavings are enumerated with seed-driven `forAll` / `@Test(arguments: Seeds...)`.
 - The GPU and effect fakes complete manually, in any order: `FakeGPUGateway`
   (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
-  `completeApply`), `InMemoryPreviewSink` (`complete(presentation)`). Each
+  `completeApply`), `FakeGPURenderer` (`complete(request, with:)`, or a
+  scripted `respond(with:)`), `InMemoryPreviewSink` (`complete(presentation)`). Each
   completion is exactly once; a second one returns `false`.
   `FakeShaderLibraryGateway` reports an issue when called on the main thread;
   `FakeTextureCacheGateway.isBalanced` is the bind/unbind invariant.

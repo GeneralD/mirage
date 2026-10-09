@@ -47,7 +47,13 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   in any order (a slow compile overtaken, a late GPU completion); a cancelled
   caller resumes with `.failure(.internalError)`, and one cancelled before it
   suspended is never recorded. Start concurrent callers one at a time
-  (`waitForCount(n)` between them) when the test depends on request order. `InMemoryPreviewSink` —
+  (`waitForCount(n)` between them) when the test depends on request order.
+  `FakeGPURenderer` — the same shape one layer down, for the Repository suites:
+  `render` suspends until `complete(_:with:)` (any order, exactly once) unless
+  `respond(with:)` scripted an immediate answer; `requests` is a `Collector`.
+  The `GPURenderDataSource` suite itself drives the executor hop with
+  `tickUntil(tick: { executor.drain() }, …)` and completes passes through
+  `FakeGPUGateway`. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
