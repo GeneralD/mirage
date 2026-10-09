@@ -73,12 +73,7 @@ struct Rig {
     /// How many passes `completeEffect` has answered; the next one it answers is the next request.
     private let completed = Locked(0)
 
-    /// `runner`: what the subject sees in front of `work` (a test that needs work which ignores `cancel`).
-    init(
-        sink override: (any VirtualCameraSink)? = nil,
-        capacity: Int = 4,
-        runner: (@Sendable (RecordingWorkRunner) -> any WorkRunner)? = nil
-    ) {
+    init(sink override: (any VirtualCameraSink)? = nil, capacity: Int = 4) {
         surfaces = SpySurfaceRepository(inner: FakeSurfaceRepository(pool: FakeSurfacePool(capacity: capacity)))
         let camera = camera
         let sink = sink
@@ -86,7 +81,7 @@ struct Rig {
         let effects = effects
         let executor = executor
         let scheduler = scheduler
-        let workRunner = runner?(work) ?? work
+        let work = work
         let clock = clock
         let errors = errors
         let developer = developer
@@ -97,7 +92,7 @@ struct Rig {
             $0.effectRuntimeRepository = effects
             $0.frameExecutor = executor
             $0.frameScheduler = scheduler
-            $0.workRunner = workRunner
+            $0.workRunner = work
             $0.continuousClock = clock
             $0.errorLog = errors
             $0.developerLog = developer
@@ -125,12 +120,23 @@ extension Rig {
     }
 
     /// Answers `request` with `result` and drains the executor until the pipeline has
-    /// taken the answer — `false` when it never did (an answer the pipeline ignores).
+    /// counted the answer — `false` when it never did. A pass `stop` abandoned is never
+    /// counted: answer it with `answerAbandoned`.
     @discardableResult
     func answer(_ request: FakeEffectRuntimeRepository.ApplyRequest, with result: Result<Void, EffectFailure>) async -> Bool {
         let before = subject.stats.effectPasses
         effects.completeApply(request, with: result)
         return await tickUntil(tick: { executor.drain() }, until: { subject.stats.effectPasses > before })
+    }
+
+    /// Answers a pass `stop` abandoned and drains the executor until the pipeline has
+    /// ended its two leases — `false` when the call was not pending or the leases never
+    /// ended. (The stats do not move for such a pass, so the live count is the signal.)
+    @discardableResult
+    func answerAbandoned(_ request: FakeEffectRuntimeRepository.ApplyRequest, with result: Result<Void, EffectFailure>) async -> Bool {
+        let before = surfaces.liveCount
+        guard effects.completeApply(request, with: result) else { return false }
+        return await tickUntil(tick: { executor.drain() }, until: { surfaces.liveCount <= before - 2 })
     }
 
     /// Answers the next pass in start order — by default with the `.internalError` the

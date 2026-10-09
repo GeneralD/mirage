@@ -43,21 +43,6 @@ private final class LeaseProbeSink: VirtualCameraSink, Sendable {
     }
 }
 
-/// A `WorkRunner` whose handles ignore `cancel`: the pass runs to its end however the
-/// pipeline gives up on it, like a command buffer already committed to the GPU.
-private struct UninterruptibleWorkRunner: WorkRunner {
-    let inner: RecordingWorkRunner
-
-    func run(_ work: @escaping @Sendable () async -> Void) -> any WorkHandle {
-        _ = inner.run(work)
-        return Ignored()
-    }
-
-    private struct Ignored: WorkHandle {
-        func cancel() {}
-    }
-}
-
 @Suite("FramePipelineUseCaseImpl effect stage", .timeLimit(.minutes(1)))
 struct FramePipelineEffectTests {
     private func started(_ rig: Rig, frameRate: FrameRate = .standard) async throws {
@@ -292,8 +277,10 @@ struct FramePipelineEffectTests {
 
     // MARK: Stop
 
-    @Test("stop while a pass runs cancels its work, ends both leases, and the cancelled answer is ignored")
-    func stopCancelsThePass() async throws {
+    @Test(
+        "stop keeps a running pass's two leases until its answer, then ends both without sending, whatever the answer",
+        arguments: [Result<Void, EffectFailure>.success(()), .failure(.timeout)])
+    func stopKeepsLeasesUntilTheAnswer(answer: Result<Void, EffectFailure>) async throws {
         let rig = Rig(capacity: 4)
         try await started(rig)
         rig.emit(at: 1_000)
@@ -302,38 +289,36 @@ struct FramePipelineEffectTests {
 
         rig.subject.stop()
         rig.executor.drain()
-        #expect(rig.work.cancelled.values == [0])
-        #expect(rig.surfaces.liveCount == 0)
-        #expect(rig.surfaces.refusedReleases == 0)
+        #expect(rig.surfaces.liveCount == 2, "the GPU may still read the input and write the output")
+        #expect(rig.surfaces.inner.pool.handle(for: request.input.token) != nil)
+        #expect(rig.surfaces.inner.pool.handle(for: request.output.token) != nil)
+        #expect(rig.effects.pendingCount == 1, "stop does not cut the pass short")
 
-        // The cancelled `apply` resumes with `.internalError`; its answer reaches the executor and is ignored.
-        await rig.work.finished.waitForCount(1)
-        rig.executor.drain()
-        #expect(rig.effects.completeApply(request, with: .success(())) == false, "the cancelled call was already resumed")
-        #expect(rig.sink.sent.count == 0)
-        #expect(rig.subject.stats.effectPasses == 0)
-        #expect(rig.surfaces.refusedReleases == 0, "no lease of the abandoned pass was released twice")
+        #expect(await rig.answerAbandoned(request, with: answer))
+        #expect(rig.surfaces.liveCount == 0)
+        #expect(rig.surfaces.refusedReleases == 0, "each lease of the abandoned pass ended once")
+        #expect(rig.sink.sent.count == 0, "an abandoned pass is never sent")
+        #expect(rig.subject.stats.effectPasses == 0, "an abandoned pass counts as neither applied nor failed")
+        #expect(rig.subject.stats.framesDropped == 0)
     }
 
-    @Test("an answer that lands after stop is ignored, even a success")
-    func lateAnswerAfterStop() async throws {
-        let rig = Rig(capacity: 4, runner: { UninterruptibleWorkRunner(inner: $0) })
+    @Test("stop defers the pool reset while a pass runs: a stray lease outlives stop and ends with the pass's answer")
+    func stopDefersThePoolReset() async throws {
+        let rig = Rig(capacity: 4)
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
         let request = await rig.applyRequest(0)
+        let stray = try #require(rig.surfaces.inner.frame(at: HostTimestamp(nanoseconds: 9)))
 
         rig.subject.stop()
         rig.executor.drain()
-        #expect(rig.surfaces.liveCount == 0)
+        #expect(rig.surfaces.liveCount == 3, "resetting the pool now would free the pass's surfaces too")
 
-        #expect(rig.effects.completeApply(request, with: .success(())))
-        await rig.work.finished.waitForCount(1)
-        rig.executor.drain()
-        #expect(rig.sink.sent.count == 0)
-        #expect(rig.subject.stats.effectPasses == 0)
+        #expect(await rig.answerAbandoned(request, with: .success(())))
+        #expect(rig.surfaces.inner.pool.handle(for: stray.token) == nil, "the reset stop deferred ran with the answer")
         #expect(rig.surfaces.liveCount == 0)
-        #expect(rig.surfaces.refusedReleases == 0, "the late answer released nothing that stop had already ended")
+        #expect(rig.surfaces.refusedReleases == 0)
     }
 
     @Test("an answer already queued when stop is called ends its leases once; the sink is already disconnected")
@@ -355,9 +340,11 @@ struct FramePipelineEffectTests {
         #expect(rig.surfaces.refusedReleases == 0)
     }
 
-    @Test("after a restart the abandoned pass's late answer does not touch the new run's pass")
-    func staleAnswerAfterRestart() async throws {
-        let rig = Rig(capacity: 4, runner: { UninterruptibleWorkRunner(inner: $0) })
+    @Test(
+        "after stop and a restart the abandoned pass still holds the in-flight cap; its answer frees it and leaves the new run's leases alone"
+    )
+    func abandonedPassHoldsTheCapAcrossRestart() async throws {
+        let rig = Rig(capacity: 4)
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
@@ -366,20 +353,24 @@ struct FramePipelineEffectTests {
         rig.executor.drain()
 
         try await started(rig)
-        let input = try #require(rig.emit(at: 2_000))
+        let blocked = try #require(rig.emit(at: 2_000))
+        rig.scheduler.tick()
+        #expect(rig.effects.applyRequests.count == 1, "no second pass while the abandoned one still runs on the GPU")
+        #expect(rig.subject.stats.dropReasons == [.inFlightCapReached: 1])
+        #expect(rig.surfaces.inner.pool.handle(for: blocked.token) == nil, "the blocked frame's lease ended at once")
+
+        let waiting = try #require(rig.emit(at: 3_000))
+        #expect(await rig.answerAbandoned(abandoned, with: .success(())))
+        #expect(rig.sink.sent.count == 0, "the old run's pass is not sent into the new run")
+        #expect(rig.surfaces.liveCount == 1, "only the new run's waiting frame is left: no pool reset after a restart")
+        #expect(rig.surfaces.inner.pool.handle(for: waiting.token) != nil)
+
         rig.scheduler.tick()
         let current = await rig.applyRequest(1)
+        #expect(current.input == waiting, "the freed cap lets the next tick start a pass")
         #expect(current.frameContext.frameIndex == 0, "a new run counts its frames from zero")
-
-        #expect(rig.effects.completeApply(abandoned, with: .success(())))
-        await rig.work.finished.waitForCount(1)
-        rig.executor.drain()
-        #expect(rig.sink.sent.count == 0, "the old pass's answer is not the new pass's")
-        #expect(rig.surfaces.liveCount == 2)
-        #expect(rig.surfaces.refusedReleases == 0)
-
         #expect(await rig.answer(current, with: .failure(.pageFault)))
-        #expect(rig.sink.sent.values == [input])
+        #expect(rig.sink.sent.values == [waiting])
         #expect(rig.surfaces.liveCount == 0)
         #expect(rig.surfaces.refusedReleases == 0)
     }

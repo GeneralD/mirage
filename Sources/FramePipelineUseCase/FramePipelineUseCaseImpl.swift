@@ -11,13 +11,15 @@ import Domain
 /// is ever queued. A tick hands the frame it takes to the effect runtime off the
 /// executor, at most one pass at a time; a tick that finds a pass still running
 /// drops its frame as `.inFlightCapReached`, so every frame a tick takes is
-/// either sent or counted as a drop. The pass's answer comes back on the
-/// executor: on success the rendered output goes to the sink, on any failure
-/// the input goes instead, unchanged — judged frame by frame, with no memory of
-/// earlier failures. Every lease ends exactly once: the input's when the
-/// runtime is done with it (or after the sink has seen it, on a failure), the
-/// output's after the sink has seen it, sent or not, because the extension
-/// holds its own reference.
+/// sent, counted as a drop, or abandoned by `stop`. The pass's answer comes back
+/// on the executor: on success the rendered output goes to the sink, on any
+/// failure the input goes instead, unchanged — judged frame by frame, with no
+/// memory of earlier failures. Every lease ends exactly once: the input's when
+/// the runtime is done with it (or after the sink has seen it, on a failure),
+/// the output's after the sink has seen it, sent or not, because the extension
+/// holds its own reference. Only the answer ends a pass: one that `stop` gives up
+/// on keeps its leases and the in-flight cap until the answer arrives, then ends
+/// them without sending, because the GPU may still be reading or writing them.
 public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Sendable {
     @Dependency(\.cameraRepository) private var cameraRepository
     @Dependency(\.virtualCameraSink) private var virtualCameraSink
@@ -49,11 +51,9 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     // Losses since a frame last reached the extension; paces the next reconnect.
     private var lossStreak = 0
     // Executor-confined, the effect stage: the pass the runtime is working on (the
-    // in-flight cap is one), the count that numbers every pass ever started (so a
-    // completion of an abandoned pass never matches the current one), and the index
-    // the next pass of this run hands the effect.
+    // in-flight cap is one; a pass `stop` abandoned still holds it until its answer),
+    // and the index the next pass of this run hands the effect.
     private var inFlight: EffectPass?
-    private var passesStarted = 0
     private var frameIndex: UInt32 = 0
     let phaseSubject = CurrentValueSubject<PipelinePhase, Never>(.idle)
 
@@ -102,7 +102,6 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
             phaseSubject.value = .stopped
             releaseLatest()
             abandonEffect()
-            surfaceRepository.releaseAll()
         }
     }
 }
@@ -175,16 +174,16 @@ extension FramePipelineUseCaseImpl {
     /// asks of every caller it refuses.
     private func startEffect(on input: FrameRef) {
         guard let output = leaseOutput(like: input) else { return drop(input, because: .poolExhausted) }
-        passesStarted += 1
-        let number = passesStarted
         let context = FrameContext(presentationTime: input.presentationTime, frameIndex: frameIndex)
         frameIndex &+= 1
         let runtime = effectRuntimeRepository
-        let work = workRunner.run { [weak self] in
+        // The handle is not kept: cancelling cuts no GPU work short (the port's
+        // contract), so only the answer can end the pass.
+        _ = workRunner.run { [weak self] in
             let result = await runtime.apply(input: input, output: output, frameContext: context)
-            self?.frameExecutor.run { [weak self] in self?.effectFinished(number, with: result) }
+            self?.frameExecutor.run { [weak self] in self?.effectFinished(with: result) }
         }
-        inFlight = EffectPass(number: number, input: input, output: output, work: work)
+        inFlight = EffectPass(input: input, output: output, isAbandoned: false)
     }
 
     /// The output carries the input's geometry and presentation time, so the stream
@@ -202,14 +201,14 @@ extension FramePipelineUseCaseImpl {
         }
     }
 
-    /// The runtime's answer, back on the executor. A pass `stop` abandoned is no
-    /// longer in flight, so its answer is ignored: its leases have already ended.
-    /// On success the input's lease ends now that the runtime is done reading it and
-    /// the output goes on; on any failure the unused output is given back first and
-    /// the input goes on unchanged.
-    private func effectFinished(_ number: Int, with result: Result<Void, EffectFailure>) {
-        guard let pass = inFlight, pass.number == number else { return }
+    /// The runtime's answer, back on the executor; it frees the in-flight cap. On
+    /// success the input's lease ends now that the runtime is done reading it and the
+    /// output goes on; on any failure the unused output is given back first and the
+    /// input goes on unchanged. A pass `stop` abandoned is only ended.
+    private func effectFinished(with result: Result<Void, EffectFailure>) {
+        guard let pass = inFlight else { return }
         inFlight = nil
+        guard !pass.isAbandoned else { return endAbandoned(pass) }
         update { $0.noteEffect(result) }
         switch result {
         case .success:
@@ -221,14 +220,26 @@ extension FramePipelineUseCaseImpl {
         }
     }
 
-    /// `stop`: the pass in flight is never sent. Its work is cancelled and both of
-    /// its leases end here; an answer that still arrives finds no pass and is ignored.
+    /// `stop`: a pass in flight cannot be called back — the GPU finishes what it was
+    /// given and `apply` answers with the real outcome — so it is marked abandoned and
+    /// keeps both leases, and the in-flight cap, until that answer. Releasing them
+    /// earlier would hand surfaces the GPU still reads or writes to the next frame.
+    /// The pool is reset (`releaseAll`) here only when no pass is in flight; otherwise
+    /// the reset waits for the answer.
     private func abandonEffect() {
-        guard let pass = inFlight else { return }
-        inFlight = nil
-        pass.work.cancel()
+        guard let pass = inFlight else { return surfaceRepository.releaseAll() }
+        inFlight = pass.abandoned
+    }
+
+    /// The answer to a pass `stop` abandoned: nothing is sent and the outcome is not
+    /// counted as applied or failed; both leases end. If the pipeline is still
+    /// stopped, the pool reset `stop` deferred runs now; after a restart the pool
+    /// belongs to the new run and is left alone.
+    private func endAbandoned(_ pass: EffectPass) {
         surfaceRepository.release(pass.input.token)
         surfaceRepository.release(pass.output.token)
+        guard phase == .stopped else { return }
+        surfaceRepository.releaseAll()
     }
 }
 
