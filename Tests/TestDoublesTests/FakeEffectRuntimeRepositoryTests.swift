@@ -87,4 +87,40 @@ struct FakeEffectRuntimeRepositoryTests {
         #expect(await task.value.failure == .compileFailed)
         #expect(runtime.pendingCount == 0)
     }
+
+    @Test("requests issued by another repository complete nothing here")
+    func foreignRequestsAreRefused() async throws {
+        let other = FakeEffectRuntimeRepository()
+        let preparing = Task { await runtime.prepare(effect) }
+        let applying = Task {
+            await runtime.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))
+        }
+        let strangerPreparing = Task { await other.prepare(effect) }
+        let strangerApplying = Task {
+            await other.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))
+        }
+        await runtime.prepareRequests.waitForCount(1)
+        await runtime.applyRequests.waitForCount(1)
+        await other.prepareRequests.waitForCount(1)
+        await other.applyRequests.waitForCount(1)
+        let strangerPrepare = try #require(other.prepareRequests.last)
+        let strangerApply = try #require(other.applyRequests.last)
+        // Each repository numbers its calls from 1, so only provenance tells the strangers apart.
+        #expect(strangerPrepare.id == runtime.prepareRequests.last?.id)
+        #expect(strangerApply.id == runtime.applyRequests.last?.id)
+
+        #expect(!runtime.completePrepare(strangerPrepare, with: .success(())))
+        #expect(!runtime.completeApply(strangerApply, with: .success(())))
+        #expect(runtime.pendingCount == 2, "neither of this repository's calls was resumed")
+
+        // Each call is completed by the repository that issued it, and only then does it return.
+        #expect(runtime.completePrepare(try #require(runtime.prepareRequests.last), with: .failure(.compileFailed)))
+        #expect(runtime.completeApply(try #require(runtime.applyRequests.last), with: .failure(.timeout)))
+        #expect(other.completePrepare(strangerPrepare, with: .success(())))
+        #expect(other.completeApply(strangerApply, with: .success(())))
+        #expect(await preparing.value.failure == .compileFailed)
+        #expect(await applying.value.failure == .timeout)
+        #expect(await strangerPreparing.value.failure == nil)
+        #expect(await strangerApplying.value.failure == nil)
+    }
 }

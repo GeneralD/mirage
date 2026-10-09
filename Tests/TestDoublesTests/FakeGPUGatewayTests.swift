@@ -64,6 +64,29 @@ struct FakeGPUGatewayTests {
         #expect(completed.count == 1)
     }
 
+    @Test("a submission issued by another gateway completes nothing here and is reported")
+    func foreignSubmissionIsRefused() throws {
+        let other = FakeGPUGateway()
+        let context = try gateway.makeContext()
+        let otherContext = try other.makeContext()
+        let completed = Collector<Void>()
+        try gateway.encodeAndCommit(pass(seed: 1, on: context), on: context) { _ in completed.append(()) }
+        try other.encodeAndCommit(pass(seed: 1, on: otherContext), on: otherContext) { _ in }
+        // Both gateways number their first submission 1, so only provenance tells them apart.
+        let stranger = try #require(other.pending.first)
+        #expect(stranger.id == gateway.pending.first?.id)
+
+        // Only the report is the known issue; the return value is asserted outside.
+        let result = Collector<Bool>()
+        withKnownIssue {
+            result.append(gateway.complete(stranger, with: GPUCompletion(gpuStart: 0, gpuEnd: 0, error: nil)))
+        }
+        #expect(result.values == [false])
+        #expect(completed.count == 0)
+        #expect(gateway.pending.count == 1, "the gateway's own pass is still pending")
+        #expect(other.pending.count == 1, "the stranger's own gateway did not complete it either")
+    }
+
     @Test("foreign handles are refused before anything is recorded")
     func foreignHandlesAreRefused() throws {
         let context = try gateway.makeContext()

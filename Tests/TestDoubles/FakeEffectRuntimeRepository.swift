@@ -14,6 +14,8 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
     public struct PrepareRequest: Sendable {
         public let id: Int
         public let effect: EffectSource
+        /// The repository that issued it: ids restart at 1 per instance, so the id alone cannot tell a stranger's request.
+        fileprivate let origin: ObjectIdentifier
     }
 
     public struct ApplyRequest: Sendable {
@@ -21,6 +23,7 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
         public let input: FrameRef
         public let output: FrameRef
         public let frameContext: FrameContext
+        fileprivate let origin: ObjectIdentifier
     }
 
     private typealias Continuation = CheckedContinuation<Result<Void, EffectFailure>, Never>
@@ -41,24 +44,28 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
 
     public func prepare(_ effect: EffectSource) async -> Result<Void, EffectFailure> {
         let id = nextID()
-        return await suspend(id) { prepareRequests.append(PrepareRequest(id: id, effect: effect)) }
+        return await suspend(id) { prepareRequests.append(PrepareRequest(id: id, effect: effect, origin: ObjectIdentifier(self))) }
     }
 
     public func apply(input: FrameRef, output: FrameRef, frameContext: FrameContext) async -> Result<Void, EffectFailure> {
         let id = nextID()
-        return await suspend(id) { applyRequests.append(ApplyRequest(id: id, input: input, output: output, frameContext: frameContext)) }
+        return await suspend(id) {
+            applyRequests.append(ApplyRequest(id: id, input: input, output: output, frameContext: frameContext, origin: ObjectIdentifier(self)))
+        }
     }
 
-    /// Resumes the suspended `prepare`; `false` when it is unknown or already resumed.
+    /// Resumes the suspended `prepare`; `false` when it is unknown, came from another repository, or is already resumed.
     @discardableResult
     public func completePrepare(_ request: PrepareRequest, with result: Result<Void, EffectFailure>) -> Bool {
-        resume(request.id, with: result)
+        guard request.origin == ObjectIdentifier(self) else { return false }
+        return resume(request.id, with: result)
     }
 
-    /// Resumes the suspended `apply`; `false` when it is unknown or already resumed.
+    /// Resumes the suspended `apply`; `false` when it is unknown, came from another repository, or is already resumed.
     @discardableResult
     public func completeApply(_ request: ApplyRequest, with result: Result<Void, EffectFailure>) -> Bool {
-        resume(request.id, with: result)
+        guard request.origin == ObjectIdentifier(self) else { return false }
+        return resume(request.id, with: result)
     }
 
     private func nextID() -> Int {

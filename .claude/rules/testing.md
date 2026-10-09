@@ -47,7 +47,10 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   in any order (a slow compile overtaken, a late GPU completion). Like the live
   runtime it ignores the caller's cancellation: a cancelled call is still
   recorded and waits for its completion, so a test that stops the pipeline
-  mid-pass completes the pending request itself (`pendingCount`). Start
+  mid-pass completes the pending request itself (`pendingCount`). Requests,
+  submissions and presentations carry the instance that issued them: ids restart
+  at 1 per fake, so one from another instance returns `false` (a reported issue
+  for `FakeGPUGateway`) and never resumes anything. Start
   concurrent callers one at a time (`waitForCount(n)` between them) when the
   test depends on request order. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
