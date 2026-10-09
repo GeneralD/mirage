@@ -70,9 +70,10 @@ struct ExtensionInstallDataSourceTests {
         let subject = makeSubject()
         let stream = await subject.install()
         await gateway.activations.waitForCount(1)
-        gateway.emit(.failed(reason: "denied"))
-        #expect(await drain(stream) == [.installing, .failed(reason: "denied")])
-        #expect(await subject.status == .failed(reason: "denied"))
+        gateway.emit(.failed(code: 99, description: "boom"))
+        let failure = InstallStatus.failed(.other(code: 99, description: "boom"))
+        #expect(await drain(stream) == [.installing, failure])
+        #expect(await subject.status == failure)
     }
 
     @Test("a gateway stream that ends without a result fails instead of hanging")
@@ -81,9 +82,9 @@ struct ExtensionInstallDataSourceTests {
         let stream = await subject.install()
         await gateway.activations.waitForCount(1)
         gateway.finish()
-        let reason = "activation ended without a result"
-        #expect(await drain(stream) == [.installing, .failed(reason: reason)])
-        #expect(await subject.status == .failed(reason: reason))
+        let failure = InstallStatus.failed(.other(code: -1, description: "activation ended without a result"))
+        #expect(await drain(stream) == [.installing, failure])
+        #expect(await subject.status == failure)
     }
 
     @Test("a gateway stream that ends while approval is pending also fails")
@@ -93,7 +94,116 @@ struct ExtensionInstallDataSourceTests {
         await gateway.activations.waitForCount(1)
         gateway.emit(.needsApproval)
         gateway.finish()
-        #expect(await drain(stream).last == .failed(reason: "activation ended without a result"))
+        #expect(await drain(stream).last == .failed(.other(code: -1, description: "activation ended without a result")))
+    }
+
+    @Test("a system-policy refusal (code 10) is reported as denied")
+    func needsApprovalThenDenied() async {
+        let subject = makeSubject()
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.needsApproval)
+        gateway.emit(.failed(code: 10, description: "forbidden"))
+        #expect(await drain(stream) == [.installing, .needsApproval, .failed(.denied)])
+    }
+
+    @Test("cancel and supersede codes (11, 12) are reported as canceled")
+    func canceled() async {
+        for code in [11, 12] {
+            let subject = makeSubject()
+            let stream = await subject.install()
+            await gateway.activations.waitForCount(gateway.activations.count + 1)
+            gateway.emit(.failed(code: code, description: "x"))
+            #expect(await drain(stream).last == .failed(.canceled))
+        }
+    }
+
+    @Test("a build problem keeps its code")
+    func invalidBuild() async {
+        let subject = makeSubject()
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.failed(code: 9, description: "bad signature"))
+        #expect(await drain(stream).last == .failed(.invalidBuild(code: 9)))
+    }
+
+    @Test("an unknown code keeps its description")
+    func otherFailure() async {
+        let subject = makeSubject()
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.failed(code: 1, description: "unknown"))
+        #expect(await drain(stream).last == .failed(.other(code: 1, description: "unknown")))
+    }
+
+    @Test("every documented system-extension error code maps to its class")
+    func mappingTable() {
+        let table: [(Int, InstallFailure)] = [
+            (10, .denied), (11, .canceled), (12, .canceled),
+            (2, .invalidBuild(code: 2)), (3, .invalidBuild(code: 3)), (4, .invalidBuild(code: 4)),
+            (5, .invalidBuild(code: 5)), (8, .invalidBuild(code: 8)), (9, .invalidBuild(code: 9)),
+            (1, .other(code: 1, description: "d")), (6, .other(code: 6, description: "d")),
+            (7, .other(code: 7, description: "d")), (13, .other(code: 13, description: "d")),
+        ]
+        for (code, expected) in table {
+            #expect(ExtensionInstallDataSourceImpl.failure(code: code, description: "d") == expected, "code \(code)")
+        }
+    }
+
+    @Test("replacing an older build re-yields installing, then completes")
+    func willReplaceExisting() async {
+        let subject = makeSubject()
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.willReplaceExisting)
+        gateway.emit(.completed)
+        #expect(await drain(stream) == [.installing, .installing, .installed])
+        #expect(log.messages(in: .install).contains { $0.contains("replacing") })
+    }
+
+    @Test("replacing an older build after needsApproval keeps the approval status")
+    func willReplaceAfterApprovalKeepsApproval() async {
+        let subject = makeSubject()
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.needsApproval)
+        gateway.emit(.willReplaceExisting)
+        gateway.emit(.completed)
+        #expect(await drain(stream) == [.installing, .needsApproval, .installed])
+    }
+
+    @Test("a late event of a superseded request cannot change the new request")
+    func supersededRequestIsIgnored() async {
+        let subject = makeSubject()
+        let first = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.failed(code: 1, description: "boom"), request: 0)
+        _ = await drain(first)
+
+        let second = await subject.install()
+        await gateway.activations.waitForCount(2)
+        gateway.emit(.completed, request: 0)
+        gateway.emit(.failed(code: 1, description: "late"), request: 0)
+        gateway.finish(request: 0)
+        #expect(await subject.status == .installing)
+
+        gateway.emit(.completed, request: 1)
+        #expect(await drain(second) == [.installing, .installed])
+        #expect(await subject.status == .installed)
+    }
+
+    @Test("a superseded request ending cannot fail the new request")
+    func supersededEndIsIgnored() async {
+        let subject = makeSubject()
+        let first = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.failed(code: 1, description: "boom"), request: 0)
+        _ = await drain(first)
+        let second = await subject.install()
+        await gateway.activations.waitForCount(2)
+        gateway.finish(request: 0)
+        gateway.emit(.completed, request: 1)
+        #expect(await drain(second) == [.installing, .installed])
     }
 
     @Test("events after the terminal one are ignored")
@@ -102,7 +212,7 @@ struct ExtensionInstallDataSourceTests {
         let stream = await subject.install()
         await gateway.activations.waitForCount(1)
         gateway.emit(.completed)
-        gateway.emit(.failed(reason: "late"))
+        gateway.emit(.failed(code: 1, description: "late"))
         #expect(await drain(stream) == [.installing, .installed])
         #expect(await subject.status == .installed)
     }
@@ -123,7 +233,7 @@ struct ExtensionInstallDataSourceTests {
         let subject = makeSubject()
         let first = await subject.install()
         await gateway.activations.waitForCount(1)
-        gateway.emit(.failed(reason: "boom"))
+        gateway.emit(.failed(code: 1, description: "boom"))
         _ = await drain(first)
 
         let second = await subject.install()

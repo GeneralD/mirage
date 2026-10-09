@@ -22,6 +22,11 @@ public struct SeededGenerator: RandomNumberGenerator, Sendable {
 /// a parameterized `@Test`, or drive `forAll`.
 public let standardSeeds: [UInt64] = Array(0..<32)
 
+/// Seed ranges for property tests that want more (or fewer) runs than `standardSeeds`.
+public enum Seeds {
+    public static func range(_ range: Range<UInt64>) -> [UInt64] { Array(range) }
+}
+
 /// Runs `body` once per seed with a fresh generator. The seed is in the thrown
 /// error's path when `body` fails, because the generator carries it.
 public func forAll(seeds: [UInt64] = standardSeeds, _ body: (inout SeededGenerator) throws -> Void) rethrows {

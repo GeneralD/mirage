@@ -52,6 +52,18 @@ extension SurfacePoolDataSourceImpl: SurfacePool {
         return adopt(handle, descriptor: gateway.descriptor(handle))
     }
 
+    /// The slot is taken before the fill, so a fill that throws must give it back.
+    public func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
+        guard let token = try allocate(descriptor) else { return nil }
+        do {
+            try tenant(for: token).map { try gateway.fill($0.handle, with: byte) }
+        } catch {
+            release(token)
+            throw error
+        }
+        return token
+    }
+
     public func handle(for token: SurfaceToken) -> (any SurfaceHandle)? {
         tenant(for: token)?.handle
     }

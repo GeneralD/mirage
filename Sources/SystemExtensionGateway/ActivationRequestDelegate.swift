@@ -16,7 +16,8 @@ final class ActivationRequestDelegate: NSObject, OSSystemExtensionRequestDelegat
         actionForReplacingExtension existing: OSSystemExtensionProperties,
         withExtension ext: OSSystemExtensionProperties
     ) -> OSSystemExtensionRequest.ReplacementAction {
-        .replace
+        continuation.yield(.willReplaceExisting)
+        return .replace
     }
 
     func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
@@ -29,7 +30,7 @@ final class ActivationRequestDelegate: NSObject, OSSystemExtensionRequestDelegat
     }
 
     func request(_ request: OSSystemExtensionRequest, didFailWithError error: any Error) {
-        continuation.yield(.failed(reason: error.localizedDescription))
+        continuation.yield(.failed(code: (error as NSError).code, description: error.localizedDescription))
         continuation.finish()
     }
 }

@@ -330,4 +330,93 @@ struct CameraDataSourceTests {
         executor.drain()
         #expect(frames.count == 0)
     }
+
+    @Test("stop reports .stopped once, after the frames queued before it")
+    func stopReportsStoppedOnce() throws {
+        let rig = Rig()
+        let order = Collector<String>()
+        try rig.subject.start(
+            descriptor: .hd720, onFrame: { _ in order.append("frame") }, onEnd: { order.append("end \($0)") })
+        rig.executor.drain()
+        rig.emit(1, seconds: 1.0)
+        rig.subject.stop()
+        rig.subject.stop()
+        #expect(order.count == 0)
+        rig.executor.drain()
+        #expect(order.values == ["frame", "end stopped"])
+    }
+
+    @Test("a gateway end arriving after the stop is ignored")
+    func endAfterStopIsIgnored() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.subject.stop()
+        rig.executor.drain()
+        rig.gateway.end(.deviceDisconnected)
+        rig.executor.drain()
+        #expect(rig.ends.values == [.stopped])
+    }
+
+    @Test("stop stays silent after the gateway already ended the session")
+    func stopAfterGatewayEndIsSilent() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.gateway.end(.deviceDisconnected)
+        rig.executor.drain()
+        rig.subject.stop()
+        rig.executor.drain()
+        #expect(rig.ends.values == [.deviceDisconnected])
+    }
+
+    @Test("stop with nothing running reports nothing")
+    func stopWithoutSessionIsSilent() {
+        let rig = Rig()
+        rig.subject.stop()
+        rig.executor.drain()
+        #expect(rig.ends.count == 0)
+    }
+
+    @Test("a failed start emits no end, even when stop follows")
+    func failedStartEmitsNothing() {
+        let gateway = LingeringCaptureGateway()
+        gateway.failNextStart()
+        let executor = ManualFrameExecutor()
+        let ends = Collector<CaptureEnd>()
+        let subject = withDependencies {
+            $0.captureSessionGateway = gateway
+            $0.frameExecutor = executor
+            $0.developerLog = RecordingLog()
+        } operation: {
+            CameraDataSourceImpl()
+        }
+        #expect(throws: CaptureSessionError.deviceUnavailable) {
+            try subject.start(descriptor: .hd720, onFrame: { _ in }, onEnd: { ends.append($0) })
+        }
+        subject.stop()
+        executor.drain()
+        #expect(ends.count == 0)
+    }
+
+    @Test("a session replaced by a new start emits nothing; stop then reports only the new session")
+    func replacedSessionEmitsNothing() throws {
+        let gateway = LingeringCaptureGateway()
+        let executor = ManualFrameExecutor()
+        let first = Collector<CaptureEnd>()
+        let second = Collector<CaptureEnd>()
+        let subject = withDependencies {
+            $0.captureSessionGateway = gateway
+            $0.frameExecutor = executor
+            $0.developerLog = RecordingLog()
+        } operation: {
+            CameraDataSourceImpl()
+        }
+        try subject.start(descriptor: .hd720, onFrame: { _ in }, onEnd: { first.append($0) })
+        try subject.start(descriptor: .hd720, onFrame: { _ in }, onEnd: { second.append($0) })
+        executor.drain()
+        #expect(first.count == 0 && second.count == 0)
+        subject.stop()
+        executor.drain()
+        #expect(first.count == 0)
+        #expect(second.values == [.stopped])
+    }
 }

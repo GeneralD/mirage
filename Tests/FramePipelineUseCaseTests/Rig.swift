@@ -22,6 +22,10 @@ final class SpySurfaceRepository: SurfaceRepository, Sendable {
         try inner.allocate(descriptor)
     }
 
+    func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
+        try inner.allocate(descriptor, filledWith: byte)
+    }
+
     @discardableResult
     func release(_ token: SurfaceToken) -> Bool {
         let accepted = inner.release(token)

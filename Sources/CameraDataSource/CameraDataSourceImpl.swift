@@ -13,8 +13,18 @@ import Domain
 /// pool slot. The gateway itself keeps no state: which session is live, and
 /// when its handle is stopped, is decided here.
 public final class CameraDataSourceImpl: @unchecked Sendable {
-    /// Identity token for one capture session; compared by reference.
-    private final class Session: Sendable {}
+    /// Identity token for one capture session; compared by reference. Keeps the
+    /// session's `onEnd` so an explicit `stop` can report `.stopped` to its owner.
+    private final class Session: @unchecked Sendable {
+        let onEnd: @Sendable (CaptureEnd) -> Void
+        // Executor-confined: set once the gateway has reported this session's end,
+        // so a later `stop` does not report a second one.
+        var hasEnded = false
+
+        init(onEnd: @escaping @Sendable (CaptureEnd) -> Void) {
+            self.onEnd = onEnd
+        }
+    }
 
     @Dependency(\.captureSessionGateway) private var captureSessionGateway
     @Dependency(\.frameExecutor) private var frameExecutor
@@ -41,7 +51,7 @@ extension CameraDataSourceImpl: CameraSource {
         guard descriptor.matchesGeometry(of: .hd720) else {
             throw CaptureSessionError.configurationFailed("unsupported descriptor \(descriptor.width)x\(descriptor.height)")
         }
-        let session = Session()
+        let session = Session(onEnd: onEnd)
         // Queued before the gateway starts, so it runs ahead of the session's first frame.
         frameExecutor.run { [self] in begin(session) }
         let started: any CaptureSessionHandle
@@ -52,7 +62,8 @@ extension CameraDataSourceImpl: CameraSource {
                 onEnd: { [self] reason in frameExecutor.run { self.finish(reason, from: session, to: onEnd) } }
             )
         } catch {
-            frameExecutor.run { [self] in close(session) }
+            // A session that never started has nothing to report: the throw is its outcome.
+            frameExecutor.run { [self] in close(session, reporting: false) }
             throw error
         }
         frameExecutor.run { [self] in adopt(started, for: session) }
@@ -60,8 +71,10 @@ extension CameraDataSourceImpl: CameraSource {
 
     /// Retires the session on the executor and stops its gateway session there:
     /// frames queued before this call still arrive in order, anything later is dropped.
+    /// The owner is told `.stopped` once, after those frames; a gateway end that
+    /// arrives later belongs to a retired session and is ignored.
     public func stop() {
-        frameExecutor.run { [self] in close(current) }
+        frameExecutor.run { [self] in close(current, reporting: true) }
     }
 }
 
@@ -81,12 +94,16 @@ extension CameraDataSourceImpl {
         handle = started
     }
 
-    /// Runs on the executor. Retires `session` (or whatever is current when `nil`).
-    private func close(_ session: Session?) {
-        guard session === current else { return }
+    /// Runs on the executor. Retires `session` (or whatever is current when `nil`);
+    /// `reporting` sends it `.stopped`, which only an explicit `stop` wants. With
+    /// nothing running there is nothing to retire or report, so repeats are silent.
+    private func close(_ session: Session?, reporting: Bool) {
+        guard let session, session === current else { return }
         retireHandle()
         current = nil
         lastPresentation = nil
+        guard reporting, !session.hasEnded else { return }
+        session.onEnd(.stopped)
     }
 
     private func retireHandle() {
@@ -96,7 +113,8 @@ extension CameraDataSourceImpl {
 
     /// Runs on the executor. The end of a session starts the next one from a clean floor.
     private func finish(_ reason: CaptureEnd, from session: Session, to onEnd: @Sendable (CaptureEnd) -> Void) {
-        guard session === current else { return }
+        guard session === current, !session.hasEnded else { return }
+        session.hasEnded = true
         lastPresentation = nil
         onEnd(reason)
     }

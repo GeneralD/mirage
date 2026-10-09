@@ -15,11 +15,11 @@ struct SurfacePoolPropertyTests {
     private static let steps = 300
 
     private enum Operation {
-        case adopt, allocate, releaseValid, releaseStale, releaseFabricated, releaseAll
+        case adopt, allocate, allocateFilled, releaseValid, releaseStale, releaseFabricated, releaseAll
 
         /// Weighted so the pool both fills up (exhaustion) and churns (slot reuse).
         static let weighted: [Operation] =
-            Array(repeating: .adopt, count: 3) + Array(repeating: .allocate, count: 3) + Array(repeating: .releaseValid, count: 4)
+            Array(repeating: .adopt, count: 3) + Array(repeating: .allocate, count: 2) + [.allocateFilled] + Array(repeating: .releaseValid, count: 4)
             + Array(repeating: .releaseStale, count: 2) + [.releaseFabricated, .releaseAll]
     }
 
@@ -46,7 +46,7 @@ struct SurfacePoolPropertyTests {
         #expect(model.dead.allSatisfy { pool.handle(for: $0) == nil && pool.descriptor(for: $0) == nil }, "seed \(seed)")
     }
 
-    @Test("liveCount, capacity, staleness and handle identity hold after every step", arguments: standardSeeds)
+    @Test("liveCount, capacity, staleness and handle identity hold after every step", arguments: Seeds.range(0..<50))
     func invariants(seed: UInt64) throws {
         let gateway = FakeIOSurfaceGateway()
         let pool = withDependencies {
@@ -78,6 +78,25 @@ struct SurfacePoolPropertyTests {
                     #expect(token == nil && gateway.createdCount == before, "seed \(seed)")
                     break
                 }
+                let issued = try #require(token)
+                model.issue(issued, try #require(pool.handle(for: issued)), .hd720)
+            case .allocateFilled:
+                let before = gateway.createdCount
+                let failing = Bool.random(using: &generator)
+                gateway.failFill(with: failing ? .allocationFailed : nil)
+                defer { gateway.failFill(with: nil) }
+                let token: SurfaceToken?
+                do {
+                    token = try pool.allocate(.hd720, filledWith: 0)
+                } catch {
+                    #expect(failing && !full, "seed \(seed)")
+                    break
+                }
+                guard !full else {
+                    #expect(token == nil && gateway.createdCount == before, "seed \(seed)")
+                    break
+                }
+                #expect(!failing, "seed \(seed)")
                 let issued = try #require(token)
                 model.issue(issued, try #require(pool.handle(for: issued)), .hd720)
             case .releaseValid:

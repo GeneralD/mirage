@@ -37,7 +37,9 @@ struct CameraPermissionDataSourceTests {
         #expect(gateway.requests.count == 1)
     }
 
-    @Test("a decided status is returned without showing the prompt", arguments: [CameraAuthorizationStatus.authorized, .denied, .restricted])
+    @Test(
+        "a decided status is returned without showing the prompt",
+        arguments: [CameraAuthorizationStatus.authorized, .denied, .restricted, .unrecognized])
     func decidedStatusSkipsPrompt(existing: CameraAuthorizationStatus) async {
         let gateway = ScriptedCameraAuthorization(status: existing, grantsOnRequest: true)
         let status = await makeSubject(gateway).request()
