@@ -17,17 +17,27 @@ Only three things touch a real `MTLDevice`:
    CI job exists before the gateway does; `MetalDeviceProbe` next to it is
    the one place the suites ask whether a device exists.
 2. `MetalGatewaySmokeTests` — the three ports against the real device:
-   `compile` of a kernel (the MSL `Uniforms` declaration is inlined until the
-   prelude exists in `ShaderCompilationDataSource`), `bind` of a real IOSurface
-   (`.shared`, `bgra8Unorm`), one `encodeAndCommit`, the pixels read back
+   `compile` of kernels assembled with the engine prelude exactly as an effect
+   is (`ShaderSourceAssembly`: prelude, `#line 1 "effect"`, author source),
+   `bind` of a real IOSurface (`.shared`, `bgra8Unorm`), one
+   `encodeAndCommit`, the pixels read back
    through the IOSurface and compared with a Swift reference under a single
    fixed tolerance of one 8-bit step, plus exact checks at the corners so a
    dropped `- 1`, a swapped axis or an unread uniform cannot hide inside the
    tolerance. Also: a syntax error and a missing entry point come back as
    `ShaderDiagnostics`, two commits on one context each write their own
    surface, a surface rebinds after `unbind`, and foreign handles are refused.
+   `#line` is proven here: a syntax error on the author's third line comes back
+   as `effect:3:`; and `ShaderCompilationDataSource` over the live gateway keeps
+   author lines, rewrites a prelude note to `prelude:<line>:` and returns a handle
+   that dispatches on another context of the device.
    `ShaderCompileOptions.precise` (→ `fastMathEnabled = false`) is the default.
-3. Hash-noise parity — GPU vs Swift reference, same tolerance.
+3. `HashNoiseParityTests` (suite `hash-noise parity`) — the prelude's `hash` /
+   `noise` on a 256 × 256 image against `HashNoiseReference` (Tests/TestSupport),
+   for seed 0 and another seed: every pixel within the same single tolerance
+   (`GPUSmokeSupport.tolerance`, one 8-bit step, shared by every GPU suite), plus
+   the hash's 24 bits compared bit for bit (one byte per channel, stored as
+   `k / 255`, which the unorm store returns exactly).
 
 ## Rules
 
