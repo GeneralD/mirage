@@ -17,8 +17,10 @@ public struct SurfaceDescriptor: Sendable, Hashable {
 }
 
 extension SurfaceDescriptor {
-    /// Tightly packed BGRA (`bytesPerRow == width * 4`). IOSurface may round the
-    /// row stride up for GPU alignment; the gateway reports the resolved stride.
+    /// Tightly packed BGRA (`bytesPerRow == width * 4`). As a request this is a
+    /// minimum: IOSurface keeps an explicit stride exactly as given, so the live
+    /// `IOSurfaceGateway` aligns it up for the OS before allocating (Metal binds
+    /// only 16-byte-aligned rows) and reports the stride it allocated.
     public static func bgra(width: Int, height: Int) -> SurfaceDescriptor {
         SurfaceDescriptor(width: width, height: height, pixelFormat: .bgra32, bytesPerRow: width * 4)
     }

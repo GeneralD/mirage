@@ -12,7 +12,7 @@ import Testing
 
     @Test func geometryIgnoresTheRowStride() {
         let padded = SurfaceDescriptor(width: 1280, height: 720, pixelFormat: .bgra32, bytesPerRow: 5184)
-        #expect(SurfaceDescriptor.hd720.matchesGeometry(of: padded), "IOSurface may round the stride up; the picture is the same")
+        #expect(SurfaceDescriptor.hd720.matchesGeometry(of: padded), "the gateway may align the stride up; the picture is the same")
         #expect(!SurfaceDescriptor.hd720.matchesGeometry(of: .bgra(width: 1280, height: 721)))
         #expect(!SurfaceDescriptor.hd720.matchesGeometry(of: .bgra(width: 1281, height: 720)))
     }

@@ -13,10 +13,12 @@ import ExtensionInstallRepository
 import ExtensionInstallUseCase
 import FramePipelineUseCase
 import FrameTransportDataSource
+import GPURenderDataSource
 import MetalGateway
 import MetalKitPreviewGateway
 import PreviewDataSource
 import PreviewRepository
+import ShaderCompilationDataSource
 import SystemExtensionGateway
 import VirtualCameraRepository
 
@@ -77,6 +79,14 @@ extension PreviewRendererKey: DependencyKey {
 
 extension CameraExtensionInstallerKey: DependencyKey {
     public static let liveValue: any CameraExtensionInstaller = ExtensionInstallDataSourceImpl()
+}
+
+extension ShaderCompilerKey: DependencyKey {
+    public static let liveValue: any ShaderCompiler = ShaderCompilationDataSourceImpl()
+}
+
+extension GPURendererKey: DependencyKey {
+    public static let liveValue: any GPURenderer = GPURenderDataSourceImpl()
 }
 
 extension CaptureSessionGatewayKey: DependencyKey {
