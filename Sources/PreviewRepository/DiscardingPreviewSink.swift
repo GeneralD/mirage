@@ -7,7 +7,7 @@ import Domain
 public struct DiscardingPreviewSink: PreviewSink, Sendable {
     public init() {}
 
-    public func attach(_ target: any PreviewTargetHandle) throws {}
+    public nonisolated func attach(_ target: any PreviewTargetHandle) throws {}
 
     public func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
         completion()

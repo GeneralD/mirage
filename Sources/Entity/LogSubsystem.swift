@@ -8,4 +8,5 @@ public enum LogSubsystem: String, Sendable, Hashable, CaseIterable {
     case receiver
     case stream
     case install
+    case preview
 }

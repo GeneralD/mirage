@@ -1,9 +1,10 @@
 import Dependencies
 
-/// The drawable the preview frames go to (live: the MetalKit view's layer,
-/// minted by `MetalKitPreviewGateway`), in the shape of the other handles:
-/// `backing` is the OS object as `AnyObject`, the sink that consumes it casts
-/// it back and throws `PreviewError.foreignTarget` for anything else.
+/// The view the preview frames go to (live: the `MTKView` that `PreviewView`
+/// creates; `PreviewGateway.prepare` turns it into the layer it draws into), in
+/// the shape of the other handles: `backing` is the OS object as `AnyObject`,
+/// the gateway that consumes it casts it back and throws
+/// `PreviewError.foreignTarget` for anything else.
 public protocol PreviewTargetHandle: AnyObject, Sendable {
     var backing: AnyObject { get }
 }
@@ -11,10 +12,12 @@ public protocol PreviewTargetHandle: AnyObject, Sendable {
 /// Where the host shows frames to its own user. `present` borrows the frame's
 /// surface until `completion` runs — exactly once, on any thread — and the
 /// caller releases the lease afterwards; a sink that is slower than the camera
-/// is visible to the pipeline as completions that lag. The live value is
-/// `DiscardingPreviewSink` (no window) until the real sink lands in the same
-/// module (#20).
+/// is visible to the pipeline as completions that lag. Until a target is
+/// attached every frame completes at once. `attach` runs on the main thread,
+/// because the target is a view. The live value is `PreviewRepositoryImpl`
+/// over `PreviewDataSource`.
 public protocol PreviewSink: Sendable {
+    @MainActor
     func attach(_ target: any PreviewTargetHandle) throws
     func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void)
 }

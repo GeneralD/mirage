@@ -38,7 +38,7 @@ public final class InMemoryPreviewSink: PreviewSink, Sendable {
         return presented.values.filter { ids[$0.id] != nil }
     }
 
-    public func attach(_ target: any PreviewTargetHandle) throws {
+    public nonisolated func attach(_ target: any PreviewTargetHandle) throws {
         let fake = try (target as? FakePreviewTargetHandle).orThrow(PreviewError.foreignTarget)
         state.withLock { $0.attached.append(fake) }
     }
