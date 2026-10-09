@@ -13,15 +13,12 @@ extension FrameReceiverDataSourceImpl {
             switch message {
             case .frame(let frame):
                 deliver(frame, onFrame: onFrame, onEvent: onEvent)
-            case .hello(let presence):
-                // The presence semantics arrive with the dead-name watch; until then the moved right
-                // is only noted and given back, so reconnecting hosts do not pile up names here.
-                developerLog.record(.receiver, "hello received, presence right \(presence.name)")
-                bootstrap.deallocate(MachPortToken(name: presence.name))
+            case .hello(let right):
+                // Through the executor: presence state is executor-confined and a hello must not
+                // overtake the frames this loop queued before it.
+                frameExecutor.run { [self] in adopt(presence: right, notifying: port) }
             case .deadName(let name):
-                // Not released: the name is only trusted once it matches a presence right this
-                // receiver holds, which arrives with the dead-name watch.
-                developerLog.record(.receiver, "dead-name notification received for \(name.name)")
+                frameExecutor.run { [self] in noteDeadName(name, onEvent: onEvent) }
             }
         }
     }
@@ -73,6 +70,40 @@ extension FrameReceiverDataSourceImpl {
         }
     }
 
+    /// Runs on the executor. A new hello means a new host replaced the old one:
+    /// the earlier right is given back before the new one is watched.
+    private func adopt(presence right: MachSendRight, notifying servicePort: MachPortToken) {
+        releasePresence()
+        presence = right
+        do {
+            try bootstrap.requestDeadNameNotification(of: right, to: servicePort)
+            developerLog.record(.receiver, "hello received, watching presence right \(right.name)")
+        } catch {
+            // The frame gap still covers this host; only the prompt path is lost.
+            errorLog.record(.receiver, "dead-name request failed: \(error)")
+            releasePresence()
+        }
+    }
+
+    /// Runs on the executor. Only the name of the right this receiver holds is
+    /// trusted; any other name is ignored and nothing is deallocated for it.
+    private func noteDeadName(_ name: MachPortToken, onEvent: @Sendable (ReceiverEvent) -> Void) {
+        guard name.name == presence?.name else {
+            developerLog.record(.receiver, "dead-name notification for unknown name \(name.name) ignored")
+            return
+        }
+        hostPresent = false
+        onEvent(.hostLost(.deadName))
+        releasePresence()
+    }
+
+    /// Runs on the executor. Gives back the held presence right, if any.
+    func releasePresence() {
+        guard let held = presence else { return }
+        presence = nil
+        bootstrap.deallocate(MachPortToken(name: held.name))
+    }
+
     /// Runs on the executor.
     private func noteHostPresent(onEvent: @Sendable (ReceiverEvent) -> Void) {
         guard !hostPresent else { return }
@@ -80,10 +111,11 @@ extension FrameReceiverDataSourceImpl {
         onEvent(.hostConnected)
     }
 
-    /// Declares the host lost when no frame arrived for `frameGap`. Sleeps on
+    /// Declares the host lost when no frame arrived for `frameGap`. Checks every
+    /// quarter of the gap (worst-case detection latency 1.25 x `frameGap`) on
     /// the injected clock, so a test moves time by hand.
     func watchHost(onEvent: @escaping @Sendable (ReceiverEvent) -> Void) async {
-        while (try? await clock.sleep(for: frameGap)) != nil {
+        while (try? await clock.sleep(for: frameGap / 4)) != nil {
             frameExecutor.run { [self] in checkGap(onEvent: onEvent) }
         }
     }
