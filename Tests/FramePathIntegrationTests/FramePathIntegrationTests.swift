@@ -5,7 +5,7 @@ import Testing
 
 /// The M0-b vertical slice without the process boundary: the host's
 /// `FramePipelineUseCase` and the extension's `ExtensionRelayUseCase`, each on
-/// its real repositories and data sources, joined by `LoopbackKernel` in place
+/// its real repositories and data sources, joined by `InMemoryFrameTransport` in place
 /// of Mach. What the real deployment adds is only the kernel and the OS
 /// gateways, which `MachGatewayTests` and the dev-verification lanes cover.
 @MainActor
