@@ -8,8 +8,12 @@ import Dependencies
 /// completes exactly once, drawn or not.
 public protocol PreviewRenderer: Sendable {
     /// Readies `target` and makes it the one frames are drawn into; on the main
-    /// thread, because the target is a view. A failed attach leaves the
-    /// previous target attached.
+    /// thread, because the target is a view. A refused attach (it throws)
+    /// leaves the previous target attached. A returned attach does not yet
+    /// promise drawing: the kernel compiles afterwards on the `FrameExecutor`,
+    /// and if that fails no target stays attached — the previous one is
+    /// dropped too — so every frame completes undrawn until an attach whose
+    /// kernel compiles. That failure reaches only `ErrorLog` (`.preview`).
     @MainActor
     func attach(_ target: any PreviewTargetHandle) throws
     func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void)
