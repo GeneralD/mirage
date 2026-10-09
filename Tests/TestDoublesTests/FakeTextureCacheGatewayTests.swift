@@ -52,6 +52,9 @@ struct FakeTextureCacheGatewayTests {
         #expect(throws: SurfaceError.foreignHandle) { try gateway.bind(ForeignSurfaceHandle(), on: context) }
         #expect(throws: GPUError.foreignHandle) { try gateway.bind(surface, on: ForeignContextHandle()) }
         #expect(throws: GPUError.foreignHandle) { try gateway.unbind(ForeignTextureHandle()) }
+        #expect(throws: SurfaceError.foreignHandle, "the surface is checked first, as in the live gateway") {
+            try gateway.bind(ForeignSurfaceHandle(), on: ForeignContextHandle())
+        }
         #expect(gateway.bindCount == 0)
         #expect(gateway.doubleUnbindCount == 0, "a foreign texture is not a double unbind")
     }

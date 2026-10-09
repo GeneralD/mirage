@@ -54,9 +54,13 @@ struct FakeGPUGatewayTests {
         let submission = try #require(gateway.pending.first)
         gateway.complete(submission, with: GPUCompletion(gpuStart: 0, gpuEnd: 0, error: nil))
 
+        // Only the report is the known issue; the return value is asserted outside,
+        // so a `true` cannot be absorbed into it.
+        let again = Collector<Bool>()
         withKnownIssue {
-            #expect(!gateway.complete(submission, with: GPUCompletion(gpuStart: 0, gpuEnd: 0, error: nil)))
+            again.append(gateway.complete(submission, with: GPUCompletion(gpuStart: 0, gpuEnd: 0, error: nil)))
         }
+        #expect(again.values == [false])
         #expect(completed.count == 1)
     }
 
@@ -65,10 +69,26 @@ struct FakeGPUGatewayTests {
         let context = try gateway.makeContext()
         let valid = try pass(seed: 1, on: context)
         let foreignKernel = ComputePass(kernel: ForeignLibraryHandle(), textures: valid.textures, uniforms: valid.uniforms, grid: valid.grid)
+        let foreignTexture = ComputePass(kernel: valid.kernel, textures: [ForeignTextureHandle()], uniforms: valid.uniforms, grid: valid.grid)
 
         #expect(throws: GPUError.foreignHandle) { try gateway.encodeAndCommit(valid, on: ForeignContextHandle()) { _ in } }
         #expect(throws: GPUError.foreignHandle) { try gateway.encodeAndCommit(foreignKernel, on: context) { _ in } }
+        #expect(throws: GPUError.foreignHandle) { try gateway.encodeAndCommit(foreignTexture, on: context) { _ in } }
         #expect(gateway.submissions.count == 0)
+    }
+
+    @Test("a submission records the pass exactly as it was handed in")
+    func submissionRecordsThePass() throws {
+        let context = try gateway.makeContext()
+        let pass = try pass(seed: 42, on: context)
+
+        try gateway.encodeAndCommit(pass, on: context) { _ in }
+
+        let recorded = try #require(gateway.submissions.last).pass
+        #expect(ObjectIdentifier(recorded.kernel) == ObjectIdentifier(pass.kernel))
+        #expect(recorded.textures.map { ObjectIdentifier($0) } == pass.textures.map { ObjectIdentifier($0) })
+        #expect(recorded.uniforms == pass.uniforms)
+        #expect(recorded.grid == pass.grid)
     }
 
     @Test("scripted failures: no device, and an encode that fails")

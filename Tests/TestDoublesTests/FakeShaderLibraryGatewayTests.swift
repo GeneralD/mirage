@@ -1,4 +1,5 @@
 import Domain
+import Foundation
 import TestDoubles
 import TestSupport
 import Testing
@@ -41,9 +42,10 @@ struct FakeShaderLibraryGatewayTests {
         #expect(gateway.calls.values.map(\.onMainThread) == [true])
     }
 
-    @Test("a foreign context is diagnostics, not a crash")
+    @Test("a foreign context is GPUError.foreignHandle wrapped as the live gateway wraps it")
     func foreignContext() {
         let result = gateway.compile(source: "a", options: ShaderCompileOptions(), on: ForeignContextHandle())
-        #expect(result.failure?.code == -1)
+        let expected = GPUError.foreignHandle as NSError
+        #expect(result.failure == ShaderDiagnostics(message: expected.localizedDescription, code: expected.code))
     }
 }

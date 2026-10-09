@@ -68,16 +68,21 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
         }
     }
 
+    /// A request is recorded if and only if it was registered as waiting: both
+    /// happen in one critical section, so a cancellation can never leave a
+    /// recorded request that was already resumed, and a caller cancelled before
+    /// it suspended is never recorded at all. (`Collector` takes its own lock and
+    /// never calls back into `state`, so the nesting cannot deadlock.)
     private func suspend(_ id: Int, announce: @Sendable () -> Void) async -> Result<Void, EffectFailure> {
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: Continuation) in
                 let alreadyCancelled = state.withLock { state in
                     guard state.cancelledBeforeSuspending.remove(id) == nil else { return true }
                     state.waiting[id] = continuation
+                    announce()
                     return false
                 }
                 guard !alreadyCancelled else { return continuation.resume(returning: .failure(.internalError)) }
-                announce()
             }
         } onCancel: {
             let continuation = state.withLock { state -> Continuation? in

@@ -47,8 +47,9 @@ public final class FakeTextureCacheGateway: TextureCacheGateway, Sendable {
     }
 
     public func bind(_ surface: any SurfaceHandle, on context: any GPUContextHandle) throws -> any TextureHandle {
-        _ = try (context as? FakeGPUContextHandle).orThrow(GPUError.foreignHandle)
+        // Same order as the live gateway: the surface first, then the context.
         let fake = try (surface as? FakeSurfaceHandle).orThrow(SurfaceError.foreignHandle)
+        _ = try (context as? FakeGPUContextHandle).orThrow(GPUError.foreignHandle)
         return try state.withLock { state in
             if let error = state.bindError { throw error }
             let texture = FakeTextureHandle(surface: fake)

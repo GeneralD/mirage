@@ -46,8 +46,14 @@ public final class FakeShaderLibraryGateway: ShaderLibraryGateway, Sendable {
         let onMainThread = Thread.isMainThread
         calls.append(Call(source: source, options: options, onMainThread: onMainThread))
         if onMainThread { reportIssue("ShaderLibraryGateway.compile called on the main thread") }
-        guard context is FakeGPUContextHandle else { return .failure(ShaderDiagnostics(message: "foreign context", code: -1)) }
+        guard context is FakeGPUContextHandle else { return .failure(Self.wrapped(GPUError.foreignHandle)) }
         if let diagnostics = scripted.current[source] { return .failure(diagnostics) }
         return .success(FakeLibraryHandle(source: source, options: options))
+    }
+
+    /// The live gateway's wrapping of a non-compiler error (`ShaderDiagnostics(wrapping:)`
+    /// in `MetalGateway`): the error's localized description and its `NSError` code.
+    static func wrapped(_ error: any Error) -> ShaderDiagnostics {
+        ShaderDiagnostics(message: error.localizedDescription, code: (error as NSError).code)
     }
 }
