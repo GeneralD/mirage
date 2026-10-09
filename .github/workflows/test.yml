@@ -96,8 +96,10 @@ jobs:
           PROFDATA="$BIN/codecov/default.profdata"
           COVERAGE_DIR="$RUNNER_TEMP/coverage"
           mkdir -p "$COVERAGE_DIR"
-          # GPU suites need a Metal device and their own process (.claude/rules/gpu-testing.md);
-          # they are not part of the CI run until the runner probe proves a device exists.
+          # GPU suites run in their own process and never feed coverage
+          # (.claude/rules/gpu-testing.md). The runner does have a Metal device
+          # (an "Apple Paravirtual device", measured in #4), so they get their
+          # own `test-gpu` job once Tests/GPUSmokeTests exists (#9).
           swift test --enable-code-coverage --skip GPUSmokeTests
           if [[ ! -f "$PROFDATA" ]]; then
             echo "Coverage profile not found: $PROFDATA"

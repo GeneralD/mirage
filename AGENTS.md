@@ -17,7 +17,7 @@ the corresponding kinds of changes.
   `.claude/rules/physical-abstraction.md`
 - Deterministic test rules and the TestSupport primitives:
   `.claude/rules/testing.md`
-- GPU-touching tests (separate process, local only):
+- GPU-touching tests (separate process; the CI runner has a paravirtual Metal device):
   `.claude/rules/gpu-testing.md`
 - Module addition and documentation sync checklist:
   `.claude/rules/module-checklist.md`
@@ -123,7 +123,9 @@ Shared conventions:
 - Build `@Dependency`-holding objects inside `withDependencies { } operation: { }`,
   never in the `update` closure (captures default values).
 - GPU suites run only via `make test-gpu`, in their own process, `.serialized`,
-  gated by `.enabled(if: MetalDeviceProbe.isAvailable)`, excluded from coverage.
+  gated by `.enabled(if: MetalDeviceProbe.isAvailable)`, excluded from coverage,
+  and written against the `mac2` family only (the CI runner's "Apple
+  Paravirtual device" has no apple-family features; see #4).
 - Test doubles shared across layers live in `Tests/TestDoubles`; a double
   used by one suite stays private to that suite.
 

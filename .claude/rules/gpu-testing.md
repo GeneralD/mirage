@@ -5,7 +5,7 @@ paths:
   - "Sources/MetalKitPreviewGateway/**"
 ---
 
-# GPU Tests — Separate Process, Local by Default
+# GPU Tests — Separate Process, CI-Capable
 
 Everything that *decides* (pass-through, auto-disable, budget, in-flight cap,
 newest-wins compile) is tested against `FakeGPUGateway` and never needs a GPU.
@@ -32,6 +32,14 @@ Only two things touch a real `MTLDevice`:
   Those scenarios are a manual VM lane (`.claude/rules/dev-verification.md`).
 - The compile cache key is `(source hash, compile options, device id, OS
   version)`; a GPU test that depends on cache state resets it first.
-- Whether GitHub-hosted macOS runners expose a Metal device is unknown; the
-  M0 spike adds a probe job that only prints the device name. Until that is
-  green, `make test-gpu` is a local-only target.
+- **GitHub-hosted macOS runners do expose a Metal device** (measured
+  2026-10-09, issue #4, on both `macos-latest` = macOS 26.6.2 / Xcode 26.6 and
+  `macos-15` = macOS 15.7.9 / Xcode 16.4; hardware `VirtualMac2,1`, "Apple M2
+  Pro (Virtual)"): `MTLCreateSystemDefaultDevice()` returns one **"Apple
+  Paravirtual device"**, `makeLibrary(source:)` compiles, and a compute pass
+  returns correct results. It is a VM's paravirtual GPU, not Apple silicon
+  as seen by an app: `supportsFamily(.apple7) == false`, `.mac2 == true`. So
+  `make test-gpu` can run in CI as its own job (issue #9 adds it together
+  with `Tests/GPUSmokeTests`), and GPU smoke tests are written against the
+  `mac2` family only — nothing may assume SIMD-group functions, Apple-family
+  texture formats or other apple-family-gated features.
