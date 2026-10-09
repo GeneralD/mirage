@@ -24,6 +24,8 @@ public final class FrameReceiverDataSourceImpl: @unchecked Sendable {
     /// because the clock is an existential whose `Instant` cannot be stored.
     var sinceLastFrame: (@Sendable () -> Duration)?
     var hostPresent = false
+    /// The host's presence right (from its hello), watched for a dead name.
+    var presence: MachSendRight?
     /// The receive right, kept so `stop()` can reach it from any context.
     var receiveRight: MachPortToken?
     /// A `start` is between its first line and its end. Lets `stop()` tell
@@ -115,6 +117,7 @@ extension FrameReceiverDataSourceImpl {
     /// Runs on the executor. Leaves the object ready for another `start`.
     private func reset() {
         destroyReceiveRight()
+        releasePresence()
         hostPresent = false
         sinceLastFrame = nil
         starting = false

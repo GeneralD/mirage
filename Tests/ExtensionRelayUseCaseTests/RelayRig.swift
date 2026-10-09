@@ -11,6 +11,8 @@ struct RelayRig: Sendable {
     let stream = FakeStreamOutputRepository()
     let surfaces = FakeSurfaceRepository(pool: FakeSurfacePool(capacity: 8))
     let executor = ManualFrameExecutor()
+    let scheduler = ManualFrameScheduler()
+    let hostTime = FixedHostTime()
     let errors = RecordingLog()
     let developer = RecordingLog()
     /// Live leases at the instant each frame reached the stream.
@@ -22,6 +24,8 @@ struct RelayRig: Sendable {
         let probe = LeaseProbingStream(inner: stream, surfaces: surfaces, leasesAtSend: leasesAtSend)
         let surfaces = surfaces
         let executor = executor
+        let scheduler = scheduler
+        let hostTime = hostTime
         let errors = errors
         let developer = developer
         subject = withDependencies {
@@ -29,6 +33,8 @@ struct RelayRig: Sendable {
             $0.streamOutputRepository = probe
             $0.surfaceRepository = surfaces
             $0.frameExecutor = executor
+            $0.frameScheduler = scheduler
+            $0.hostTime = hostTime
             $0.errorLog = errors
             $0.developerLog = developer
         } operation: {
