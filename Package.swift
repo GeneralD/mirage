@@ -187,7 +187,8 @@ let package = Package(
         .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
         // The development harness (host graph only). `main.swift` launches AppKit;
-        // HarnessSession holds the behaviour, under test in DevHarnessTests.
+        // HarnessSession holds its lifecycle and wiring (DevHarnessTests); what it does
+        // is HarnessInteractor's, over SolidFrameUseCase and CameraControlUseCase.
         // A SwiftPM executable has no bundle, so its Info.plist (bundle id, camera
         // usage string for TCC) is linked in as the __TEXT,__info_plist section —
         // the one hand-written plist, outside the xcodegen shells (docs/ARCHITECTURE.md

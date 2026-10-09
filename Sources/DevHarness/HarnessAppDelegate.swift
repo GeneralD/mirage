@@ -3,7 +3,8 @@ import HostDependencyInjection
 import SwiftUI
 import Views
 
-/// AppKit glue, untested by design: what the harness does is `HarnessSession`'s.
+/// AppKit glue, untested by design: the harness's lifecycle and wiring are
+/// `HarnessSession`'s, and what it does is `HarnessInteractor`'s.
 /// One 4:3 window whose content is `PreviewView` (so the 16:9 frame shows the
 /// preview's black bars), a Quit item, the session started once the window is
 /// up and stopped on termination. Closing the window quits. Importing

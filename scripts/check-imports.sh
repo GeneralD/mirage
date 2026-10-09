@@ -42,7 +42,7 @@ allowed_for() {
         *DependencyInjection)                    echo "*" ;;
         Views|AppRouter)              echo "$COMMON $UI_FRAMEWORKS CoreMediaIO" ;;
         App)                          echo "$COMMON $UI_FRAMEWORKS HostDependencyInjection" ;;
-        DevHarness)                   echo "$COMMON $UI_FRAMEWORKS Views HostDependencyInjection" ;;
+        DevHarness)                   echo "$COMMON AppKit SwiftUI Views HostDependencyInjection" ;;
         ExtensionApp)                 echo "$COMMON $UI_FRAMEWORKS CoreMediaIO ExtensionDependencyInjection" ;;
         *)
             if gw=$(gateway_allow "$module"); then
