@@ -30,8 +30,22 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   Interleavings between capture, GPU completion, timer and UI are enumerated
   by the test, with seed-driven orderings for property tests.
 - `ManualFrameScheduler.tick()` — one pipeline step.
-- `FakeGPUGateway.complete(pass:, with: GPUCompletion)` — completion timing
-  and outcome are the test's; raw error codes are synthesized, never provoked.
+- `FakeGPUGateway.complete(_ submission, with: GPUCompletion)` — every
+  `encodeAndCommit` is a pending `Submission`; completion timing, order and
+  outcome are the test's, raw error codes are synthesized, never provoked. A
+  double completion is a reported issue. `FakeShaderLibraryGateway` compiles
+  every source to a fresh `FakeLibraryHandle` unless `failCompile(of:with:)`
+  scripted diagnostics, and **reports an issue when called on the main
+  thread**. `FakeTextureCacheGateway` counts: `isBalanced` is
+  `bindCount == unbindCount` with no double unbind; a handle given back twice
+  throws `GPUError.foreignHandle` and is counted in `doubleUnbindCount`.
+- `FakeEffectRuntimeRepository` — `prepare` / `apply` suspend until
+  `completePrepare(_:with:)` / `completeApply(_:with:)`, each exactly once,
+  in any order (a slow compile overtaken, a late GPU completion); a cancelled
+  caller resumes with `.failure(.internalError)`. `InMemoryPreviewSink` —
+  `present` holds the completion until `complete(_:)`, in any order, and
+  records `attached` targets. Requests are `Collector`s, so a test awaits
+  `applyRequests.waitForCount(n)` instead of polling.
 - `InMemoryFrameTransport` — the in-process Mach kernel behind the host↔extension
   loopback (`Tests/FramePathIntegrationTests/LoopbackRig.swift` keeps
   **separate surface pools on each side**). Hooks: a bootstrap table (look-up
