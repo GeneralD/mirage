@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Linked into the dev-harness binary as its __TEXT,__info_plist section
+  (Package.swift → DevHarness linkerSettings), so `swift run dev-harness` has a
+  bundle identifier and a camera usage string for TCC. The one hand-written
+  plist in the repository: the xcodegen shells' plists are generated from
+  project.yml, but this executable is SwiftPM's and has no bundle. Role-named:
+  no product name here (scripts/check-product-name.sh scans Tools/).
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.generald.dev-harness</string>
+	<key>CFBundleName</key>
+	<string>Dev Harness</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The development harness shows the camera in a preview window to check shader effects.</string>
+</dict>
+</plist>

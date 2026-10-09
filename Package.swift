@@ -182,9 +182,23 @@ let package = Package(
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
         // The development harness (host graph only). `main.swift` launches AppKit;
         // HarnessSession holds the behaviour, under test in DevHarnessTests.
+        // A SwiftPM executable has no bundle, so its Info.plist (bundle id, camera
+        // usage string for TCC) is linked in as the __TEXT,__info_plist section —
+        // the one hand-written plist, outside the xcodegen shells (docs/ARCHITECTURE.md
+        // → Key Design Decisions). `unsafeFlags` is accepted in a root package only,
+        // and no shipped product contains this target. The path is absolute so the
+        // link does not depend on the directory `swift` runs from.
         .executableTarget(
             name: "DevHarness",
-            dependencies: dependencies + ["HostDependencyInjection", "Views"]
+            dependencies: dependencies + ["HostDependencyInjection", "Views"],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "\(Context.packageDirectory)/Tools/DevHarness/Info.plist",
+                ])
+            ]
         ),
         .testTarget(name: "DevHarnessTests", dependencies: ["DevHarness"] + testDependencies),
 
