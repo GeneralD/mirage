@@ -113,6 +113,12 @@ let package = Package(
         .testTarget(name: "StreamOutputRepositoryTests", dependencies: ["StreamOutputRepository"] + testDependencies),
         .target(name: "ExtensionInstallRepository", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallRepositoryTests", dependencies: ["ExtensionInstallRepository"] + testDependencies),
+        // Host only. Pass-through live values until #19 / #20 add the real runtime
+        // and preview sink to the same modules (epic #14, D18).
+        .target(name: "EffectRuntimeRepository", dependencies: dependencies),
+        .testTarget(name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository"] + testDependencies),
+        .target(name: "PreviewRepository", dependencies: dependencies),
+        .testTarget(name: "PreviewRepositoryTests", dependencies: ["PreviewRepository"] + testDependencies),
 
         // ── UseCase ──
         .target(name: "FramePipelineUseCase", dependencies: dependencies),
@@ -143,6 +149,7 @@ let package = Package(
                 "CameraInteractor",
                 "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase",
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
+                "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
                 "AVFoundationGateway", "MetalGateway", "SystemExtensionGateway",
             ]
@@ -182,6 +189,9 @@ let package = Package(
             path: "Tests/TestDoubles"
         ),
         .testTarget(name: "TestSupportTests", dependencies: ["TestSupport", "TestDoubles"]),
+        // Contract tests of the fakes themselves: manual completion, ordering,
+        // provenance and the counters the DataSource suites rely on.
+        .testTarget(name: "TestDoublesTests", dependencies: testDependencies),
 
         // ── Integration (host → in-memory loopback → extension) ──
         .testTarget(

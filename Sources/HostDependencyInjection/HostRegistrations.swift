@@ -7,12 +7,14 @@ import CameraRepository
 import CommonDependencyInjection
 import Dependencies
 import Domain
+import EffectRuntimeRepository
 import ExtensionInstallDataSource
 import ExtensionInstallRepository
 import ExtensionInstallUseCase
 import FramePipelineUseCase
 import FrameTransportDataSource
 import MetalGateway
+import PreviewRepository
 import SystemExtensionGateway
 import VirtualCameraRepository
 
@@ -44,6 +46,15 @@ extension VirtualCameraSinkKey: DependencyKey {
 
 extension ExtensionInstallRepositoryKey: DependencyKey {
     public static let liveValue: any ExtensionInstallRepository = ExtensionInstallRepositoryImpl()
+}
+
+// Pass-through defaults (epic #14, D18): replaced in place by #19 and #20.
+extension EffectRuntimeRepositoryKey: DependencyKey {
+    public static let liveValue: any EffectRuntimeRepository = PassthroughEffectRuntimeRepository()
+}
+
+extension PreviewSinkKey: DependencyKey {
+    public static let liveValue: any PreviewSink = DiscardingPreviewSink()
 }
 
 extension CameraSourceKey: DependencyKey {

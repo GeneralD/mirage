@@ -30,8 +30,32 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   Interleavings between capture, GPU completion, timer and UI are enumerated
   by the test, with seed-driven orderings for property tests.
 - `ManualFrameScheduler.tick()` — one pipeline step.
-- `FakeGPUGateway.complete(pass:, with: GPUCompletion)` — completion timing
-  and outcome are the test's; raw error codes are synthesized, never provoked.
+- `FakeGPUGateway.complete(_ submission, with: GPUCompletion)` — every
+  `encodeAndCommit` is a pending `Submission`; completion timing, order and
+  outcome are the test's, raw error codes are synthesized, never provoked. A
+  double completion is a reported issue. `FakeShaderLibraryGateway` compiles
+  every source to a fresh `FakeLibraryHandle` unless `failCompile(of:with:)`
+  scripted diagnostics, and **reports an issue when called on the main
+  thread**. `FakeTextureCacheGateway` counts: `isBalanced` is
+  `bindCount == unbindCount` with no double unbind. Foreign handles are refused
+  with the live errors in the live order; a double unbind is **fake-only** — the
+  live gateway is stateless and cannot see it — so the fake throws
+  `GPUError.foreignHandle` and counts it in `doubleUnbindCount`, and the
+  DataSource's exactly-once unbind is proven against the fake.
+- `FakeEffectRuntimeRepository` — `prepare` / `apply` suspend until
+  `completePrepare(_:with:)` / `completeApply(_:with:)`, each exactly once,
+  in any order (a slow compile overtaken, a late GPU completion). Like the live
+  runtime it ignores the caller's cancellation: a cancelled call is still
+  recorded and waits for its completion, so a test that stops the pipeline
+  mid-pass completes the pending request itself (`pendingCount`). Requests,
+  submissions and presentations carry the instance that issued them: ids restart
+  at 1 per fake, so one from another instance returns `false` (a reported issue
+  for `FakeGPUGateway`) and never resumes anything. Start
+  concurrent callers one at a time (`waitForCount(n)` between them) when the
+  test depends on request order. `InMemoryPreviewSink` —
+  `present` holds the completion until `complete(_:)`, in any order, and
+  records `attached` targets. Requests are `Collector`s, so a test awaits
+  `applyRequests.waitForCount(n)` instead of polling.
 - `InMemoryFrameTransport` — the in-process Mach kernel behind the host↔extension
   loopback (`Tests/FramePathIntegrationTests/LoopbackRig.swift` keeps
   **separate surface pools on each side**). Hooks: a bootstrap table (look-up
