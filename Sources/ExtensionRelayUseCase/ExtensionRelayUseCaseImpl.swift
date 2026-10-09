@@ -109,6 +109,15 @@ extension ExtensionRelayUseCaseImpl {
     /// frames from a per-episode surface until a newer real frame arrives. A
     /// failed allocation leaves the output live-but-host-absent; the next
     /// `hostLost` tries again.
+    ///
+    /// Deliberately not gated on `isStreaming`: a client may connect while the
+    /// host is away, and a gate would need re-evaluating on every stream start.
+    /// Without a client the stream drops each slate frame (`.noClient`), which
+    /// `framesDropped` counts like any other drop.
+    ///
+    /// `hostLost(.receiveFailed)` ends the receive loop, so `run` returns right
+    /// after this and its `defer` tears the slate down again: that reason is a
+    /// run ending, and a restart of the receiver is the caller's business.
     private func enterSlate() {
         guard let request = slateRequest, let base = schedule.slateBase(hostNow: hostTime.now()) else { return }
         do {
