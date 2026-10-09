@@ -70,8 +70,10 @@ extension ExtensionInstallDataSourceImpl {
     private func apply(_ event: SystemExtensionEvent) {
         switch event {
         case .willReplaceExisting:
-            // Informational: the request stays in flight; re-yield so subscribers see it was noticed.
+            // Informational: the request stays in flight. Re-yield only while installing; after
+            // needsApproval a fallback to .installing would hide the approval guidance.
             developerLog.record(.install, "replacing the installed extension build")
+            guard current == .installing else { return }
             transition(to: .installing)
         case .needsApproval, .completed, .completesAfterReboot, .failed:
             transition(to: Self.status(for: event))

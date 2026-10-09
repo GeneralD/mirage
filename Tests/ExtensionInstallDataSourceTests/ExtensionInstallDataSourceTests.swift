@@ -161,6 +161,17 @@ struct ExtensionInstallDataSourceTests {
         #expect(log.messages(in: .install).contains { $0.contains("replacing") })
     }
 
+    @Test("replacing an older build after needsApproval keeps the approval status")
+    func willReplaceAfterApprovalKeepsApproval() async {
+        let subject = makeSubject()
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.needsApproval)
+        gateway.emit(.willReplaceExisting)
+        gateway.emit(.completed)
+        #expect(await drain(stream) == [.installing, .needsApproval, .installed])
+    }
+
     @Test("a late event of a superseded request cannot change the new request")
     func supersededRequestIsIgnored() async {
         let subject = makeSubject()
