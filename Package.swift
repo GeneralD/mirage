@@ -118,8 +118,8 @@ let package = Package(
         .testTarget(name: "StreamOutputRepositoryTests", dependencies: ["StreamOutputRepository"] + testDependencies),
         .target(name: "ExtensionInstallRepository", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallRepositoryTests", dependencies: ["ExtensionInstallRepository"] + testDependencies),
-        // Host only. Pass-through live values until #19 / #20 add the real runtime
-        // and preview sink to the same modules (epic #14, D18).
+        // Host only. EffectRuntimeRepository ships a pass-through live value until #19
+        // adds the real runtime to the same module (epic #14, D18).
         .target(name: "EffectRuntimeRepository", dependencies: dependencies),
         .testTarget(name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository"] + testDependencies),
         .target(name: "PreviewRepository", dependencies: dependencies),
@@ -156,7 +156,8 @@ let package = Package(
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
-                "AVFoundationGateway", "MetalGateway", "SystemExtensionGateway",
+                "PreviewDataSource",
+                "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
             ]
         ),
         .target(
