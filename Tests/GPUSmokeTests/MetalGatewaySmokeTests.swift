@@ -112,6 +112,27 @@ struct MetalGatewaySmokeTests {
         try gateway.unbind(texture)
     }
 
+    /// Width 6 asks for 24-byte rows; Metal aborts the process when an IOSurface texture's rows are not
+    /// 16-byte aligned, so this only passes when `IOSurfaceGateway.create` aligned the stride.
+    @Test("a surface whose width is not a multiple of four binds, fills through its padded rows and unbinds")
+    func oddWidthSurfaceBinds() async throws {
+        let (kernel, context) = try compile(Self.fillSource)
+        let odd = SurfaceDescriptor.bgra(width: 6, height: 4)
+        let surface = try surfaces.create(odd)
+        let texture = try gateway.bind(surface, on: context)
+
+        let grid = DispatchGrid.covering(width: odd.width, height: odd.height)
+        let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), grid: grid), on: context)
+        #expect(completion.error == nil)
+
+        let image = try Self.pixels(of: surface)
+        let offPixels = (0..<odd.height).flatMap { y in
+            (0..<odd.width).filter { x in Self.pixel(image, x: x, y: y) != [64, 128, 255, 255] }
+        }
+        #expect(offPixels.isEmpty, "\(offPixels.count) pixels differ from the fill at stride \(image.stride)")
+        try gateway.unbind(texture)
+    }
+
     @Test("uniforms reach the kernel and the output matches the Swift reference within one 8-bit step")
     func gradientMatchesReference() async throws {
         let (kernel, context) = try compile(Self.gradientSource)
