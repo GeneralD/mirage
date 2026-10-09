@@ -427,4 +427,48 @@ struct FramePipelineEffectTests {
         #expect(rig.developer.messages(in: .pipeline) == [rig.subject.stats.summary])
         #expect(rig.errors.entries.count == 0)
     }
+
+    @Test("cap drops and transport drops that alternate frame by frame are each logged once, per source; a reconnect makes them news again")
+    func alternatingDropsAreLoggedOncePerSource() async throws {
+        let rig = Rig(capacity: 4)
+        try await started(rig)
+        for cycle in 0..<3 {
+            let base = UInt64(cycle + 1) * 10_000
+            rig.emit(at: base)
+            rig.scheduler.tick()
+            rig.emit(at: base + 1_000)
+            rig.scheduler.tick()
+            // What the live transport reports when it refuses a send (no extension installed yet).
+            rig.sink.emit(.frameDropped(.notConnected))
+            rig.executor.drain()
+            await rig.completeEffect()
+        }
+        #expect(rig.subject.stats.dropReasons == [.inFlightCapReached: 3])
+        #expect(rig.developer.messages(in: .effect) == ["frame dropped: inFlightCapReached"])
+        #expect(rig.developer.messages(in: .transport).filter { $0.hasPrefix("frame dropped") } == ["frame dropped: notConnected"])
+
+        rig.sink.emit(.connected)
+        rig.executor.drain()
+        rig.emit(at: 100_000)
+        rig.scheduler.tick()
+        rig.emit(at: 101_000)
+        rig.scheduler.tick()
+        #expect(rig.developer.messages(in: .effect) == ["frame dropped: inFlightCapReached", "frame dropped: inFlightCapReached"])
+        await rig.completeEffect()
+    }
+
+    @Test("a pool that stays exhausted is reported once, not once per frame; every drop is still counted")
+    func sustainedPoolExhaustionIsLoggedOnce() async throws {
+        let rig = Rig(capacity: 1)
+        try await started(rig)
+        for index in 1...4 {
+            rig.emit(at: UInt64(index) * 1_000)
+            rig.scheduler.tick()
+        }
+        #expect(rig.work.started.count == 0)
+        #expect(rig.subject.stats.dropReasons == [.poolExhausted: 4])
+        #expect(rig.errors.messages(in: .surfaces) == ["effect output not leased: pool exhausted"])
+        #expect(rig.developer.messages(in: .effect) == ["frame dropped: poolExhausted"])
+        #expect(rig.surfaces.liveCount == 0)
+    }
 }

@@ -39,7 +39,8 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     private var latest: FrameRef?
     private let snapshot = CurrentValueSubject<PipelineStats, Never>(.empty)
     private var tickCount = 0
-    private var lastDropReason: FrameDropReason?
+    // The last drop reason logged, per source (the effect stage, the transport).
+    private var lastDropReasons: [LogSubsystem: FrameDropReason] = [:]
     // Executor-confined, like the phase: the reconnect work (owned through the
     // `WorkRunner` port, never an unstructured `Task` here), and the epoch that tells
     // finished work apart from the one that replaced it.
@@ -72,10 +73,10 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
 
     public func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
         frameExecutor.run { [self] in
-            // A fresh run: nothing of a previous run's loss pacing carries over, and
-            // the effect counts frames from zero again.
+            // A fresh run: nothing of a previous run's loss pacing or drop logging
+            // carries over, and the effect counts frames from zero again.
             lossStreak = 0
-            lastDropReason = nil
+            lastDropReasons = [:]
             frameIndex = 0
             phaseSubject.value = .connecting
         }
@@ -150,10 +151,14 @@ extension FramePipelineUseCaseImpl {
     }
 
     /// A frame the pipeline itself gives up on: its lease ends and the drop is counted.
-    private func drop(_ frame: FrameRef, because reason: FrameDropReason) {
+    /// The log hears of it only when the effect stage's drop reason changes; `problem`,
+    /// the operational failure behind the drop, goes to the error log by the same rule,
+    /// so a pool that stays exhausted is reported once, not once per frame.
+    private func drop(_ frame: FrameRef, because reason: FrameDropReason, problem: String? = nil) {
         surfaceRepository.release(frame.token)
         update { $0.note(.dropped(reason)) }
-        noteDrop(reason, in: .effect)
+        guard noteDrop(reason, in: .effect), let problem else { return }
+        errorLog.record(.surfaces, problem)
     }
 
     private func update(_ change: (inout PipelineStats) -> Void) {
@@ -175,13 +180,23 @@ extension FramePipelineUseCaseImpl {
 
 // MARK: - Effect stage (executor-confined)
 
+/// The pool had no surface left for an effect pass's output.
+private struct OutputPoolExhausted: Error, CustomStringConvertible {
+    var description: String { "pool exhausted" }
+}
+
 extension FramePipelineUseCaseImpl {
     /// Leases an output surface and starts `apply` through the `WorkRunner` port; the
     /// answer hops back onto the executor. With no output surface there is nothing to
     /// render into, so the frame drops as `.poolExhausted`, as the pool's contract
     /// asks of every caller it refuses.
     private func startEffect(on input: FrameRef) {
-        guard let output = leaseOutput(like: input) else { return drop(input, because: .poolExhausted) }
+        let output: FrameRef
+        do {
+            output = try leaseOutput(like: input)
+        } catch {
+            return drop(input, because: .poolExhausted, problem: "effect output not leased: \(error)")
+        }
         let context = FrameContext(presentationTime: input.presentationTime, frameIndex: frameIndex)
         frameIndex &+= 1
         let runtime = effectRuntimeRepository
@@ -195,18 +210,11 @@ extension FramePipelineUseCaseImpl {
     }
 
     /// The output carries the input's geometry and presentation time, so the stream
-    /// stays in capture order whichever of the two is sent.
-    private func leaseOutput(like input: FrameRef) -> FrameRef? {
-        do {
-            guard let token = try surfaceRepository.allocate(input.descriptor) else {
-                errorLog.record(.surfaces, "effect output not leased: pool exhausted")
-                return nil
-            }
-            return FrameRef(token: token, descriptor: input.descriptor, presentationTime: input.presentationTime)
-        } catch {
-            errorLog.record(.surfaces, "effect output not leased: \(error)")
-            return nil
-        }
+    /// stays in capture order whichever of the two is sent. Throws the allocation's
+    /// error, or `OutputPoolExhausted` when the pool has no surface left.
+    private func leaseOutput(like input: FrameRef) throws -> FrameRef {
+        guard let token = try surfaceRepository.allocate(input.descriptor) else { throw OutputPoolExhausted() }
+        return FrameRef(token: token, descriptor: input.descriptor, presentationTime: input.presentationTime)
     }
 
     /// The runtime's answer, back on the executor; it frees the in-flight cap. On
@@ -260,7 +268,7 @@ extension FramePipelineUseCaseImpl {
         frameExecutor.run { [self] in
             switch event {
             case .connected:
-                lastDropReason = nil
+                lastDropReasons = [:]
                 developerLog.record(.transport, "connected to the extension")
             case .disconnected(.explicit): developerLog.record(.transport, "disconnected")
             case .disconnected(.destinationLost):
@@ -275,11 +283,15 @@ extension FramePipelineUseCaseImpl {
     /// A stalled link (or a stalled effect) drops every frame for the same reason
     /// at the camera's pace; logging each one would flood the log, and the
     /// per-second summaries already carry the totals. Only a change of reason is a
-    /// news item.
-    private func noteDrop(_ reason: FrameDropReason, in subsystem: LogSubsystem) {
-        guard reason != lastDropReason else { return }
-        lastDropReason = reason
+    /// news item — judged per source, because the effect stage's drops and the
+    /// transport's can alternate frame by frame and must not retrigger each other.
+    /// `true` when the drop was logged.
+    @discardableResult
+    private func noteDrop(_ reason: FrameDropReason, in subsystem: LogSubsystem) -> Bool {
+        guard lastDropReasons[subsystem] != reason else { return false }
+        lastDropReasons[subsystem] = reason
         developerLog.record(subsystem, "frame dropped: \(reason)")
+        return true
     }
 
     private func captureEnded(_ end: CaptureEnd) {
