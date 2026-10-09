@@ -214,3 +214,105 @@ struct FrameTransportConnectTests {
         #expect(fixture.events.count == 0)
     }
 }
+
+@Suite("FrameTransportDataSource presence", .timeLimit(.minutes(1)))
+struct FrameTransportPresenceTests {
+    private let service = MachPortToken(name: 0x2000)
+    private let presence = PresencePort(receive: MachPortToken(name: 0x2001), send: MachSendRight(name: 0x2001))
+
+    @Test("connecting announces a fresh presence send right to the adopted port")
+    func announced() async throws {
+        let fixture = TransportFixture()
+
+        try await fixture.connect()
+
+        #expect(fixture.bootstrap.presencePorts.values == [presence])
+        #expect(fixture.messaging.announced.values.map(\.right) == [presence.send])
+        #expect(fixture.messaging.announced.values.map(\.port) == [service])
+        #expect(fixture.bootstrap.destroyed.count == 0)
+    }
+
+    @Test("an explicit disconnect destroys the presence receive right once")
+    func disconnectDestroys() async throws {
+        let fixture = TransportFixture()
+        try await fixture.connect()
+
+        fixture.subject.disconnect()
+        fixture.executor.drain()
+        fixture.subject.disconnect()
+        fixture.executor.drain()
+
+        #expect(fixture.bootstrap.destroyed.values == [presence.receive])
+    }
+
+    @Test("a lost destination destroys the presence receive right once")
+    func destinationLostDestroys() async throws {
+        let fixture = TransportFixture()
+        try await fixture.connect()
+        fixture.messaging.failSend(with: .destinationLost)
+
+        _ = fixture.subject.send(try fixture.makeSurface(), descriptor: .hd720, presentationTime: .zero)
+
+        #expect(fixture.bootstrap.destroyed.values == [presence.receive])
+    }
+
+    @Test("a replacing connect destroys the earlier presence and announces a new one")
+    func reconnectReplaces() async throws {
+        let fixture = TransportFixture()
+
+        try await fixture.connect()
+        try await fixture.connect()
+
+        let second = PresencePort(receive: MachPortToken(name: 0x2003), send: MachSendRight(name: 0x2003))
+        #expect(fixture.bootstrap.destroyed.values == [presence.receive])
+        #expect(fixture.bootstrap.presencePorts.values.last == second)
+        #expect(fixture.messaging.announced.count == 2)
+    }
+
+    @Test("a presence port that cannot be made is logged and the link still comes up")
+    func makeFails() async throws {
+        let fixture = TransportFixture()
+        fixture.bootstrap.scriptMakePresencePort([.failure(.sendFailed(code: 5))])
+
+        try await fixture.connect()
+
+        #expect(fixture.subject.isConnected)
+        #expect(fixture.messaging.announced.count == 0)
+        #expect(fixture.log.contains("no presence port"))
+        fixture.subject.disconnect()
+        fixture.executor.drain()
+        #expect(fixture.bootstrap.destroyed.count == 0)
+    }
+
+    @Test("an announce that fails destroys the receive right, logs, and keeps the link")
+    func announceFails() async throws {
+        let fixture = TransportFixture()
+        fixture.messaging.failAnnounce(with: .sendFailed(code: 9))
+
+        try await fixture.connect()
+
+        #expect(fixture.subject.isConnected)
+        #expect(fixture.bootstrap.destroyed.values == [presence.receive])
+        #expect(fixture.log.contains("could not be announced"))
+        fixture.subject.disconnect()
+        fixture.executor.drain()
+        #expect(fixture.bootstrap.destroyed.values == [presence.receive])
+    }
+
+    @Test("a connect overtaken before it is adopted announces nothing and gives the found port back")
+    func overtaken() async throws {
+        let fixture = TransportFixture()
+        let connecting = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await fixture.subject.connect()
+        }
+
+        _ = await connecting.result
+        fixture.executor.drain()
+
+        #expect(fixture.bootstrap.deallocated.values == [service])
+        #expect(fixture.bootstrap.presencePorts.count == 0)
+        #expect(fixture.messaging.announced.count == 0)
+        #expect(fixture.bootstrap.destroyed.count == 0)
+    }
+}
