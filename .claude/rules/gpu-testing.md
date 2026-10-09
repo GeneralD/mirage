@@ -33,8 +33,12 @@ Only four things touch a real `MTLDevice`:
    compute pass between two IOSurfaces so they can be read back (letterbox,
    pillarbox, and an exact same-size copy that catches a flip, a swapped axis
    or a half-texel shift); `MetalKitPreviewGateway.prepare` readying an
-   off-screen `MTKView` and `draw` completing once into its layer's drawable
-   (the drawable's pixels belong to the compositor and are not read back);
+   off-screen `MTKView` and `draw` completing once into its layer's drawable.
+   The view is created at a non-zero size and every draw asserts the layer's
+   drawable size afterwards: a zero-sized view gets no drawable, and its empty
+   command buffer completes just as cleanly, so the size is the proof that the
+   pass was encoded. The drawable's pixels belong to the compositor and are not
+   read back; the frame surface is, to prove the draw only read it;
    a paused view resized between two draws getting a drawable of its new size;
    `PreviewDataSource` over the live gateways end to end; foreign handles
    refused.

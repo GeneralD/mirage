@@ -16,10 +16,14 @@ import Views
 /// an ordinary compute pass between two IOSurfaces, so they can be read back),
 /// `MetalKitPreviewGateway` readying an `MTKView` and drawing into its layer's
 /// drawable, and `PreviewDataSource` driving the live gateways end to end.
-/// The view is never put in a window, so the test sets its drawable size; the
-/// draw's pixels are the compositor's and are not read back — the kernel suite
-/// pins them instead. Everything that decides (latest-wins, exactly-once) is
-/// tested against the fakes in `PreviewDataSourceTests`.
+/// The view is never put in a window, so it is created at its drawable's size
+/// (an off-screen view's scale is 1). Every draw then asserts the layer's
+/// drawable size: only a drawable actually taken sets it — a zero-sized view
+/// gets none, and its command buffer commits empty and still completes cleanly.
+/// The drawable's pixels are the compositor's and are not read back; the kernel
+/// tests pin them, and the frame surface is read back to prove the draw left it
+/// alone. Everything that decides (latest-wins, exactly-once) is tested against
+/// the fakes in `PreviewDataSourceTests`.
 @Suite("Preview smoke", .serialized, .enabled(if: MetalDeviceProbe.isAvailable), .timeLimit(.minutes(1)))
 struct PreviewSmokeTests {
     private let metal = MetalGatewayImpl()
@@ -103,13 +107,14 @@ struct PreviewSmokeTests {
         #expect(throws: GPUError.foreignHandle) { try preview.prepare(PreviewViewTarget(MTKView(frame: .zero)), on: FakeGPUContextHandle()) }
     }
 
-    /// Draws once and waits for the completion.
+    /// Draws once and waits for its one completion.
     private func drawOnce(
         _ texture: any TextureHandle, with kernel: any LibraryHandle, into layer: any PreviewLayerHandle, on context: any GPUContextHandle
     ) async throws -> GPUCompletion {
         let completions = Collector<GPUCompletion>()
         try preview.draw(texture, with: kernel, into: layer, on: context) { completions.append($0) }
         await completions.waitForCount(1)
+        #expect(completions.count == 1)
         return try #require(completions.values.first)
     }
 
@@ -117,19 +122,21 @@ struct PreviewSmokeTests {
     @MainActor
     func drawCompletesOnce() async throws {
         let context = try metal.makeContext()
-        let view = MTKView(frame: .zero)
+        let view = MTKView(frame: CGRect(x: 0, y: 0, width: 32, height: 18))
         let layer = try preview.prepare(PreviewViewTarget(view), on: context)
-        view.drawableSize = CGSize(width: 32, height: 18)
+        let metalLayer = try #require(layer.backing as? CAMetalLayer)
         let kernel = try metal.compile(source: PreviewKernel.source, options: PreviewKernel.options, on: context).get()
         let surface = try surfaces.create(.bgra(width: 64, height: 36))
         try surfaces.fill(surface, with: 0xFF)
         let texture = try metal.bind(surface, on: context)
 
-        let completions = Collector<GPUCompletion>()
-        try preview.draw(texture, with: kernel, into: layer, on: context) { completions.append($0) }
-        await completions.waitForCount(1)
+        let completion = try await drawOnce(texture, with: kernel, into: layer, on: context)
 
-        #expect(completions.values.map(\.error) == [nil])
+        #expect(completion.error == nil)
+        // Only a drawable actually taken sizes the layer; without one the pass is never encoded.
+        #expect(metalLayer.drawableSize == CGSize(width: 32, height: 18))
+        // The frame is bound read-only at index 0: a swapped binding would write into it.
+        #expect(try Self.rows(of: surface).allSatisfy { $0.allSatisfy { $0 == [0xFF, 0xFF, 0xFF, 0xFF] } })
         #expect(throws: GPUError.foreignHandle) { try preview.draw(texture, with: kernel, into: layer, on: FakeGPUContextHandle()) { _ in } }
         #expect(throws: GPUError.foreignHandle) {
             try preview.draw(texture, with: FakeLibraryHandle(source: "x"), into: layer, on: context) { _ in }
@@ -176,9 +183,9 @@ struct PreviewSmokeTests {
         } operation: {
             PreviewDataSourceImpl()
         }
-        let view = MTKView(frame: .zero)
+        let view = MTKView(frame: CGRect(x: 0, y: 0, width: 64, height: 36))
+        let metalLayer = try #require(view.layer as? CAMetalLayer)
         try subject.attach(PreviewViewTarget(view))
-        view.drawableSize = CGSize(width: 64, height: 36)
         executor.drain()
 
         let descriptor = SurfaceDescriptor.bgra(width: 128, height: 72)
@@ -189,6 +196,7 @@ struct PreviewSmokeTests {
         #expect(await tickUntil(tick: { executor.drain() }, until: { completed.count == 1 }))
         executor.drain()
         #expect(completed.count == 1)
+        #expect(metalLayer.drawableSize == CGSize(width: 64, height: 36))
         #expect(log.entries.values.isEmpty, "\(log.entries.values.map(\.message))")
     }
 
