@@ -100,6 +100,11 @@ private struct StopOnCheckIn: MachBootstrapGateway {
     func deallocate(_ port: MachPortToken) { inner.deallocate(port) }
     func destroyReceiveRight(_ port: MachPortToken) { inner.destroyReceiveRight(port) }
 
+    func makePresencePort() throws -> PresencePort { try inner.makePresencePort() }
+    func requestDeadNameNotification(of right: MachSendRight, to notifyPort: MachPortToken) throws {
+        try inner.requestDeadNameNotification(of: right, to: notifyPort)
+    }
+
     func checkIn(serviceName: String) throws -> MachPortToken {
         onCheckIn()
         return try inner.checkIn(serviceName: serviceName)

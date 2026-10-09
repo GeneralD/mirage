@@ -45,7 +45,7 @@ import Testing
         stats.noteReceived(at: HostTimestamp(nanoseconds: 40_000_000))
         stats.note(.sent)
         stats.note(.dropped(.noClient))
-        #expect(stats.summary == "frames=1 received=2 dropped=1 maxGapMs=40")
+        #expect(stats.summary == "frames=1 received=2 dropped=1 maxGapMs=40 slate=0")
     }
 }
 

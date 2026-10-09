@@ -18,7 +18,7 @@ struct MachLoopbackTests {
         let sent = fixture.message(at: 123_456)
 
         try loopback.messaging.send(sent, to: loopback.send)
-        let received = try await loopback.messaging.receive(on: loopback.receive)
+        let received = try await loopback.messaging.receiveFrame(on: loopback.receive)
 
         let resolved = try #require(IOSurfaceLookupFromMachPort(received.surface.name))
         #expect(IOSurfaceGetID(resolved) == fixture.identifier)
@@ -36,7 +36,7 @@ struct MachLoopbackTests {
 
         for stamp in stamps { try loopback.messaging.send(fixture.message(at: stamp), to: loopback.send) }
         var arrived: [FrameMessage] = []
-        for _ in stamps { arrived.append(try await loopback.messaging.receive(on: loopback.receive)) }
+        for _ in stamps { arrived.append(try await loopback.messaging.receiveFrame(on: loopback.receive)) }
 
         #expect(arrived.map(\.presentationTime.nanoseconds) == stamps)
         for message in arrived { loopback.bootstrap.deallocate(MachPortToken(name: message.surface.name)) }
@@ -63,7 +63,7 @@ struct MachLoopbackTests {
         for _ in 0..<Int(MACH_PORT_QLIMIT_DEFAULT) { try loopback.messaging.send(fixture.message(), to: loopback.send) }
         let overflow = fixture.message()
 
-        #expect(throws: MachError.sendFailed(code: Int(MACH_SEND_TIMED_OUT))) { try loopback.messaging.send(overflow, to: loopback.send) }
+        #expect(throws: MachError.queueFull) { try loopback.messaging.send(overflow, to: loopback.send) }
 
         #expect(fixture.heldRights == 0)
     }
@@ -198,7 +198,7 @@ struct MachLoopbackTests {
         }
 
         try messaging.send(try TestSurface().message(at: 5), to: send)
-        let received = try await messaging.receive(on: receive)
+        let received = try await messaging.receiveFrame(on: receive)
 
         #expect(received.presentationTime == HostTimestamp(nanoseconds: 5))
         bootstrap.deallocate(MachPortToken(name: received.surface.name))
