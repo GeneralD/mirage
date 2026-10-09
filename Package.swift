@@ -168,6 +168,9 @@ let package = Package(
             ]
         ),
 
+        // ── View (declarative, coverage-ignored, no test target; host only) ──
+        .target(name: "Views", dependencies: dependencies),
+
         // ── Entry ──
         .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
