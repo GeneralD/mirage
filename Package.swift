@@ -144,6 +144,9 @@ let package = Package(
         // ── Interactor ──
         .target(name: "CameraInteractor", dependencies: dependencies),
         .testTarget(name: "CameraInteractorTests", dependencies: ["CameraInteractor"] + testDependencies),
+        // Host only: the lite dev harness's launch sequence (#21).
+        .target(name: "HarnessInteractor", dependencies: dependencies),
+        .testTarget(name: "HarnessInteractorTests", dependencies: ["HarnessInteractor"] + testDependencies),
 
         // ── DependencyInjection (liveValue registrations only) ──
         .target(
@@ -157,7 +160,7 @@ let package = Package(
             name: "HostDependencyInjection",
             dependencies: dependencies + [
                 "CommonDependencyInjection",
-                "CameraInteractor",
+                "CameraInteractor", "HarnessInteractor",
                 "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase", "SolidFrameUseCase",
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
