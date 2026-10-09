@@ -37,12 +37,17 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   every source to a fresh `FakeLibraryHandle` unless `failCompile(of:with:)`
   scripted diagnostics, and **reports an issue when called on the main
   thread**. `FakeTextureCacheGateway` counts: `isBalanced` is
-  `bindCount == unbindCount` with no double unbind; a handle given back twice
-  throws `GPUError.foreignHandle` and is counted in `doubleUnbindCount`.
+  `bindCount == unbindCount` with no double unbind. Foreign handles are refused
+  with the live errors in the live order; a double unbind is **fake-only** — the
+  live gateway is stateless and cannot see it — so the fake throws
+  `GPUError.foreignHandle` and counts it in `doubleUnbindCount`, and the
+  DataSource's exactly-once unbind is proven against the fake.
 - `FakeEffectRuntimeRepository` — `prepare` / `apply` suspend until
   `completePrepare(_:with:)` / `completeApply(_:with:)`, each exactly once,
   in any order (a slow compile overtaken, a late GPU completion); a cancelled
-  caller resumes with `.failure(.internalError)`. `InMemoryPreviewSink` —
+  caller resumes with `.failure(.internalError)`, and one cancelled before it
+  suspended is never recorded. Start concurrent callers one at a time
+  (`waitForCount(n)` between them) when the test depends on request order. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.

@@ -93,8 +93,8 @@ Shared conventions:
   holds a DataSource. Thread pass-through contracts through adjacent layers.
 - Every host port has a live value from the day its contract exists:
   `EffectRuntimeRepository` and `PreviewSink` are registered as
-  `PassthroughEffectRuntimeRepository` (`apply` → `.failure(.internalError)`,
-  the pipeline passes the frame through) and `DiscardingPreviewSink`
+  `PassthroughEffectRuntimeRepository` (`prepare` and `apply` →
+  `.failure(.internalError)`, the pipeline passes the frame through) and `DiscardingPreviewSink`
   (`present` completes at once) until the real ones replace them in the same
   modules. A PR merged out of order never leaves the pipeline without a runtime.
 - No UseCase depends on another UseCase. Shared pure policy (health
