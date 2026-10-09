@@ -21,9 +21,11 @@ Only three things touch a real `MTLDevice`:
    prelude exists in `ShaderCompilationDataSource`), `bind` of a real IOSurface
    (`.shared`, `bgra8Unorm`), one `encodeAndCommit`, the pixels read back
    through the IOSurface and compared with a Swift reference under a single
-   fixed tolerance of one 8-bit step. Also: a syntax error and a missing entry
-   point come back as `ShaderDiagnostics`, two passes share one command
-   buffer, a surface rebinds after `unbind`, and foreign handles are refused.
+   fixed tolerance of one 8-bit step, plus exact checks at the corners so a
+   dropped `- 1`, a swapped axis or an unread uniform cannot hide inside the
+   tolerance. Also: a syntax error and a missing entry point come back as
+   `ShaderDiagnostics`, two commits on one context each write their own
+   surface, a surface rebinds after `unbind`, and foreign handles are refused.
    `ShaderCompileOptions.precise` (→ `fastMathEnabled = false`) is the default.
 3. Hash-noise parity — GPU vs Swift reference, same tolerance.
 

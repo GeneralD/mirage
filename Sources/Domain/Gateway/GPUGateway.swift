@@ -19,19 +19,20 @@ public struct ComputePass: Sendable {
     }
 }
 
-/// Thin pass-through to the GPU device and its command queue. One command
-/// buffer per call (one per effect, so faults are attributable); the in-flight
-/// cap, drop order and the meaning of a completion are `GPURenderDataSource`'s.
+/// Thin pass-through to the GPU device and its command queue. One pass per
+/// call, one command buffer per pass (one per effect, so faults are
+/// attributable); sequencing several passes, the in-flight cap, drop order and
+/// the meaning of a completion are `GPURenderDataSource`'s.
 public protocol GPUGateway: Sendable {
     /// The system default device and one command queue. `GPUError.noDevice`
     /// when the machine has no GPU.
     func makeContext() throws -> any GPUContextHandle
-    /// Encodes `passes` in order into a fresh command buffer, commits it and
-    /// reports the raw completion exactly once, on the GPU's completion thread.
-    /// Throws only for encoding failures (foreign handle, no encoder); a
-    /// command buffer that fails while running reports through `completion`.
+    /// Encodes `pass` into a fresh command buffer, commits it and reports the
+    /// raw completion exactly once, on the GPU's completion thread. Throws only
+    /// for encoding failures (foreign handle, no encoder); a command buffer
+    /// that fails while running reports through `completion`.
     func encodeAndCommit(
-        _ passes: [ComputePass], on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
+        _ pass: ComputePass, on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
     ) throws
 }
 
@@ -53,7 +54,7 @@ private struct UnimplementedGPUGateway: GPUGateway {
     }
 
     func encodeAndCommit(
-        _ passes: [ComputePass], on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
+        _ pass: ComputePass, on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
     ) throws {
         reportIssue("GPUGateway.encodeAndCommit not implemented")
         throw GPUError.commandBufferUnavailable

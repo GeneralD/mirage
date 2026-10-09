@@ -83,10 +83,10 @@ struct MetalGatewaySmokeTests {
     }
 
     /// The completion handler is the only clock: no sleeps, no polling.
-    private func run(_ passes: [ComputePass], on context: any GPUContextHandle) async throws -> GPUCompletion {
+    private func run(_ pass: ComputePass, on context: any GPUContextHandle) async throws -> GPUCompletion {
         try await withCheckedThrowingContinuation { continuation in
             do {
-                try gateway.encodeAndCommit(passes, on: context) { continuation.resume(returning: $0) }
+                try gateway.encodeAndCommit(pass, on: context) { continuation.resume(returning: $0) }
             } catch {
                 continuation.resume(throwing: error)
             }
@@ -100,7 +100,7 @@ struct MetalGatewaySmokeTests {
         let texture = try gateway.bind(surface, on: context)
 
         let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
-        let completion = try await run([ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), grid: grid)], on: context)
+        let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), grid: grid), on: context)
         #expect(completion.error == nil)
         #expect(completion.gpuEnd >= completion.gpuStart)
 
@@ -120,7 +120,7 @@ struct MetalGatewaySmokeTests {
         let uniforms = Self.uniforms(time: 3.25, seed: 0x1_0040)
 
         let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
-        let completion = try await run([ComputePass(kernel: kernel, textures: [texture], uniforms: uniforms, grid: grid)], on: context)
+        let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: uniforms, grid: grid), on: context)
         #expect(completion.error == nil)
 
         let image = try Self.pixels(of: surface)
@@ -131,12 +131,16 @@ struct MetalGatewaySmokeTests {
                 }
             }.max() ?? 0
         #expect(worst <= Self.tolerance, "worst channel difference \(worst)")
+        // The corners are exact: the tolerance alone would hide a dropped `- 1`, a swapped axis or an unread uniform.
         #expect(Self.pixel(image, x: 0, y: 0) == [64, 0, 0, 64], "fract(3.25) and seed % 256 = 64 land in B and A")
+        #expect(Self.pixel(image, x: 255, y: 0) == [64, 0, 255, 64], "x saturates R alone")
+        #expect(Self.pixel(image, x: 0, y: 255) == [64, 255, 0, 64], "y saturates G alone")
+        #expect(Self.pixel(image, x: 255, y: 255) == [64, 255, 255, 64])
         try gateway.unbind(texture)
     }
 
-    @Test("two passes share one command buffer and each writes its own surface")
-    func twoPassesOneCommandBuffer() async throws {
+    @Test("two commits on one context each write their own surface")
+    func twoCommitsOnOneContext() async throws {
         let (kernel, context) = try compile(Self.gradientSource)
         let first = try surfaces.create(Self.descriptor)
         let second = try surfaces.create(Self.descriptor)
@@ -145,8 +149,8 @@ struct MetalGatewaySmokeTests {
             ComputePass(kernel: kernel, textures: [try gateway.bind(surface, on: context)], uniforms: Self.uniforms(seed: seed), grid: grid)
         }
 
-        let completion = try await run(passes, on: context)
-        #expect(completion.error == nil)
+        let completions = try await passes.asyncMap { try await run($0, on: context) }
+        #expect(completions.allSatisfy { $0.error == nil })
         #expect(Self.pixel(try Self.pixels(of: first), x: 0, y: 0)[3] == 10)
         #expect(Self.pixel(try Self.pixels(of: second), x: 0, y: 0)[3] == 200)
     }
@@ -171,7 +175,7 @@ struct MetalGatewaySmokeTests {
 
     @Test("a surface can be bound again after unbind, and foreign handles are refused")
     func rebindAndProvenance() throws {
-        let context = try gateway.makeContext()
+        let (kernel, context) = try compile(Self.fillSource)
         let surface = try surfaces.create(Self.descriptor)
         let first = try gateway.bind(surface, on: context)
         try gateway.unbind(first)
@@ -185,9 +189,20 @@ struct MetalGatewaySmokeTests {
         #expect(throws: GPUError.foreignHandle) {
             try gateway.unbind(ForeignTextureHandle())
         }
+        let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
+        let pass = ComputePass(kernel: kernel, textures: [], uniforms: Self.uniforms(), grid: grid)
         #expect(throws: GPUError.foreignHandle) {
-            try gateway.encodeAndCommit([], on: ForeignContextHandle()) { _ in }
+            try gateway.encodeAndCommit(pass, on: ForeignContextHandle()) { _ in }
         }
+    }
+}
+
+extension Array {
+    /// `map` with an `await` in the body; the accumulator stays private to the helper.
+    fileprivate func asyncMap<T>(_ transform: (Element) async throws -> T) async throws -> [T] {
+        var result: [T] = []
+        for element in self { result.append(try await transform(element)) }
+        return result
     }
 }
 
