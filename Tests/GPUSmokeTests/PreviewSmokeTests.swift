@@ -182,7 +182,7 @@ struct PreviewSmokeTests {
         try metal.unbind(texture)
     }
 
-    @Test("PreviewDataSource over the live gateways draws a pooled surface and completes the frame once")
+    @Test("PreviewDataSource over the live gateways draws a pooled surface, completes the frame once, and its lease is given back")
     @MainActor
     func liveStack() async throws {
         let executor = ManualFrameExecutor()
@@ -206,12 +206,14 @@ struct PreviewSmokeTests {
 
         let descriptor = SurfaceDescriptor.bgra(width: 128, height: 72)
         let token = try #require(pool.adopt(try surfaces.create(descriptor), descriptor: descriptor))
-        let completed = Collector<Void>()
-        subject.present(FrameRef(token: token, descriptor: descriptor, presentationTime: .zero)) { completed.append(()) }
+        // As the pipeline does: the caller gives the lease back once the frame completes.
+        let released = Collector<Bool>()
+        subject.present(FrameRef(token: token, descriptor: descriptor, presentationTime: .zero)) { released.append(pool.release(token)) }
 
-        #expect(await tickUntil(tick: { executor.drain() }, until: { completed.count == 1 }))
+        #expect(await tickUntil(tick: { executor.drain() }, until: { released.count == 1 }))
         executor.drain()
-        #expect(completed.count == 1)
+        #expect(released.values == [true])
+        #expect(pool.liveCount == 0)
         #expect(metalLayer.drawableSize == CGSize(width: 64, height: 36))
         #expect(log.entries.values.isEmpty, "\(log.entries.values.map(\.message))")
     }

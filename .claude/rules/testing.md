@@ -53,7 +53,10 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `applyRequests.waitForCount(n)` instead of polling.
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
   answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
-  `complete(_:with:)`, exactly once, in any order. `failPrepare(with:)` /
+  `complete(_:with:)`, exactly once, in any order. Ids restart at 1 per fake,
+  so a `Draw` carries its issuer's `ObjectIdentifier`: completing a draw
+  another `FakePreviewGateway` issued is a reported issue that returns `false`
+  and leaves this fake's pending draws alone. `failPrepare(with:)` /
   `failDraw(with:)` make **every** later `prepare` / `draw` throw (`draw` before
   commit) until `fail…(with: nil)` clears it, like the other fakes' `fail…`
   hooks. Foreign handles are refused in the live order (`prepare`: target,
