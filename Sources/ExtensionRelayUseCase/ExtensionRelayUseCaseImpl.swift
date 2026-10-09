@@ -137,14 +137,15 @@ extension ExtensionRelayUseCaseImpl {
         frameScheduler.start(frameRate: request.frameRate) { [self] in slateTick() }
     }
 
-    /// Runs on the executor.
+    /// Runs on the executor. A sent slate frame counts as a slate frame, not a sent
+    /// one; a dropped one is a drop like any other, by reason.
     private func slateTick() {
         guard let surface = slateSurface, let time = schedule.nextSlateTime() else { return }
         let outcome = streamOutputRepository.send(FrameRef(token: surface.token, descriptor: surface.descriptor, presentationTime: time))
         update {
             switch outcome {
             case .sent: $0.slateFrames += 1
-            case .dropped: $0.framesDropped += 1
+            case .dropped: $0.note(outcome)
             }
         }
     }

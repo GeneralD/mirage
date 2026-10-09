@@ -52,6 +52,8 @@ extension PipelineStats {
         lastPresentationTime = presentationTime
     }
 
+    /// Records one send outcome. Every drop goes through here, so `dropReasons`
+    /// always adds up to `framesDropped`.
     public mutating func note(_ outcome: SendOutcome) {
         switch outcome {
         case .sent: framesSent += 1
