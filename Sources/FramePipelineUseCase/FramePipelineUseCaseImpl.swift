@@ -27,6 +27,11 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     private let snapshot = CurrentValueSubject<PipelineStats, Never>(.empty)
     private var tickCount = 0
     private var lastDropReason: FrameDropReason?
+    // Executor-confined, like the phase: the reconnect task, and the epoch that tells
+    // a finished task apart from the one that replaced it.
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectEpoch = 0
+    let phaseSubject = CurrentValueSubject<PipelinePhase, Never>(.idle)
 
     public init() {}
 
@@ -34,7 +39,11 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     /// `ManualFrameExecutor.drain()`.
     public var stats: PipelineStats { snapshot.value }
 
+    /// The link phase as of the last executor step.
+    var phase: PipelinePhase { phaseSubject.value }
+
     public func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
+        frameExecutor.run { [self] in phaseSubject.value = .connecting }
         virtualCameraSink.observe { [weak self] event in self?.observed(event) }
         try cameraRepository.start(
             descriptor: descriptor,
@@ -52,6 +61,8 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
         cameraRepository.stop()
         virtualCameraSink.disconnect()
         frameExecutor.run { [self] in
+            cancelReconnect()
+            phaseSubject.value = .stopped
             releaseLatest()
             surfaceRepository.releaseAll()
         }
@@ -109,6 +120,9 @@ extension FramePipelineUseCaseImpl {
                 lastDropReason = nil
                 developerLog.record(.transport, "connected to the extension")
             case .disconnected(.explicit): developerLog.record(.transport, "disconnected")
+            case .disconnected(.destinationLost):
+                errorLog.record(.transport, "disconnected: destinationLost")
+                startReconnect()
             case .disconnected(let reason): errorLog.record(.transport, "disconnected: \(reason)")
             case .frameDropped(let reason): noteDrop(reason)
             }
@@ -140,10 +154,65 @@ extension FramePipelineUseCaseImpl {
     private func connect() async throws {
         do {
             try await virtualCameraSink.connect()
+            frameExecutor.run { [self] in settle(from: .connecting, to: .connected) }
         } catch let cancellation as CancellationError {
             throw cancellation
         } catch {
             errorLog.record(.transport, "virtual camera sink did not connect: \(error)")
+            frameExecutor.run { [self] in settle(from: .connecting, to: .disconnected) }
         }
+    }
+
+    /// Moves the phase only when it is still where the caller left it: a `stop`
+    /// that ran in between is not undone by a late result.
+    private func settle(from expected: PipelinePhase, to next: PipelinePhase) {
+        guard phaseSubject.value == expected else { return }
+        phaseSubject.value = next
+    }
+}
+
+// MARK: - Reconnect (executor-confined)
+
+extension FramePipelineUseCaseImpl {
+    /// The extension went away while the pipeline was up: look the service up again
+    /// (the sink's retry policy paces it on the injected clock) without blocking the
+    /// executor. One task at a time; an explicit disconnect or a failed first
+    /// look-up is not a loss and brings nothing back.
+    private func startReconnect() {
+        guard reconnectTask == nil, phaseSubject.value == .connected || phaseSubject.value == .disconnected else { return }
+        phaseSubject.value = .reconnecting
+        reconnectEpoch += 1
+        let epoch = reconnectEpoch
+        let sink = virtualCameraSink
+        reconnectTask = Task { [weak self] in
+            let failure: (any Error)?
+            do {
+                try await sink.connect()
+                failure = nil
+            } catch {
+                failure = error
+            }
+            self?.frameExecutor.run { [weak self] in self?.reconnectFinished(epoch: epoch, failure: failure) }
+        }
+    }
+
+    private func reconnectFinished(epoch: Int, failure: (any Error)?) {
+        guard epoch == reconnectEpoch else { return }
+        reconnectTask = nil
+        switch failure {
+        case nil:
+            settle(from: .reconnecting, to: .connected)
+        case is CancellationError:
+            settle(from: .reconnecting, to: .disconnected)
+        case let error?:
+            errorLog.record(.transport, "reconnect failed: \(error)")
+            settle(from: .reconnecting, to: .disconnected)
+        }
+    }
+
+    private func cancelReconnect() {
+        reconnectEpoch += 1
+        reconnectTask?.cancel()
+        reconnectTask = nil
     }
 }
