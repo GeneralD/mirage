@@ -17,7 +17,9 @@ Three lanes, by what is being verified.
 and a stable bundle identifier (`com.generald.dev-harness`). With #24 it runs
 camera → effects → preview window with the virtual camera sink replaced by
 `InMemoryVirtualCameraSink`, for shader work, hot reload and parameter UI. It
-cannot show anything about the Camera Extension.
+cannot show anything about the Camera Extension. Build it with
+`make build-dev-harness`, never `swift build` alone, after editing the plist:
+SwiftPM does not see the plist as a link input, and the make target relinks.
 
 Today (#21, the lite harness) it has no camera frames and no effect: it asks
 for the camera once and keeps one solid frame in a preview window, and the

@@ -32,7 +32,7 @@ the corresponding kinds of changes.
 
 ```sh
 make build
-make build-dev-harness  # dev-harness in debug, as `swift run` builds it; not shipped (`make build` compiles it too, see docs/ARCHITECTURE.md)
+make build-dev-harness  # dev-harness in debug, as `swift run` builds it, always relinked so a plist edit lands; not shipped (`make build` compiles it too, see docs/ARCHITECTURE.md)
 make test
 make test-gpu
 make lint

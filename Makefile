@@ -11,7 +11,10 @@ build:
 # Not shipped. `make build` compiles it as well (SwiftPM ignores `--product` for
 # the automatic App / ExtensionApp products and builds every non-test target),
 # but in release, not in the configuration `swift run` uses.
+# SwiftPM does not track Tools/DevHarness/Info.plist (only a linker flag names
+# it), so an edit to the plist alone would not relink: the binary goes first.
 build-dev-harness:
+	rm -f "$$(swift build --show-bin-path)/dev-harness"
 	swift build --product dev-harness
 
 # The main run skips GPU suites; they need a Metal device and their own process.
