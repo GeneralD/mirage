@@ -48,7 +48,7 @@ struct HostAbsenceIntegrationTests {
         let rig = LoopbackRig()
         let relay = await rig.startExtension()
         try await rig.startHost()
-        rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 1))
         #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 }))
         // The extension's host-time reading is behind the last real frame: the base must not be.
@@ -82,8 +82,8 @@ struct HostAbsenceIntegrationTests {
         let rig = LoopbackRig(frameGap: .seconds(2))
         let relay = await rig.startExtension()
         try await rig.startHost()
-        rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
-        rig.captureAndFlush(FakeSurfaceHandle(id: 2), at: ns(1_000_000_000, plus: 1))
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 2), at: ns(1_000_000_000, plus: 1))
         #expect(await rig.pumpExtension(untilReceived: 2))
         rig.ext.hostTime.set(HostTimestamp(nanoseconds: 10_000_000_000))
 
@@ -105,7 +105,7 @@ struct HostAbsenceIntegrationTests {
         // It is re-timed just above the last slate PTS instead of dropped, and the shift stays for the run.
         let droppedBefore = rig.ext.relay.stats.framesDropped
         let captured = ns(10_000_000_000, plus: 1)
-        rig.captureAndFlush(FakeSurfaceHandle(id: 3), at: captured)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 3), at: captured)
         #expect(await rig.pumpExtension(untilReceived: 3))
         #expect(rig.ext.relay.stats.framesDropped == droppedBefore, "a laggy first frame is re-timed, not dropped")
         #expect(rig.ext.scheduler.isRunning == false, "the first real frame ends slate")
@@ -113,10 +113,10 @@ struct HostAbsenceIntegrationTests {
         let shift = lastSlate - captured + 1
         #expect(rig.streamedTimes.last == lastSlate + 1)
 
-        rig.captureAndFlush(FakeSurfaceHandle(id: 4), at: 11_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 4), at: 11_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 4))
         #expect(rig.streamedTimes.last == 11_000_000_000 + shift)
-        rig.captureAndFlush(FakeSurfaceHandle(id: 5), at: 12_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 5), at: 12_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 5))
 
         let times = rig.streamedTimes
@@ -136,7 +136,7 @@ struct HostAbsenceIntegrationTests {
         let rig = LoopbackRig()
         let relay = await rig.startExtension()
         try await rig.startHost()
-        rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 1))
         #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 }))
         let oldPresence = try #require(rig.kernel.presencePorts.values.first)
@@ -160,7 +160,7 @@ struct HostAbsenceIntegrationTests {
             rig.kernel.deallocated.values.filter { $0 == MachPortToken(name: oldPresence.send.name) }.count == 1,
             "the extension gives the old presence right back exactly once")
 
-        rig.captureAndFlush(FakeSurfaceHandle(id: 2), at: 5_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 2), at: 5_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 2))
         #expect(rig.streamedTimes.last == 5_000_000_000, "real frames resume")
         #expect(rig.ext.scheduler.isRunning == false)
@@ -181,13 +181,13 @@ struct HostAbsenceIntegrationTests {
         let rig = LoopbackRig()
         let first = await rig.startExtension()
         try await rig.startHost()
-        rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 1))
         #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 1 }))
 
         try await rig.stopExtension(first)
         // The next send learns the destination is gone.
-        rig.captureAndFlush(FakeSurfaceHandle(id: 2), at: 2_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 2), at: 2_000_000_000)
         #expect(rig.host.pipeline.phase == .reconnecting)
         #expect(rig.host.errors.contains("destinationLost"))
         // No extension is checked in: the look-ups fail on the retry policy's schedule.
@@ -209,7 +209,7 @@ struct HostAbsenceIntegrationTests {
         #expect(await tickUntil(tick: { rig.host.executor.drain() }, until: { rig.host.pipeline.phase == .connected }))
         #expect(rig.host.pipeline.phase == .connected)
 
-        rig.captureAndFlush(FakeSurfaceHandle(id: 3), at: 3_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 3), at: 3_000_000_000)
         // Stats reset at the start of every run: 1 means the new instance received a frame.
         #expect(await rig.pumpExtension(untilReceived: 1))
         #expect(await tickUntil(tick: { rig.ext.executor.drain() }, until: { rig.kernel.deadNameRequests.count >= 2 }))
@@ -241,12 +241,12 @@ struct HostAbsenceIntegrationTests {
         // The hello already holds one slot; fill the rest, then one more.
         let cap = rig.kernel.queueLimit
         for index in 1..<cap {
-            rig.captureAndFlush(FakeSurfaceHandle(id: UInt32(index)), at: UInt64(index) * 1_000)
+            await rig.captureAndFlush(FakeSurfaceHandle(id: UInt32(index)), at: UInt64(index) * 1_000)
         }
         #expect(rig.host.pipeline.stats.framesSent == cap - 1)
         #expect(rig.host.pipeline.stats.framesDropped == 0)
 
-        rig.captureAndFlush(FakeSurfaceHandle(id: 100), at: 100_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 100), at: 100_000)
         #expect(rig.host.pipeline.stats.framesDropped == 1)
         #expect(rig.host.developer.contains("queueFull"), "the drop is reported as queueFull")
         #expect(rig.host.pipeline.phase == .connected, "a full queue is not a lost destination")
@@ -262,7 +262,7 @@ struct HostAbsenceIntegrationTests {
         }
         #expect(framePTS == (1..<cap).map { UInt64($0) * 1_000 }, "the dropped frame never made it, the queued ones are in order")
 
-        rig.captureAndFlush(FakeSurfaceHandle(id: 101), at: 101_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 101), at: 101_000)
         let next = try await extensionMessaging.receive(on: service)
         guard case .frame(let frame) = next else {
             Issue.record("expected a frame, got \(next)")
@@ -298,7 +298,7 @@ struct HostAbsenceIntegrationTests {
 
         // The host launches: its first real frame ends the slate, still strictly after it.
         try await rig.startHost()
-        rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
+        await rig.captureAndFlush(FakeSurfaceHandle(id: 1), at: 1_000_000_000)
         #expect(await rig.pumpExtension(untilReceived: 1))
         #expect(rig.ext.scheduler.isRunning == false, "the first real frame ends slate")
         #expect(rig.ext.developer.contains("slate left"))
@@ -358,7 +358,7 @@ struct HostAbsenceIntegrationTests {
                 let handle = FakeSurfaceHandle(id: nextID)
                 nextID += 1
                 minted.append(handle)
-                rig.captureAndFlush(handle, at: pts)
+                await rig.captureAndFlush(handle, at: pts)
             case 3:
                 rig.ext.executor.drain()
             case 4:
@@ -428,8 +428,9 @@ struct HostAbsenceIntegrationTests {
 
 extension LoopbackRig {
     /// One camera frame into the host's slot, one scheduler tick to send it, then the host executor.
-    func captureAndFlush(_ handle: FakeSurfaceHandle, at nanoseconds: UInt64) {
-        capture(handle, at: nanoseconds)
+    @MainActor
+    func captureAndFlush(_ handle: FakeSurfaceHandle, at nanoseconds: UInt64) async {
+        await capture(handle, at: nanoseconds)
         host.executor.drain()
     }
 

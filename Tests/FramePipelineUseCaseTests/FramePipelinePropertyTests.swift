@@ -37,7 +37,7 @@ struct FramePipelinePropertyTests {
 
         for _ in 0..<60 {
             let step = Step.allCases[Int(generator.next() % UInt64(Step.allCases.count))]
-            apply(step, to: &model, on: rig)
+            await apply(step, to: &model, on: rig)
             // Release exactly once, at every step: the pool holds the one pending
             // frame (and nothing else) until the subject lets it go.
             #expect(rig.surfaces.liveCount == (model.pending ? 1 : 0))
@@ -58,7 +58,7 @@ struct FramePipelinePropertyTests {
         #expect(times == times.sorted())
     }
 
-    private func apply(_ step: Step, to model: inout Model, on rig: Rig) {
+    private func apply(_ step: Step, to model: inout Model, on rig: Rig) async {
         switch step {
         case .emit where model.running:
             model.nextTime += 33_000_000
@@ -67,6 +67,7 @@ struct FramePipelinePropertyTests {
             model.pending = true
         case .tick where model.running:
             rig.scheduler.tick()
+            if model.pending { await rig.completeEffect() }
             model.processed += model.pending ? 1 : 0
             model.pending = false
         case .drain:

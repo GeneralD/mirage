@@ -43,6 +43,7 @@ struct FramePipelineLifecycleTests {
         try await rig.subject.start(descriptor: .hd720, frameRate: .standard)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
+        await rig.completeEffect()
         #expect(rig.subject.stats.framesDropped == 1)
         #expect(rig.surfaces.liveCount == 0)
     }
@@ -158,6 +159,7 @@ struct FramePipelineLifecycleTests {
         #expect(rig.surfaces.liveCount == 0)
         let frame = try #require(rig.emit(at: 2_000))
         rig.scheduler.tick()
+        await rig.completeEffect()
         #expect(rig.sink.sent.values == [frame])
         #expect(rig.surfaces.liveCount == 0)
     }

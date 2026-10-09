@@ -15,14 +15,16 @@ import TestDoubles
 import TestSupport
 import VirtualCameraRepository
 
-/// The host process: camera → pipeline → transport, on its own executor,
-/// scheduler, pool and clock.
+/// The host process: camera → pipeline (effect stage on a fake runtime) →
+/// transport, on its own executor, scheduler, pool and clock.
 struct HostSide {
     let executor = ManualFrameExecutor()
     let scheduler = ManualFrameScheduler()
     let work = RecordingWorkRunner()
     let clock = TestClock<Duration>()
     let camera = FakeCameraSource()
+    /// The effect runtime: every `apply` waits until the test answers it (`LoopbackRig.capture`).
+    let effects = FakeEffectRuntimeRepository()
     let errors = RecordingLog()
     let developer = RecordingLog()
     let pool: SurfacePoolDataSourceImpl
@@ -34,6 +36,7 @@ struct HostSide {
         let work = work
         let clock = clock
         let camera = camera
+        let effects = effects
         let errors = errors
         let developer = developer
         pool = withDependencies {
@@ -55,6 +58,7 @@ struct HostSide {
             $0.continuousClock = clock
             $0.cameraSource = camera
             $0.cameraPermission = FakeCameraPermission(status: .authorized)
+            $0.effectRuntimeRepository = effects
             $0.errorLog = errors
             $0.developerLog = developer
         } operation: {
@@ -168,10 +172,28 @@ extension LoopbackRig {
         host.executor.drain()
     }
 
-    /// One camera frame into the host's slot, then one scheduler tick to send it.
-    func capture(_ handle: FakeSurfaceHandle, at nanoseconds: UInt64) {
+    /// One camera frame into the host's slot, then one scheduler tick to send it. The
+    /// tick hands the frame to the effect stage; the pass is answered with `effect`
+    /// (by default the `.internalError` of the live pass-through runtime, so the
+    /// camera's own surface goes on) and its result is drained, so the frame has
+    /// reached the transport when this returns.
+    @MainActor
+    func capture(
+        _ handle: FakeSurfaceHandle,
+        at nanoseconds: UInt64,
+        effect: Result<Void, EffectFailure> = .failure(.internalError)
+    ) async {
         host.camera.emit(handle, at: HostTimestamp(nanoseconds: nanoseconds))
+        // Only an effect pass starts work inside a tick (a reconnect starts on the executor),
+        // so a new work item means this tick started one, and its number is the item's.
+        let item = host.work.started.count
+        let requests = host.effects.applyRequests.count
         host.scheduler.tick()
+        guard host.work.started.count > item else { return }
+        await host.effects.applyRequests.waitForCount(requests + 1)
+        host.effects.completeApply(host.effects.applyRequests.values[requests], with: effect)
+        await host.work.finished.waitFor { $0 == item }
+        host.executor.drain()
     }
 
     /// Pumps the extension until its relay has counted `count` received frames.

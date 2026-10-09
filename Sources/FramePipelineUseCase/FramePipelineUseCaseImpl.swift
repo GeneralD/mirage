@@ -2,18 +2,27 @@ import Combine
 import Dependencies
 import Domain
 
-/// The host frame path: camera → latest-frame slot → one pass per scheduler
-/// tick → virtual camera sink.
+/// The host frame path: camera → latest-frame slot → one effect pass per
+/// scheduler tick → virtual camera sink.
 ///
 /// Capture runs at the camera's pace and the sink at the scheduler's, so the
 /// two are decoupled by a one-element slot where the newest frame wins: a frame
-/// that was never sent is released the moment a newer one arrives, and nothing
-/// is ever queued. Every frame's lease is released right after the sink has
-/// seen it, sent or not, because the extension holds its own reference.
+/// that was never taken is released the moment a newer one arrives, and nothing
+/// is ever queued. A tick hands the frame it takes to the effect runtime off the
+/// executor, at most one pass at a time; a tick that finds a pass still running
+/// drops its frame as `.inFlightCapReached`, so every frame a tick takes is
+/// either sent or counted as a drop. The pass's answer comes back on the
+/// executor: on success the rendered output goes to the sink, on any failure
+/// the input goes instead, unchanged — judged frame by frame, with no memory of
+/// earlier failures. Every lease ends exactly once: the input's when the
+/// runtime is done with it (or after the sink has seen it, on a failure), the
+/// output's after the sink has seen it, sent or not, because the extension
+/// holds its own reference.
 public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Sendable {
     @Dependency(\.cameraRepository) private var cameraRepository
     @Dependency(\.virtualCameraSink) private var virtualCameraSink
     @Dependency(\.surfaceRepository) private var surfaceRepository
+    @Dependency(\.effectRuntimeRepository) private var effectRuntimeRepository
     @Dependency(\.frameExecutor) private var frameExecutor
     @Dependency(\.frameScheduler) private var frameScheduler
     @Dependency(\.workRunner) private var workRunner
@@ -39,6 +48,13 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     private var lossPending = false
     // Losses since a frame last reached the extension; paces the next reconnect.
     private var lossStreak = 0
+    // Executor-confined, the effect stage: the pass the runtime is working on (the
+    // in-flight cap is one), the count that numbers every pass ever started (so a
+    // completion of an abandoned pass never matches the current one), and the index
+    // the next pass of this run hands the effect.
+    private var inFlight: EffectPass?
+    private var passesStarted = 0
+    private var frameIndex: UInt32 = 0
     let phaseSubject = CurrentValueSubject<PipelinePhase, Never>(.idle)
 
     public init() {}
@@ -52,9 +68,11 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
 
     public func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
         frameExecutor.run { [self] in
-            // A fresh run: nothing of a previous run's loss pacing carries over.
+            // A fresh run: nothing of a previous run's loss pacing carries over, and
+            // the effect counts frames from zero again.
             lossStreak = 0
             lastDropReason = nil
+            frameIndex = 0
             phaseSubject.value = .connecting
         }
         virtualCameraSink.observe { [weak self] event in self?.observed(event) }
@@ -83,6 +101,7 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
         frameExecutor.run { [self] in
             phaseSubject.value = .stopped
             releaseLatest()
+            abandonEffect()
             surfaceRepository.releaseAll()
         }
     }
@@ -103,14 +122,31 @@ extension FramePipelineUseCaseImpl {
         flushLatest()
         guard tickCount.isMultiple(of: interval) else { return }
         developerLog.record(.pipeline, snapshot.value.summary)
+        developerLog.record(.effect, snapshot.value.effectSummary)
     }
 
+    /// Takes the latest frame into the effect stage. A pass still running means the
+    /// in-flight cap is reached: the frame drops here rather than waiting behind
+    /// the GPU, and the next tick takes whatever is newest by then.
     private func flushLatest() {
         guard let frame = takeLatest() else { return }
+        guard inFlight == nil else { return drop(frame, because: .inFlightCapReached) }
+        startEffect(on: frame)
+    }
+
+    /// Hands one frame to the sink and ends its lease, sent or not.
+    private func deliver(_ frame: FrameRef) {
         let outcome = virtualCameraSink.send(frame)
         update { $0.note(outcome) }
         if outcome.wasSent { lossStreak = 0 }
         surfaceRepository.release(frame.token)
+    }
+
+    /// A frame the pipeline itself gives up on: its lease ends and the drop is counted.
+    private func drop(_ frame: FrameRef, because reason: FrameDropReason) {
+        surfaceRepository.release(frame.token)
+        update { $0.note(.dropped(reason)) }
+        noteDrop(reason, in: .effect)
     }
 
     private func update(_ change: (inout PipelineStats) -> Void) {
@@ -130,6 +166,72 @@ extension FramePipelineUseCaseImpl {
     }
 }
 
+// MARK: - Effect stage (executor-confined)
+
+extension FramePipelineUseCaseImpl {
+    /// Leases an output surface and starts `apply` through the `WorkRunner` port; the
+    /// answer hops back onto the executor. With no output surface there is nothing to
+    /// render into, so the frame drops as `.poolExhausted`, as the pool's contract
+    /// asks of every caller it refuses.
+    private func startEffect(on input: FrameRef) {
+        guard let output = leaseOutput(like: input) else { return drop(input, because: .poolExhausted) }
+        passesStarted += 1
+        let number = passesStarted
+        let context = FrameContext(presentationTime: input.presentationTime, frameIndex: frameIndex)
+        frameIndex &+= 1
+        let runtime = effectRuntimeRepository
+        let work = workRunner.run { [weak self] in
+            let result = await runtime.apply(input: input, output: output, frameContext: context)
+            self?.frameExecutor.run { [weak self] in self?.effectFinished(number, with: result) }
+        }
+        inFlight = EffectPass(number: number, input: input, output: output, work: work)
+    }
+
+    /// The output carries the input's geometry and presentation time, so the stream
+    /// stays in capture order whichever of the two is sent.
+    private func leaseOutput(like input: FrameRef) -> FrameRef? {
+        do {
+            guard let token = try surfaceRepository.allocate(input.descriptor) else {
+                errorLog.record(.surfaces, "effect output not leased: pool exhausted")
+                return nil
+            }
+            return FrameRef(token: token, descriptor: input.descriptor, presentationTime: input.presentationTime)
+        } catch {
+            errorLog.record(.surfaces, "effect output not leased: \(error)")
+            return nil
+        }
+    }
+
+    /// The runtime's answer, back on the executor. A pass `stop` abandoned is no
+    /// longer in flight, so its answer is ignored: its leases have already ended.
+    /// On success the input's lease ends now that the runtime is done reading it and
+    /// the output goes on; on any failure the unused output is given back first and
+    /// the input goes on unchanged.
+    private func effectFinished(_ number: Int, with result: Result<Void, EffectFailure>) {
+        guard let pass = inFlight, pass.number == number else { return }
+        inFlight = nil
+        update { $0.noteEffect(result) }
+        switch result {
+        case .success:
+            surfaceRepository.release(pass.input.token)
+            deliver(pass.output)
+        case .failure:
+            surfaceRepository.release(pass.output.token)
+            deliver(pass.input)
+        }
+    }
+
+    /// `stop`: the pass in flight is never sent. Its work is cancelled and both of
+    /// its leases end here; an answer that still arrives finds no pass and is ignored.
+    private func abandonEffect() {
+        guard let pass = inFlight else { return }
+        inFlight = nil
+        pass.work.cancel()
+        surfaceRepository.release(pass.input.token)
+        surfaceRepository.release(pass.output.token)
+    }
+}
+
 // MARK: - Events and connection
 
 extension FramePipelineUseCaseImpl {
@@ -144,18 +246,19 @@ extension FramePipelineUseCaseImpl {
                 errorLog.record(.transport, "disconnected: destinationLost")
                 startReconnect()
             case .disconnected(let reason): errorLog.record(.transport, "disconnected: \(reason)")
-            case .frameDropped(let reason): noteDrop(reason)
+            case .frameDropped(let reason): noteDrop(reason, in: .transport)
             }
         }
     }
 
-    /// A stalled link drops every frame for the same reason at the camera's
-    /// pace; logging each one would flood the log, and the per-second summary
-    /// already carries the totals. Only a change of reason is a news item.
-    private func noteDrop(_ reason: FrameDropReason) {
+    /// A stalled link (or a stalled effect) drops every frame for the same reason
+    /// at the camera's pace; logging each one would flood the log, and the
+    /// per-second summaries already carry the totals. Only a change of reason is a
+    /// news item.
+    private func noteDrop(_ reason: FrameDropReason, in subsystem: LogSubsystem) {
         guard reason != lastDropReason else { return }
         lastDropReason = reason
-        developerLog.record(.transport, "frame dropped: \(reason)")
+        developerLog.record(subsystem, "frame dropped: \(reason)")
     }
 
     private func captureEnded(_ end: CaptureEnd) {
