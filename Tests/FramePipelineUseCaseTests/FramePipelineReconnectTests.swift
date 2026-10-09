@@ -271,7 +271,9 @@ struct FramePipelineReconnectTests {
         let sleepersBefore = rig.clock.sleepers.count
         let connectsBefore = rig.sink.connectCount
         rig.sink.emit(.disconnected(.destinationLost))
-        #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == connectsBefore + 1 && rig.subject.phase == .connected }))
+        #expect(
+            await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == connectsBefore + 1 && rig.subject.phase == .connected })
+        )
         #expect(rig.clock.sleepers.count == sleepersBefore, "no back-off carried over from the previous run")
     }
 

@@ -1,6 +1,6 @@
 /// Port: MachBootstrapGateway (dynamic registration and release).
 /// OS API: mach_port_allocate, mach_port_insert_right, bootstrap_register,
-/// mach_port_deallocate, mach_port_mod_refs.
+/// mach_port_deallocate, mach_port_destroy, mach_port_mod_refs.
 import Darwin
 import Domain
 
@@ -20,6 +20,10 @@ extension MachBootstrapGatewayImpl {
 
     public func deallocate(_ port: MachPortToken) {
         _ = mach_port_deallocate(mach_task_self_, port.name)
+    }
+
+    public func releaseDeadName(_ port: MachPortToken) {
+        _ = mach_port_destroy(mach_task_self_, port.name)
     }
 
     public func destroyReceiveRight(_ port: MachPortToken) {

@@ -46,7 +46,52 @@ struct MachPresenceTests {
 
         #expect(incoming == .deadName(MachPortToken(name: right.name)))
         #expect(deadNames().contains(right.name))
-        loopback.bootstrap.deallocate(MachPortToken(name: right.name))
+        loopback.bootstrap.releaseDeadName(MachPortToken(name: right.name))
+        #expect(!deadNames().contains(right.name), "the notification's extra reference goes with the name")
+    }
+
+    /// Header, NDR and a port name: the 36-byte shape of MACH_NOTIFY_PORT_DELETED.
+    private struct PortDeletedNotice {
+        var header: mach_msg_header_t
+        var ndr = NDR_record_t()
+        var name: mach_port_t = 0x1234
+    }
+
+    private func notice(to port: mach_port_t, id: mach_msg_id_t, size: Int, bits: mach_msg_bits_t = mach_msg_bits_t(MACH_MSG_TYPE_COPY_SEND))
+        -> mach_msg_header_t
+    {
+        mach_msg_header_t(
+            msgh_bits: bits, msgh_size: mach_msg_size_t(size), msgh_remote_port: port, msgh_local_port: mach_port_t(MACH_PORT_NULL),
+            msgh_voucher_port: 0, msgh_id: id)
+    }
+
+    @Test("the kernel's port-deleted and send-once notices decode to .notice instead of ending the loop")
+    func kernelNotices() async throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+        let deleted = PortDeletedNotice(
+            header: notice(to: loopback.send.name, id: IncomingMessage.portDeletedID, size: MemoryLayout<PortDeletedNotice>.size))
+        #expect(MemoryLayout<PortDeletedNotice>.size == 36)
+        #expect(sendRaw(deleted) == MACH_MSG_SUCCESS)
+        #expect(try await loopback.messaging.receive(on: loopback.receive) == .notice)
+
+        #expect(
+            sendRaw(notice(to: loopback.send.name, id: IncomingMessage.sendOnceID, size: MemoryLayout<mach_msg_header_t>.size)) == MACH_MSG_SUCCESS)
+        #expect(try await loopback.messaging.receive(on: loopback.receive) == .notice)
+    }
+
+    @Test("a port-deleted notice with a size the kernel never sends, or a complex one, is malformedMessage")
+    func forgedPortDeleted() async throws {
+        let loopback = try MachLoopback()
+        defer { loopback.tearDown() }
+
+        await expectMalformed(
+            loopback, sendRaw(notice(to: loopback.send.name, id: IncomingMessage.portDeletedID, size: MemoryLayout<mach_msg_header_t>.size)))
+        let complex = PortDeletedNotice(
+            header: notice(
+                to: loopback.send.name, id: IncomingMessage.portDeletedID, size: MemoryLayout<PortDeletedNotice>.size,
+                bits: mach_msg_bits_t(MACH_MSG_TYPE_COPY_SEND) | MACH_MSGH_BITS_COMPLEX))
+        await expectMalformed(loopback, sendRaw(complex))
     }
 
     @Test("a frame still decodes next to the presence messages")

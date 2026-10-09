@@ -36,6 +36,10 @@ public protocol MachBootstrapGateway: Sendable {
     func register(serviceName: String) throws -> MachPortToken
     /// Releases a send right (`mach_port_deallocate`).
     func deallocate(_ port: MachPortToken)
+    /// Gives up every user reference to a dead name (`mach_port_destroy`). A
+    /// dead-name notification adds a reference of its own on top of the one the
+    /// send right turned into, so a single `deallocate` would leave the name behind.
+    func releaseDeadName(_ port: MachPortToken)
     /// Destroys a receive right; a receive blocked on it fails with `.portDied`.
     func destroyReceiveRight(_ port: MachPortToken)
     /// Host side: allocates a presence receive right and makes one send right on
@@ -114,6 +118,10 @@ private struct UnimplementedMachBootstrapGateway: MachBootstrapGateway {
 
     func deallocate(_ port: MachPortToken) {
         reportIssue("MachBootstrapGateway.deallocate not implemented")
+    }
+
+    func releaseDeadName(_ port: MachPortToken) {
+        reportIssue("MachBootstrapGateway.releaseDeadName not implemented")
     }
 
     func destroyReceiveRight(_ port: MachPortToken) {

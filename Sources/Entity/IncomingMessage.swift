@@ -10,4 +10,8 @@ public enum IncomingMessage: Sendable, Hashable {
     /// The kernel's dead-name notification: the named right now refers to a
     /// destroyed port (the host exited or disconnected). The receiver releases the name.
     case deadName(MachPortToken)
+    /// A kernel notification the receiver has no use for, such as the port-deleted
+    /// notice that follows giving back a send right that still had a dead-name
+    /// request. It is consumed so it cannot be mistaken for a malformed message.
+    case notice
 }

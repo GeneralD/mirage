@@ -20,6 +20,8 @@ public final class FakeMachBootstrapGateway: MachBootstrapGateway, Sendable {
     public let registrations = Collector<String>()
     public let deallocated = Collector<MachPortToken>()
     public let destroyed = Collector<MachPortToken>()
+    /// Every dead name given up with `releaseDeadName`.
+    public let deadNamesReleased = Collector<MachPortToken>()
     /// Every presence port handed out, in order.
     public let presencePorts = Collector<PresencePort>()
     /// Every dead-name notification request, in order (recorded even when it fails).
@@ -82,6 +84,10 @@ public final class FakeMachBootstrapGateway: MachBootstrapGateway, Sendable {
 
     public func deallocate(_ port: MachPortToken) {
         deallocated.append(port)
+    }
+
+    public func releaseDeadName(_ port: MachPortToken) {
+        deadNamesReleased.append(port)
     }
 
     public func destroyReceiveRight(_ port: MachPortToken) {

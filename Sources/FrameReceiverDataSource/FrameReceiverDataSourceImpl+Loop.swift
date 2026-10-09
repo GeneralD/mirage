@@ -19,6 +19,8 @@ extension FrameReceiverDataSourceImpl {
                 frameExecutor.run { [self] in adopt(presence: right, notifying: port) }
             case .deadName(let name):
                 frameExecutor.run { [self] in noteDeadName(name, onEvent: onEvent) }
+            case .notice:
+                break
             }
         }
     }
@@ -94,7 +96,8 @@ extension FrameReceiverDataSourceImpl {
         }
         hostPresent = false
         onEvent(.hostLost(.deadName))
-        releasePresence()
+        presence = nil
+        bootstrap.releaseDeadName(name)
     }
 
     /// Runs on the executor. Gives back the held presence right, if any.
