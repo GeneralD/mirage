@@ -9,6 +9,12 @@ public struct PipelineStats: Sendable, Hashable {
     /// Largest interval between two consecutive presentation times.
     public var maxGap: Duration
     public var lastPresentationTime: HostTimestamp?
+    /// `framesDropped`, split by reason.
+    public var dropReasons: [FrameDropReason: Int]
+    /// Effect passes whose output went on to the sink (host).
+    public var effectsApplied: Int
+    /// Effect passes that failed, by kind; each one passed its input through (host).
+    public var effectFailures: [EffectFailure: Int]
 
     public init(
         framesReceived: Int = 0,
@@ -16,7 +22,10 @@ public struct PipelineStats: Sendable, Hashable {
         framesDropped: Int = 0,
         slateFrames: Int = 0,
         maxGap: Duration = .zero,
-        lastPresentationTime: HostTimestamp? = nil
+        lastPresentationTime: HostTimestamp? = nil,
+        dropReasons: [FrameDropReason: Int] = [:],
+        effectsApplied: Int = 0,
+        effectFailures: [EffectFailure: Int] = [:]
     ) {
         self.framesReceived = framesReceived
         self.framesSent = framesSent
@@ -24,6 +33,9 @@ public struct PipelineStats: Sendable, Hashable {
         self.slateFrames = slateFrames
         self.maxGap = maxGap
         self.lastPresentationTime = lastPresentationTime
+        self.dropReasons = dropReasons
+        self.effectsApplied = effectsApplied
+        self.effectFailures = effectFailures
     }
 }
 
@@ -40,10 +52,14 @@ extension PipelineStats {
         lastPresentationTime = presentationTime
     }
 
+    /// Records one send outcome. Every drop goes through here, so `dropReasons`
+    /// always adds up to `framesDropped`.
     public mutating func note(_ outcome: SendOutcome) {
         switch outcome {
         case .sent: framesSent += 1
-        case .dropped: framesDropped += 1
+        case .dropped(let reason):
+            framesDropped += 1
+            dropReasons[reason, default: 0] += 1
         }
     }
 

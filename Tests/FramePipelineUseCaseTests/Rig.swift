@@ -1,6 +1,8 @@
 import Dependencies
 import Domain
 import TestDoubles
+import TestSupport
+import Testing
 
 @testable import FramePipelineUseCase
 
@@ -53,10 +55,13 @@ struct CancelledSink: VirtualCameraSink {
 struct Rig {
     let camera = FakeCameraRepository()
     let sink = FakeVirtualCameraSink()
-    let surfaces = SpySurfaceRepository()
+    /// Over a `FakeSurfacePool` of the capacity `init` was given (4 unless a test says otherwise).
+    let surfaces: SpySurfaceRepository
+    /// The effect runtime: every `apply` waits until the test answers it.
+    let effects = FakeEffectRuntimeRepository()
     let executor = ManualFrameExecutor()
     let scheduler = ManualFrameScheduler()
-    /// Owns the reconnect work and records its starts, finishes and cancels.
+    /// Owns the reconnect work and the effect passes, and records their starts, finishes and cancels (unless `init` was given another runner).
     let work = RecordingWorkRunner()
     /// Paces the back-off between repeated reconnects; stepped by hand.
     let clock = GatedClock()
@@ -65,11 +70,15 @@ struct Rig {
     let errors = RecordingLog()
     let developer = RecordingLog()
     let subject: FramePipelineUseCaseImpl
+    /// How many passes `completeEffect` has answered; the next one it answers is the next request.
+    private let completed = Locked(0)
 
-    init(sink override: (any VirtualCameraSink)? = nil) {
+    init(sink override: (any VirtualCameraSink)? = nil, runner: (any WorkRunner)? = nil, capacity: Int = 4) {
+        surfaces = SpySurfaceRepository(inner: FakeSurfaceRepository(pool: FakeSurfacePool(capacity: capacity)))
         let camera = camera
         let sink = sink
         let surfaces = surfaces
+        let effects = effects
         let executor = executor
         let scheduler = scheduler
         let work = work
@@ -80,9 +89,10 @@ struct Rig {
             $0.cameraRepository = camera
             $0.virtualCameraSink = override ?? sink
             $0.surfaceRepository = surfaces
+            $0.effectRuntimeRepository = effects
             $0.frameExecutor = executor
             $0.frameScheduler = scheduler
-            $0.workRunner = work
+            $0.workRunner = runner ?? work
             $0.continuousClock = clock
             $0.errorLog = errors
             $0.developerLog = developer
@@ -98,4 +108,60 @@ struct Rig {
         camera.emit(frame)
         return frame
     }
+}
+
+// MARK: - Effect passes
+
+extension Rig {
+    /// The `index`-th `apply` the runtime was asked for (from 0), once the pass's work has
+    /// made the call. A call that never comes fails the test when the time limit ends the
+    /// wait, rather than crashing the whole test process on an index out of range.
+    func applyRequest(_ index: Int) async throws -> FakeEffectRuntimeRepository.ApplyRequest {
+        try #require(await requested(index), "apply \(index) was never requested")
+    }
+
+    private func requested(_ index: Int) async -> FakeEffectRuntimeRepository.ApplyRequest? {
+        await effects.applyRequests.waitForCount(index + 1)
+        return effects.applyRequests.values.dropFirst(index).first
+    }
+
+    /// Answers `request` with `result` and drains the executor until the pipeline has
+    /// counted the answer — `false` when it never did. A pass `stop` abandoned is never
+    /// counted: answer it with `answerAbandoned`.
+    @discardableResult
+    func answer(_ request: FakeEffectRuntimeRepository.ApplyRequest, with result: Result<Void, EffectFailure>) async -> Bool {
+        let before = subject.stats.effectPasses
+        effects.completeApply(request, with: result)
+        return await tickUntil(tick: { executor.drain() }, until: { subject.stats.effectPasses > before })
+    }
+
+    /// Answers a pass `stop` abandoned and drains the executor until the pipeline has
+    /// ended its two leases — `false` when the call was not pending or the leases never
+    /// ended. (The stats do not move for such a pass, so the live count is the signal.)
+    @discardableResult
+    func answerAbandoned(_ request: FakeEffectRuntimeRepository.ApplyRequest, with result: Result<Void, EffectFailure>) async -> Bool {
+        let before = surfaces.liveCount
+        guard effects.completeApply(request, with: result) else { return false }
+        return await tickUntil(tick: { executor.drain() }, until: { surfaces.liveCount <= before - 2 })
+    }
+
+    /// Answers the next pass in start order — by default with the `.internalError` the
+    /// live pass-through runtime answers, so the input frame goes on to the sink — and
+    /// drains until the pipeline has taken it. For tests whose every pass is answered here.
+    func completeEffect(with result: Result<Void, EffectFailure> = .failure(.internalError)) async {
+        let index = completed.withLock { count -> Int in
+            defer { count += 1 }
+            return count
+        }
+        guard let request = await requested(index) else {
+            Issue.record("apply \(index) was never requested")
+            return
+        }
+        #expect(await answer(request, with: result), "the pipeline took the answer to pass \(index)")
+    }
+}
+
+extension PipelineStats {
+    /// Effect passes whose answer the pipeline has taken, applied or failed.
+    var effectPasses: Int { effectsApplied + effectsFailed }
 }

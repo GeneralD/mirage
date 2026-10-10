@@ -12,7 +12,7 @@ import Testing
 
     @Test func geometryIgnoresTheRowStride() {
         let padded = SurfaceDescriptor(width: 1280, height: 720, pixelFormat: .bgra32, bytesPerRow: 5184)
-        #expect(SurfaceDescriptor.hd720.matchesGeometry(of: padded), "IOSurface may round the stride up; the picture is the same")
+        #expect(SurfaceDescriptor.hd720.matchesGeometry(of: padded), "the gateway may align the stride up; the picture is the same")
         #expect(!SurfaceDescriptor.hd720.matchesGeometry(of: .bgra(width: 1280, height: 721)))
         #expect(!SurfaceDescriptor.hd720.matchesGeometry(of: .bgra(width: 1281, height: 720)))
     }
@@ -46,6 +46,16 @@ import Testing
         stats.note(.sent)
         stats.note(.dropped(.noClient))
         #expect(stats.summary == "frames=1 received=2 dropped=1 maxGapMs=40 slate=0")
+    }
+
+    @Test func dropsAreAlsoCountedByReason() {
+        var stats = PipelineStats.empty
+        stats.note(.dropped(.inFlightCapReached))
+        stats.note(.dropped(.inFlightCapReached))
+        stats.note(.dropped(.sendFailed(code: 7)))
+        stats.note(.sent)
+        #expect(stats.framesDropped == 3)
+        #expect(stats.dropReasons == [.inFlightCapReached: 2, .sendFailed(code: 7): 1])
     }
 }
 

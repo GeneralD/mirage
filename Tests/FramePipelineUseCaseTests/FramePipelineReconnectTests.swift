@@ -336,6 +336,7 @@ struct FramePipelineReconnectTests {
         rig.executor.drain()
         rig.scheduler.tick()
         rig.executor.drain()
+        await rig.completeEffect()
         #expect(rig.sink.sent.count == 1)
         rig.sink.emit(.disconnected(.destinationLost))
         #expect(await tickUntil(tick: { rig.executor.drain() }, until: { rig.sink.connectCount == 5 && rig.subject.phase == .connected }))

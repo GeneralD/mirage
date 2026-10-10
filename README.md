@@ -29,6 +29,27 @@ webcam ──▶ mirage (host app) ──▶ Metal effect (.lens, compiled at ru
   a hang or fault falls back to pass-through, and an effect that keeps failing is disabled
   automatically.
 
+### Writing an effect
+
+Runtime `.lens` loading arrives in MVP-B (see the roadmap); this is the contract `effect.metal`
+is compiled against.
+
+- **The engine's prelude comes first.** Your source is compiled after a prelude that already
+  includes `<metal_stdlib>` with `using namespace metal;` and declares:
+  - `struct Uniforms { float time; uint frameIndex; float2 resolution; uint seed; }`, bound at
+    `[[buffer(0)]]`: `time` is the frame's presentation time minus the session start,
+    `frameIndex` the frame's index, and `seed` the engine's random seed for `hash` / `noise`.
+  - `float hash(uint2 cell, uint timeStep, uint seed)`: white noise in [0, 1) with 24 bits of
+    precision, a pure function of a lattice cell, a discrete time step (`frameIndex`, for
+    example) and the seed.
+  - `float noise(float2 p, float time, uint seed)`: value noise in [0, 1], smooth in `p` and in
+    `time`, over the integer grid of both.
+- **One entry point, named `effect`**: a `kernel void effect(...)`. Don't define `Uniforms`,
+  `hash` or `noise`, or anything in `namespace prelude`; those names are the engine's.
+- **Errors point at your own lines.** Diagnostics read `effect:<line>:<column>: error: …`,
+  counted from the first line of `effect.metal`; a note about a prelude declaration reads
+  `prelude:<line>:`.
+
 ## Requirements
 
 - macOS 14 or later, Apple silicon

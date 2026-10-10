@@ -104,6 +104,12 @@ let package = Package(
         .testTarget(name: "StreamOutputDataSourceTests", dependencies: ["StreamOutputDataSource"] + testDependencies),
         .target(name: "ExtensionInstallDataSource", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallDataSourceTests", dependencies: ["ExtensionInstallDataSource"] + testDependencies),
+        // Host only: the prelude, `#line` assembly, diagnostic mapping and the off-main compile.
+        .target(name: "ShaderCompilationDataSource", dependencies: dependencies),
+        .testTarget(name: "ShaderCompilationDataSourceTests", dependencies: ["ShaderCompilationDataSource"] + testDependencies),
+        // Host only (it drives MetalGateway through the GPU ports): one effect pass, one command buffer.
+        .target(name: "GPURenderDataSource", dependencies: dependencies),
+        .testTarget(name: "GPURenderDataSourceTests", dependencies: ["GPURenderDataSource"] + testDependencies),
         // Host only: the preview kernel and the draw order (scripts/check-extension-no-metal.sh).
         .target(name: "PreviewDataSource", dependencies: dependencies),
         .testTarget(name: "PreviewDataSourceTests", dependencies: ["PreviewDataSource"] + testDependencies),
@@ -165,7 +171,7 @@ let package = Package(
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
-                "PreviewDataSource",
+                "ShaderCompilationDataSource", "GPURenderDataSource", "PreviewDataSource",
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
             ]
         ),
@@ -214,7 +220,10 @@ let package = Package(
         // import allow-list (Sources/ only) does not apply. .claude/rules/gpu-testing.md.
         .testTarget(
             name: "GPUSmokeTests",
-            dependencies: dependencies + ["MetalGateway", "MetalKitPreviewGateway", "PreviewDataSource", "Views", "IOSurfaceGateway", "TestDoubles"]
+            dependencies: dependencies + [
+                "MetalGateway", "MetalKitPreviewGateway", "IOSurfaceGateway", "ShaderCompilationDataSource", "GPURenderDataSource",
+                "PreviewDataSource", "Views", "TestDoubles", "TestSupport",
+            ]
         ),
 
         // ── Test support ──
