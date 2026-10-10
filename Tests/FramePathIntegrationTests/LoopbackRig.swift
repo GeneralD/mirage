@@ -7,6 +7,8 @@ import FramePipelineUseCase
 import FrameReceiverDataSource
 import FrameReceiverRepository
 import FrameTransportDataSource
+import PreviewDataSource
+import PreviewRepository
 import StreamOutputDataSource
 import StreamOutputRepository
 import SurfacePoolDataSource
@@ -15,6 +17,17 @@ import TestDoubles
 import TestSupport
 import Testing
 import VirtualCameraRepository
+
+/// Which `PreviewSink` the host's pipeline presents to.
+enum HostPreview {
+    /// `HostSide.preview`: an `InMemoryPreviewSink` that completes every frame at once
+    /// until a test attaches it, as the live sink does with no view open.
+    case inMemory
+    /// The real preview — `PreviewRepositoryImpl` over `PreviewDataSourceImpl`, on the
+    /// host's executor and pool — drawing through the fake GPU layer (`HostSide.gpu`,
+    /// `shaders`, `textures`, `previewGateway`).
+    case rendered
+}
 
 /// The host process: camera → pipeline (effect stage on a fake runtime) →
 /// transport and preview, on its own executor, scheduler, pool and clock.
@@ -26,15 +39,22 @@ struct HostSide {
     let camera = FakeCameraSource()
     /// The effect runtime: every `apply` waits until the test answers it (`LoopbackRig.capture`).
     let effects = FakeEffectRuntimeRepository()
-    /// The preview: like the live sink with no view open, it completes every frame at once
-    /// until a test attaches it.
+    /// The preview of a `.inMemory` host.
     let preview = InMemoryPreviewSink(holding: .onceAttached)
+    /// The fake GPU layer a `.rendered` preview draws through: a draw stays pending on
+    /// `previewGateway` until the test completes it.
+    let gpu = FakeGPUGateway()
+    let shaders = FakeShaderLibraryGateway()
+    let textures = FakeTextureCacheGateway()
+    let previewGateway = FakePreviewGateway()
     let errors = RecordingLog()
     let developer = RecordingLog()
     let pool: SurfacePoolDataSourceImpl
+    /// What the pipeline presents to: `preview`, or the real preview over the fake GPU layer.
+    let previewSink: any PreviewSink
     let pipeline: FramePipelineUseCaseImpl
 
-    init(kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int) {
+    init(kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int, preview choice: HostPreview) {
         let executor = executor
         let scheduler = scheduler
         let work = work
@@ -42,6 +62,10 @@ struct HostSide {
         let camera = camera
         let effects = effects
         let preview = preview
+        let gpu = gpu
+        let shaders = shaders
+        let textures = textures
+        let previewGateway = previewGateway
         let errors = errors
         let developer = developer
         pool = withDependencies {
@@ -52,7 +76,7 @@ struct HostSide {
         let pool = pool
         // Each layer is built inside the scope of the one below it, so every
         // `@Dependency` captures the real neighbour rather than a default.
-        pipeline = withDependencies {
+        (previewSink, pipeline) = withDependencies {
             $0.ioSurfaceGateway = ioSurface
             $0.machBootstrapGateway = kernel.bootstrap(for: .host)
             $0.machMessageGateway = kernel.messaging(for: .host)
@@ -64,6 +88,10 @@ struct HostSide {
             $0.cameraSource = camera
             $0.cameraPermission = FakeCameraPermission(status: .authorized)
             $0.effectRuntimeRepository = effects
+            $0.gpuGateway = gpu
+            $0.shaderLibraryGateway = shaders
+            $0.textureCacheGateway = textures
+            $0.previewGateway = previewGateway
             $0.errorLog = errors
             $0.developerLog = developer
         } operation: {
@@ -71,12 +99,18 @@ struct HostSide {
                 $0.cameraRepository = CameraRepositoryImpl()
                 $0.frameTransport = FrameTransportDataSourceImpl()
                 $0.surfaceRepository = SurfaceRepositoryImpl()
+                $0.previewRenderer = PreviewDataSourceImpl()
             } operation: {
-                withDependencies {
+                let sink: any PreviewSink =
+                    switch choice {
+                    case .inMemory: preview
+                    case .rendered: PreviewRepositoryImpl()
+                    }
+                return withDependencies {
                     $0.virtualCameraSink = VirtualCameraRepositoryImpl()
-                    $0.previewSink = preview
+                    $0.previewSink = sink
                 } operation: {
-                    FramePipelineUseCaseImpl()
+                    (sink, FramePipelineUseCaseImpl())
                 }
             }
         }
@@ -149,8 +183,8 @@ struct LoopbackRig {
     let host: HostSide
     let ext: ExtensionSide
 
-    init(capacity: Int = 4, frameGap: Duration = .seconds(2)) {
-        host = HostSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity)
+    init(capacity: Int = 4, frameGap: Duration = .seconds(2), preview: HostPreview = .inMemory) {
+        host = HostSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview)
         ext = ExtensionSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, frameGap: frameGap)
     }
 }
@@ -175,6 +209,15 @@ extension LoopbackRig {
     /// has checked in, so this returns connected.
     func startHost() async throws {
         try await host.pipeline.start(descriptor: .hd720, frameRate: .standard)
+        host.executor.drain()
+    }
+
+    /// Attaches a view to the host's preview on the main thread, as the view does, then
+    /// drains the host's executor from here, off the main thread: a `.rendered` preview
+    /// compiles its kernel there, and the fake shader library reports a compile on main.
+    func attachPreview(_ target: FakePreviewTargetHandle = FakePreviewTargetHandle()) async throws {
+        let sink = host.previewSink
+        try await MainActor.run { try sink.attach(target) }
         host.executor.drain()
     }
 

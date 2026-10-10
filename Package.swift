@@ -249,7 +249,7 @@ let package = Package(
                 "FramePipelineUseCase", "CameraRepository", "VirtualCameraRepository", "SurfaceRepository",
                 "SurfacePoolDataSource", "CameraDataSource", "FrameTransportDataSource",
                 "ExtensionRelayUseCase", "FrameReceiverRepository", "StreamOutputRepository",
-                "FrameReceiverDataSource", "StreamOutputDataSource",
+                "FrameReceiverDataSource", "StreamOutputDataSource", "PreviewRepository", "PreviewDataSource",
             ]
         ),
     ]

@@ -207,6 +207,8 @@ Shared conventions:
   `InMemoryPreviewSink(holding: .onceAttached)`, so a test that never attaches
   a preview sees a frame's lease end with the drain that sent it; one that
   attaches (`Rig.attachPreview`) completes each presentation by hand.
+  `LoopbackRig(preview: .rendered)` puts the real `PreviewRepository` /
+  `PreviewDataSource` on the host side, over the fake GPU layer.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
   wall clock.

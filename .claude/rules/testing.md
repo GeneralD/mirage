@@ -98,7 +98,11 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   sees each frame's lease end with the drain that sent it. A pipeline test that
   wants the preview late calls `Rig.attachPreview()`, finds what was shown with
   `presentation(n)` and ends it with `completePresentation(_:)` (complete, then
-  drain).
+  drain). `LoopbackRig(preview: .rendered)` puts the real `PreviewRepository` /
+  `PreviewDataSource` on the host side instead, over the fake GPU layer
+  (`gpu`, `shaders`, `textures`, `previewGateway` on `HostSide`); its
+  `attachPreview()` drains the attach's executor half off the main thread,
+  where the kernel compile must run.
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
   answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
   `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing
