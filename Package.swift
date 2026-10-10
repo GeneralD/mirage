@@ -130,8 +130,7 @@ let package = Package(
         .testTarget(name: "StreamOutputRepositoryTests", dependencies: ["StreamOutputRepository"] + testDependencies),
         .target(name: "ExtensionInstallRepository", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallRepositoryTests", dependencies: ["ExtensionInstallRepository"] + testDependencies),
-        // Host only. EffectRuntimeRepository ships a pass-through live value until #19
-        // adds the real runtime to the same module (epic #14, D18).
+        // Host only: the in-process compile cache, newest-wins and the uniforms of a pass.
         .target(name: "EffectRuntimeRepository", dependencies: dependencies),
         .testTarget(name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository"] + testDependencies),
         .target(name: "PreviewRepository", dependencies: dependencies),
