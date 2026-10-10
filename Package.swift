@@ -224,7 +224,7 @@ let package = Package(
             name: "GPUSmokeTests",
             dependencies: dependencies + [
                 "MetalGateway", "MetalKitPreviewGateway", "IOSurfaceGateway", "ShaderCompilationDataSource", "GPURenderDataSource",
-                "PreviewDataSource", "Views", "TestDoubles", "TestSupport",
+                "BundledEffectDataSource", "EffectRuntimeRepository", "PreviewDataSource", "Views", "TestDoubles", "TestSupport",
             ]
         ),
 
