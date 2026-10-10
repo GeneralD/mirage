@@ -1,6 +1,6 @@
 /// What an effect may know about the frame it is applied to. The uniform
 /// `time` is derived from `presentationTime` against the session start by the
-/// UseCase (`EffectUniforms`); the runtime never reads a clock.
+/// runtime (`EffectSession`, `EffectUniforms.pass`), never from a clock.
 public struct FrameContext: Sendable, Hashable {
     public let presentationTime: HostTimestamp
     public let frameIndex: UInt32

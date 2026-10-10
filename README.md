@@ -37,8 +37,17 @@ is compiled against.
 - **The engine's prelude comes first.** Your source is compiled after a prelude that already
   includes `<metal_stdlib>` with `using namespace metal;` and declares:
   - `struct Uniforms { float time; uint frameIndex; float2 resolution; uint seed; }`, bound at
-    `[[buffer(0)]]`: `time` is the frame's presentation time minus the session start,
-    `frameIndex` the frame's index, and `seed` the engine's random seed for `hash` / `noise`.
+    `[[buffer(0)]]`:
+    - `time` is in **seconds**: the frame's presentation time minus the presentation time of the
+      session's first frame, so it is 0 on that frame and counts up with the camera's timestamps
+      (not a wall clock). A session restarts whenever the pipeline starts again.
+    - `frameIndex` is the frame's index, counted from 0 each time the pipeline starts.
+    - `resolution` is the output frame's size in **pixels** (width, height). The kernel runs one
+      thread per output pixel, so `gid` covers `[0, resolution)`; guard against reading past it.
+    - `seed` is the engine's random seed for `hash` / `noise` (always 0 for now).
+- **Bindings**: the input frame is `texture2d<float, access::read>` at `[[texture(0)]]`, the
+  output `texture2d<float, access::write>` at `[[texture(1)]]`, and `Uniforms` at
+  `[[buffer(0)]]`.
   - `float hash(uint2 cell, uint timeStep, uint seed)`: white noise in [0, 1) with 24 bits of
     precision, a pure function of a lattice cell, a discrete time step (`frameIndex`, for
     example) and the seed.

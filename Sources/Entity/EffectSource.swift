@@ -2,8 +2,8 @@
 /// Where the source came from (the bundled effect, a `.lens` package) is the
 /// package layer's business (MVP-B); the runtime only hashes it for its cache.
 public struct EffectSource: Sendable, Hashable {
-    /// A display name for logs and the menu; never part of the cache key's
-    /// meaning beyond equality.
+    /// A display name for logs and the menu; not part of the runtime's cache key,
+    /// so two names over one source and options share one compiled library.
     public let name: String
     /// The author's MSL, without the prelude (`ShaderCompilationDataSource`
     /// prepends it).

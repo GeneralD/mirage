@@ -68,7 +68,11 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   phases: it awaits `RecordingFrameExecutor.enqueued` (the render has queued its
   hop), asserts that no context, binding or command buffer exists and no answer
   arrived, then `drain()`s; passes complete through `FakeGPUGateway`. Removing
-  the hop turns that suite red. `InMemoryPreviewSink` —
+  the hop turns that suite red. `RecordingFrameExecutor` lives in
+  `Tests/TestDoubles`: the `EffectRuntimeRepository` suite drives the runtime's
+  hops with it too (`RuntimeFixture.answer` drains until the call answers),
+  holds compiles in `FakeShaderCompiler` and renders in `FakeGPURenderer`, and
+  proves newest wins by completing an old and a new compile in both orders. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
