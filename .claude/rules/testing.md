@@ -93,7 +93,12 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `FakeEffectRuntimeRepository.pendingCount` shows that no `apply` was left
   waiting. `LoopbackRig.capture` answers the pass it
   started (pass-through by default, `effect:` to choose) and drains its result,
-  so integration tests stay one frame per call.
+  so integration tests stay one frame per call. Both rigs present on an
+  `InMemoryPreviewSink(holding: .onceAttached)`, so a test that never attaches
+  sees each frame's lease end with the drain that sent it. A pipeline test that
+  wants the preview late calls `Rig.attachPreview()`, finds what was shown with
+  `presentation(n)` and ends it with `completePresentation(_:)` (complete, then
+  drain).
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
   answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
   `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing

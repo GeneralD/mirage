@@ -17,7 +17,7 @@ import Testing
 import VirtualCameraRepository
 
 /// The host process: camera → pipeline (effect stage on a fake runtime) →
-/// transport, on its own executor, scheduler, pool and clock.
+/// transport and preview, on its own executor, scheduler, pool and clock.
 struct HostSide {
     let executor = ManualFrameExecutor()
     let scheduler = ManualFrameScheduler()
@@ -26,6 +26,9 @@ struct HostSide {
     let camera = FakeCameraSource()
     /// The effect runtime: every `apply` waits until the test answers it (`LoopbackRig.capture`).
     let effects = FakeEffectRuntimeRepository()
+    /// The preview: like the live sink with no view open, it completes every frame at once
+    /// until a test attaches it.
+    let preview = InMemoryPreviewSink(holding: .onceAttached)
     let errors = RecordingLog()
     let developer = RecordingLog()
     let pool: SurfacePoolDataSourceImpl
@@ -38,6 +41,7 @@ struct HostSide {
         let clock = clock
         let camera = camera
         let effects = effects
+        let preview = preview
         let errors = errors
         let developer = developer
         pool = withDependencies {
@@ -70,6 +74,7 @@ struct HostSide {
             } operation: {
                 withDependencies {
                     $0.virtualCameraSink = VirtualCameraRepositoryImpl()
+                    $0.previewSink = preview
                 } operation: {
                     FramePipelineUseCaseImpl()
                 }
@@ -177,7 +182,7 @@ extension LoopbackRig {
     /// tick hands the frame to the effect stage; the pass is answered with `effect`
     /// (by default the `.internalError` of the live pass-through runtime, so the
     /// camera's own surface goes on) and its result is drained, so the frame has
-    /// reached the transport when this returns.
+    /// reached the transport — and the preview — when this returns.
     @MainActor
     func capture(
         _ handle: FakeSurfaceHandle,

@@ -2,7 +2,9 @@ import Dependencies
 
 /// The host frame path: camera → latest-frame slot → one effect pass per
 /// scheduler tick (at most one in flight; a failed pass sends its input
-/// unchanged) → virtual camera sink, with every lease released exactly once.
+/// unchanged) → virtual camera sink and preview, with every lease released
+/// exactly once: a frame sent is presented too, and released once both are
+/// done with it.
 public protocol FramePipelineUseCase: Sendable {
     /// Starts the camera and the scheduler, then connects the sink (retrying
     /// per the transport's policy, so this suspends until the extension answers

@@ -55,6 +55,10 @@ struct CancelledSink: VirtualCameraSink {
 struct Rig {
     let camera = FakeCameraRepository()
     let sink = FakeVirtualCameraSink()
+    /// The preview: like the live sink with no view open, it completes every frame at
+    /// once until a test attaches it (`attachPreview()`); from then on each frame waits
+    /// for `preview.complete(_:)`.
+    let preview = InMemoryPreviewSink(holding: .onceAttached)
     /// Over a `FakeSurfacePool` of the capacity `init` was given (4 unless a test says otherwise).
     let surfaces: SpySurfaceRepository
     /// The effect runtime: every `apply` waits until the test answers it.
@@ -77,6 +81,7 @@ struct Rig {
         surfaces = SpySurfaceRepository(inner: FakeSurfaceRepository(pool: FakeSurfacePool(capacity: capacity)))
         let camera = camera
         let sink = sink
+        let preview = preview
         let surfaces = surfaces
         let effects = effects
         let executor = executor
@@ -88,6 +93,7 @@ struct Rig {
         subject = withDependencies {
             $0.cameraRepository = camera
             $0.virtualCameraSink = override ?? sink
+            $0.previewSink = preview
             $0.surfaceRepository = surfaces
             $0.effectRuntimeRepository = effects
             $0.frameExecutor = executor
@@ -158,6 +164,30 @@ extension Rig {
             return
         }
         #expect(await answer(request, with: result), "the pipeline took the answer to pass \(index)")
+    }
+}
+
+// MARK: - Preview
+
+extension Rig {
+    /// Opens the preview: from now on every frame the pipeline presents waits for the test.
+    func attachPreview() throws {
+        try preview.attach(FakePreviewTargetHandle())
+    }
+
+    /// The `index`-th frame the preview was handed (from 0), completed or not.
+    func presentation(_ index: Int) throws -> InMemoryPreviewSink.Presentation {
+        try #require(preview.presented.values.dropFirst(index).first, "presentation \(index) never happened")
+    }
+
+    /// Completes `presentation` and drains the executor, where the completion hops before
+    /// the pipeline ends the frame's lease — `false` when the presentation was not pending
+    /// or its lease is still live after the drain.
+    @discardableResult
+    func completePresentation(_ presentation: InMemoryPreviewSink.Presentation) -> Bool {
+        guard preview.complete(presentation) else { return false }
+        executor.drain()
+        return surfaces.inner.pool.handle(for: presentation.frame.token) == nil
     }
 }
 
