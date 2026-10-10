@@ -13,8 +13,12 @@ import ExtensionInstallRepository
 import ExtensionInstallUseCase
 import FramePipelineUseCase
 import FrameTransportDataSource
+import GPURenderDataSource
 import MetalGateway
+import MetalKitPreviewGateway
+import PreviewDataSource
 import PreviewRepository
+import ShaderCompilationDataSource
 import SystemExtensionGateway
 import VirtualCameraRepository
 
@@ -48,13 +52,13 @@ extension ExtensionInstallRepositoryKey: DependencyKey {
     public static let liveValue: any ExtensionInstallRepository = ExtensionInstallRepositoryImpl()
 }
 
-// Pass-through defaults (epic #14, D18): replaced in place by #19 and #20.
+// Pass-through default (epic #14, D18): replaced in place by #19.
 extension EffectRuntimeRepositoryKey: DependencyKey {
     public static let liveValue: any EffectRuntimeRepository = PassthroughEffectRuntimeRepository()
 }
 
 extension PreviewSinkKey: DependencyKey {
-    public static let liveValue: any PreviewSink = DiscardingPreviewSink()
+    public static let liveValue: any PreviewSink = PreviewRepositoryImpl()
 }
 
 extension CameraSourceKey: DependencyKey {
@@ -69,8 +73,20 @@ extension FrameTransportKey: DependencyKey {
     public static let liveValue: any FrameTransport = FrameTransportDataSourceImpl()
 }
 
+extension PreviewRendererKey: DependencyKey {
+    public static let liveValue: any PreviewRenderer = PreviewDataSourceImpl()
+}
+
 extension CameraExtensionInstallerKey: DependencyKey {
     public static let liveValue: any CameraExtensionInstaller = ExtensionInstallDataSourceImpl()
+}
+
+extension ShaderCompilerKey: DependencyKey {
+    public static let liveValue: any ShaderCompiler = ShaderCompilationDataSourceImpl()
+}
+
+extension GPURendererKey: DependencyKey {
+    public static let liveValue: any GPURenderer = GPURenderDataSourceImpl()
 }
 
 extension CaptureSessionGatewayKey: DependencyKey {
@@ -95,4 +111,8 @@ extension ShaderLibraryGatewayKey: DependencyKey {
 
 extension TextureCacheGatewayKey: DependencyKey {
     public static let liveValue: any TextureCacheGateway = MetalGatewayImpl()
+}
+
+extension PreviewGatewayKey: DependencyKey {
+    public static let liveValue: any PreviewGateway = MetalKitPreviewGatewayImpl()
 }

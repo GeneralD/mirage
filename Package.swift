@@ -77,6 +77,8 @@ let package = Package(
         // Host only: never a dependency of ExtensionDependencyInjection / ExtensionApp
         // (scripts/check-extension-no-metal.sh). Exercised by GPUSmokeTests, not here.
         .target(name: "MetalGateway", dependencies: dependencies),
+        // Host only, like MetalGateway. Exercised by PreviewSmokeTests (GPUSmokeTests).
+        .target(name: "MetalKitPreviewGateway", dependencies: dependencies),
         .target(name: "MachGateway", dependencies: dependencies),
         .testTarget(name: "MachGatewayTests", dependencies: ["MachGateway", "IOSurfaceGateway"] + testDependencies),
         .target(name: "SystemExtensionGateway", dependencies: dependencies),
@@ -99,6 +101,15 @@ let package = Package(
         .testTarget(name: "StreamOutputDataSourceTests", dependencies: ["StreamOutputDataSource"] + testDependencies),
         .target(name: "ExtensionInstallDataSource", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallDataSourceTests", dependencies: ["ExtensionInstallDataSource"] + testDependencies),
+        // Host only: the prelude, `#line` assembly, diagnostic mapping and the off-main compile.
+        .target(name: "ShaderCompilationDataSource", dependencies: dependencies),
+        .testTarget(name: "ShaderCompilationDataSourceTests", dependencies: ["ShaderCompilationDataSource"] + testDependencies),
+        // Host only (it drives MetalGateway through the GPU ports): one effect pass, one command buffer.
+        .target(name: "GPURenderDataSource", dependencies: dependencies),
+        .testTarget(name: "GPURenderDataSourceTests", dependencies: ["GPURenderDataSource"] + testDependencies),
+        // Host only: the preview kernel and the draw order (scripts/check-extension-no-metal.sh).
+        .target(name: "PreviewDataSource", dependencies: dependencies),
+        .testTarget(name: "PreviewDataSourceTests", dependencies: ["PreviewDataSource"] + testDependencies),
 
         // ── Repository ──
         .target(name: "CameraRepository", dependencies: dependencies),
@@ -113,8 +124,8 @@ let package = Package(
         .testTarget(name: "StreamOutputRepositoryTests", dependencies: ["StreamOutputRepository"] + testDependencies),
         .target(name: "ExtensionInstallRepository", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallRepositoryTests", dependencies: ["ExtensionInstallRepository"] + testDependencies),
-        // Host only. Pass-through live values until #19 / #20 add the real runtime
-        // and preview sink to the same modules (epic #14, D18).
+        // Host only. EffectRuntimeRepository ships a pass-through live value until #19
+        // adds the real runtime to the same module (epic #14, D18).
         .target(name: "EffectRuntimeRepository", dependencies: dependencies),
         .testTarget(name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository"] + testDependencies),
         .target(name: "PreviewRepository", dependencies: dependencies),
@@ -151,7 +162,8 @@ let package = Package(
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
-                "AVFoundationGateway", "MetalGateway", "SystemExtensionGateway",
+                "ShaderCompilationDataSource", "GPURenderDataSource", "PreviewDataSource",
+                "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
             ]
         ),
         .target(
@@ -165,6 +177,9 @@ let package = Package(
             ]
         ),
 
+        // ── View (declarative, coverage-ignored, no test target; host only) ──
+        .target(name: "Views", dependencies: dependencies),
+
         // ── Entry ──
         .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
@@ -174,7 +189,10 @@ let package = Package(
         // import allow-list (Sources/ only) does not apply. .claude/rules/gpu-testing.md.
         .testTarget(
             name: "GPUSmokeTests",
-            dependencies: dependencies + ["MetalGateway", "IOSurfaceGateway", "TestDoubles"]
+            dependencies: dependencies + [
+                "MetalGateway", "MetalKitPreviewGateway", "IOSurfaceGateway", "ShaderCompilationDataSource", "GPURenderDataSource",
+                "PreviewDataSource", "Views", "TestDoubles", "TestSupport",
+            ]
         ),
 
         // ── Test support ──

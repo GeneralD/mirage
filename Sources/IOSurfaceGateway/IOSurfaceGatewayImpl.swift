@@ -1,5 +1,5 @@
 /// `IOSurfaceGateway` live implementation, allocation half.
-/// OS API: `IOSurface(properties:)`.
+/// OS API: `IOSurface(properties:)`, `IOSurfaceAlignProperty`.
 /// Every decision lives in `SurfacePoolDataSource`; this only forwards.
 import Domain
 import IOSurface
@@ -15,14 +15,16 @@ extension IOSurfaceGatewayImpl: IOSurfaceGateway {
 }
 
 extension SurfaceDescriptor {
-    /// IOSurface rounds `bytesPerRow` up to its alignment; the resolved value is read back via `descriptor(_:)`.
+    /// IOSurface keeps an explicit `bytesPerRow` exactly as given, and Metal aborts on an IOSurface texture
+    /// whose rows are not 16-byte aligned, so the request goes through `IOSurfaceAlignProperty` first: the OS
+    /// rounds it up to its own alignment, never down. The allocated stride is read back via `descriptor(_:)`.
     fileprivate var properties: [IOSurfacePropertyKey: any Sendable] {
         [
             .width: width,
             .height: height,
             .bytesPerElement: pixelFormat.bytesPerPixel,
             .pixelFormat: pixelFormat.fourCC,
-            .bytesPerRow: bytesPerRow,
+            .bytesPerRow: IOSurfaceAlignProperty(kIOSurfaceBytesPerRow, bytesPerRow),
         ]
     }
 }

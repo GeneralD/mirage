@@ -47,9 +47,28 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   in any order (a slow compile overtaken, a late GPU completion). Like the live
   runtime it ignores the caller's cancellation: a cancelled call is still
   recorded and waits for its completion, so a test that stops the pipeline
-  mid-pass completes the pending request itself (`pendingCount`). Start
+  mid-pass completes the pending request itself (`pendingCount`). Requests,
+  submissions, presentations and draws carry the instance that issued them: ids
+  restart at 1 per fake, so one from another instance returns `false` (a
+  reported issue for the two gateways, `FakeGPUGateway` and
+  `FakePreviewGateway`) and never resumes anything. Start
   concurrent callers one at a time (`waitForCount(n)` between them) when the
-  test depends on request order. `InMemoryPreviewSink` —
+  test depends on request order.
+  `FakeGPURenderer` — one layer down, for the Repository suites: `render`
+  suspends until `complete(_:with:)` (any order, exactly once) unless
+  `respond(with:)` scripted an immediate answer; `requests` is a `Collector` in
+  call (`id`) order. Its requests carry their issuing instance the same way, so
+  `complete` returns `false` for another `FakeGPURenderer`'s request and leaves
+  every pending render untouched. Like `FakeEffectRuntimeRepository` it ignores
+  cancellation, as its live counterpart does: `GPURenderDataSource` cannot
+  withdraw a committed pass, so a cancelled caller — even one cancelled before
+  the call — is recorded and keeps waiting; complete every request a test
+  cancels.
+  The `GPURenderDataSource` suite itself drives the executor hop in two
+  phases: it awaits `RecordingFrameExecutor.enqueued` (the render has queued its
+  hop), asserts that no context, binding or command buffer exists and no answer
+  arrived, then `drain()`s; passes complete through `FakeGPUGateway`. Removing
+  the hop turns that suite red. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
@@ -72,6 +91,29 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   waiting. `LoopbackRig.capture` answers the pass it
   started (pass-through by default, `effect:` to choose) and drains its result,
   so integration tests stay one frame per call.
+- `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
+  answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
+  `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing
+  instance the same way, so `complete` returns `false` for another
+  `FakePreviewGateway`'s draw and leaves every pending draw untouched.
+  `failPrepare(with:)` / `failDraw(with:)` make **every** later `prepare` /
+  `draw` throw (`draw` before commit) until `fail…(with: nil)` clears it, like
+  the other fakes' `fail…` hooks. Foreign handles are refused in the live order
+  (`prepare`: target, then context; `draw`: context, kernel, texture, layer).
+- `FakeShaderCompiler` — the `ShaderCompiler` (`ShaderCompilationDataSource`)
+  double: every `compile` suspends until `complete(_:with:)` (any handle or
+  diagnostics) or `succeed(_:)` (a fresh `FakeLibraryHandle` of the request's
+  source), exactly once and in any order, so a slow compile overtaken by a newer
+  one is a sequence the test writes. Like `FakeEffectRuntimeRepository` it
+  ignores cancellation, as the live DataSource does: a cancelled caller waits
+  for the test's completion and gets that result (the stale success after a
+  newer compile can be written down), so a test completes every request it
+  starts — one left pending surfaces through the time limit. Its requests carry
+  their issuing instance the same way, so `complete` returns `false` and
+  `succeed` `nil` for another `FakeShaderCompiler`'s request, leaving every
+  pending compile untouched. `HashNoiseReference`
+  (Tests/TestSupport) is the Swift twin of the prelude's `hash` / `noise`, for
+  the parity GPU suite and the Swift-only property tests.
 - `InMemoryFrameTransport` — the in-process Mach kernel behind the host↔extension
   loopback (`Tests/FramePathIntegrationTests/LoopbackRig.swift` keeps
   **separate surface pools on each side**). Hooks: a bootstrap table (look-up
