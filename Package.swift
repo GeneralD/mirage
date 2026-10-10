@@ -107,6 +107,9 @@ let package = Package(
         // Host only: the prelude, `#line` assembly, diagnostic mapping and the off-main compile.
         .target(name: "ShaderCompilationDataSource", dependencies: dependencies),
         .testTarget(name: "ShaderCompilationDataSourceTests", dependencies: ["ShaderCompilationDataSource"] + testDependencies),
+        // Host only: the bundled effect's MSL as a string constant (epic #14, D1).
+        .target(name: "BundledEffectDataSource", dependencies: dependencies),
+        .testTarget(name: "BundledEffectDataSourceTests", dependencies: ["BundledEffectDataSource"] + testDependencies),
         // Host only (it drives MetalGateway through the GPU ports): one effect pass, one command buffer.
         .target(name: "GPURenderDataSource", dependencies: dependencies),
         .testTarget(name: "GPURenderDataSourceTests", dependencies: ["GPURenderDataSource"] + testDependencies),
@@ -171,7 +174,7 @@ let package = Package(
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
-                "ShaderCompilationDataSource", "GPURenderDataSource", "PreviewDataSource",
+                "BundledEffectDataSource", "ShaderCompilationDataSource", "GPURenderDataSource", "PreviewDataSource",
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
             ]
         ),

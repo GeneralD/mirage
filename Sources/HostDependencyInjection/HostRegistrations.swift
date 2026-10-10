@@ -1,4 +1,5 @@
 import AVFoundationGateway
+import BundledEffectDataSource
 import CameraControlUseCase
 import CameraDataSource
 import CameraInteractor
@@ -89,6 +90,10 @@ extension PreviewRendererKey: DependencyKey {
 
 extension CameraExtensionInstallerKey: DependencyKey {
     public static let liveValue: any CameraExtensionInstaller = ExtensionInstallDataSourceImpl()
+}
+
+extension BundledEffectsKey: DependencyKey {
+    public static let liveValue: any BundledEffects = BundledEffectDataSourceImpl()
 }
 
 extension ShaderCompilerKey: DependencyKey {
