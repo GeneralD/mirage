@@ -69,6 +69,11 @@ jobs:
       - name: Build release binary
         run: make build
 
+      # Not shipped, but its linked-in Info.plist (`-sectcreate` through
+      # `unsafeFlags`) only fails at link time, so it is built on every PR.
+      - name: Build the development harness
+        run: make build-dev-harness
+
   test:
     runs-on: macos-latest
     needs: preflight

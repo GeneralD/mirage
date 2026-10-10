@@ -12,14 +12,15 @@ tables, physical-abstraction table, and Key Design Decisions — lives in
 ## Build & Test
 
 ```sh
-make build                 # release build of the shipped products only (never a bare `swift build`)
+make build                 # release build of App + ExtensionApp (never a bare `swift build`; SwiftPM still compiles every non-test target, dev-harness included)
+make build-dev-harness     # debug build of the dev-harness product (what `swift run dev-harness` runs; not shipped); always relinks, so a plist edit lands
 make test                  # swift test (parallel, no GPU)
 make test-gpu              # GPU smoke suites in their own process (needs a Metal device; CI runs it as the `test-gpu` job)
 make lint                  # swift-format lint --strict
 make format                # swift-format --in-place
 make check                 # import-boundary lint, physical-symbol lint, thin-live check, service-name check, product-name check, extension-no-Metal check
 make generate              # xcodegen → *.xcodeproj (gitignored thin shell for the .app + Camera Extension)
-swift run dev-harness      # camera → effects → preview window, no virtual camera (arrives with MVP-A; not in M0)
+swift run dev-harness      # preview window + camera prompt, no virtual camera (today a solid frame; camera → effects with #24)
 ```
 
 The System Extension (virtual camera) cannot be exercised from `swift run`;
@@ -72,7 +73,10 @@ on top of `CommonDependencyInjection`.
   may change. See `docs/ARCHITECTURE.md` → *Rename-safe naming*.
 - **Shells stay thin.** `Apps/**` holds only `main.swift` and assets; all
   logic is in SPM targets. `Info.plist` and entitlements are xcodegen output
-  from `project.yml` (gitignored), never hand-written.
+  from `project.yml` (gitignored), never hand-written. The one exception is
+  `Tools/DevHarness/Info.plist`: the dev harness is a SwiftPM executable
+  xcodegen never builds, so its plist is hand-written, role-named and linked
+  into the binary (`-sectcreate`).
 
 ### Testing Guidelines
 

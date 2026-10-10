@@ -25,24 +25,6 @@ final class FakeInstallUseCase: ExtensionInstallUseCase, Sendable {
     }
 }
 
-/// Answers `ensureAuthorized()` with a fixed decision and counts the asks.
-final class FakeCameraControlUseCase: CameraControlUseCase, Sendable {
-    private let decision: CameraAuthorizationStatus
-    let asks = Collector<Void>()
-    private let order: Collector<String>
-
-    init(decision: CameraAuthorizationStatus, order: Collector<String> = Collector()) {
-        self.decision = decision
-        self.order = order
-    }
-
-    func ensureAuthorized() async -> CameraAuthorizationStatus {
-        asks.append(())
-        order.append("authorize")
-        return decision
-    }
-}
-
 /// Records pipeline starts and stops; `start` throws when told to.
 final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     private let failure: (any Error)?

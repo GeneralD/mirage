@@ -14,11 +14,13 @@ import ExtensionInstallUseCase
 import FramePipelineUseCase
 import FrameTransportDataSource
 import GPURenderDataSource
+import HarnessInteractor
 import MetalGateway
 import MetalKitPreviewGateway
 import PreviewDataSource
 import PreviewRepository
 import ShaderCompilationDataSource
+import SolidFrameUseCase
 import SystemExtensionGateway
 import VirtualCameraRepository
 
@@ -26,6 +28,10 @@ import VirtualCameraRepository
 
 extension CameraInteractorKey: DependencyKey {
     public static let liveValue: any CameraInteractor = CameraInteractorImpl()
+}
+
+extension HarnessInteractorKey: DependencyKey {
+    public static let liveValue: any HarnessInteractor = HarnessInteractorImpl()
 }
 
 extension FramePipelineUseCaseKey: DependencyKey {
@@ -38,6 +44,10 @@ extension CameraControlUseCaseKey: DependencyKey {
 
 extension ExtensionInstallUseCaseKey: DependencyKey {
     public static let liveValue: any ExtensionInstallUseCase = ExtensionInstallUseCaseImpl()
+}
+
+extension SolidFrameUseCaseKey: DependencyKey {
+    public static let liveValue: any SolidFrameUseCase = SolidFrameUseCaseImpl()
 }
 
 extension CameraRepositoryKey: DependencyKey {

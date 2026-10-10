@@ -47,6 +47,9 @@ let package = Package(
         // Camera Extension bundle. Each shell's main.swift calls one entry point.
         .library(name: "App", targets: ["App"]),
         .library(name: "ExtensionApp", targets: ["ExtensionApp"]),
+        // `swift run dev-harness`: camera prompt + preview window, no extension.
+        // Not shipped (no xcodegen shell links it); `make build-dev-harness` builds it.
+        .executable(name: "dev-harness", targets: ["DevHarness"]),
     ],
     dependencies: [
         .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.9.0"),
@@ -140,10 +143,16 @@ let package = Package(
         .testTarget(name: "ExtensionInstallUseCaseTests", dependencies: ["ExtensionInstallUseCase"] + testDependencies),
         .target(name: "ExtensionRelayUseCase", dependencies: dependencies),
         .testTarget(name: "ExtensionRelayUseCaseTests", dependencies: ["ExtensionRelayUseCase"] + testDependencies),
+        // Host only: the lite dev harness's solid frame (#21), until #24 runs the harness on the pipeline.
+        .target(name: "SolidFrameUseCase", dependencies: dependencies),
+        .testTarget(name: "SolidFrameUseCaseTests", dependencies: ["SolidFrameUseCase"] + testDependencies),
 
         // ── Interactor ──
         .target(name: "CameraInteractor", dependencies: dependencies),
         .testTarget(name: "CameraInteractorTests", dependencies: ["CameraInteractor"] + testDependencies),
+        // Host only: the lite dev harness's launch sequence (#21).
+        .target(name: "HarnessInteractor", dependencies: dependencies),
+        .testTarget(name: "HarnessInteractorTests", dependencies: ["HarnessInteractor"] + testDependencies),
 
         // ── DependencyInjection (liveValue registrations only) ──
         .target(
@@ -157,8 +166,8 @@ let package = Package(
             name: "HostDependencyInjection",
             dependencies: dependencies + [
                 "CommonDependencyInjection",
-                "CameraInteractor",
-                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase",
+                "CameraInteractor", "HarnessInteractor",
+                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase", "SolidFrameUseCase",
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
@@ -183,6 +192,28 @@ let package = Package(
         // ── Entry ──
         .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
+        // The development harness (host graph only). `main.swift` launches AppKit;
+        // HarnessSession holds its lifecycle and wiring (DevHarnessTests); what it does
+        // is HarnessInteractor's, over SolidFrameUseCase and CameraControlUseCase.
+        // A SwiftPM executable has no bundle, so its Info.plist (bundle id, camera
+        // usage string for TCC) is linked in as the __TEXT,__info_plist section —
+        // the one hand-written plist, outside the xcodegen shells (docs/ARCHITECTURE.md
+        // → Key Design Decisions). `unsafeFlags` is accepted in a root package only,
+        // and no shipped product contains this target. The path is absolute so the
+        // link does not depend on the directory `swift` runs from.
+        .executableTarget(
+            name: "DevHarness",
+            dependencies: dependencies + ["HostDependencyInjection", "Views"],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "\(Context.packageDirectory)/Tools/DevHarness/Info.plist",
+                ])
+            ]
+        ),
+        .testTarget(name: "DevHarnessTests", dependencies: ["DevHarness"] + testDependencies),
 
         // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──
         // Imports Metal and IOSurface directly: a test target, not a Gateway, so the
