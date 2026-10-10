@@ -26,6 +26,7 @@ struct FramePipelineFlowTests {
         try await started(rig)
         let frame = try #require(rig.emit(at: 1_000))
         rig.scheduler.tick()
+        await rig.completeEffect()
         #expect(rig.sink.sent.values == [frame])
         #expect(rig.surfaces.liveCount == 0)
         #expect(rig.surfaces.refusedReleases == 0)
@@ -37,6 +38,7 @@ struct FramePipelineFlowTests {
         try await started(rig)
         rig.emit(at: 1_000)
         rig.scheduler.tick(times: 3)
+        await rig.completeEffect()
         #expect(rig.sink.sent.count == 1)
     }
 
@@ -48,6 +50,7 @@ struct FramePipelineFlowTests {
         let second = try #require(rig.emit(at: 2_000))
         #expect(rig.surfaces.inner.pool.handle(for: first.token) == nil)
         rig.scheduler.tick()
+        await rig.completeEffect()
         #expect(rig.sink.sent.values == [second])
         #expect(rig.subject.stats.framesReceived == 2)
         #expect(rig.subject.stats.framesSent == 1)
@@ -72,6 +75,7 @@ struct FramePipelineFlowTests {
         rig.sink.dropSends(with: .notConnected)
         rig.emit(at: 1_000)
         rig.scheduler.tick()
+        await rig.completeEffect()
         #expect(rig.sink.sent.count == 0)
         #expect(rig.subject.stats.framesDropped == 1)
         #expect(rig.subject.stats.framesSent == 0)

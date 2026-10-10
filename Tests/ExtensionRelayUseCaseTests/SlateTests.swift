@@ -171,6 +171,20 @@ struct SlateTests {
         try await rig.finish(task)
     }
 
+    @Test("a dropped slate frame is counted by its reason like a dropped real frame, so the reasons add up to the drops")
+    func slateDropsCarryTheirReason() async throws {
+        let rig = RelayRig()
+        let task = await start(rig, streaming: false)
+        rig.receiver.emit(.hostLost(.deadName))
+        rig.scheduler.tick(times: 3)
+
+        let stats = rig.subject.stats
+        #expect(stats.framesDropped == 3)
+        #expect(stats.dropReasons == [.noClient: 3])
+        #expect(stats.dropReasons.values.reduce(0, +) == stats.framesDropped)
+        try await rig.finish(task)
+    }
+
     @Test("the summary carries the slate count, and entering and leaving are traced")
     func summaryAndLogs() async throws {
         let rig = RelayRig()

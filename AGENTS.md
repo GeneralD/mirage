@@ -108,9 +108,9 @@ Shared conventions:
   the host app nor the extension has a usable stderr. Never `print`.
 - Frame-path callbacks run on the `FrameExecutor` port. UseCase state on the
   frame path is a single-threaded state machine; no locks in UseCases. Async
-  work the frame path must start (the host reconnect) goes through the
-  `WorkRunner` port and its `WorkHandle`, never an unstructured `Task {` in a
-  UseCase. The shader compile is the same: `ShaderCompilationDataSource` runs it
+  work the frame path must start (the host reconnect, the effect `apply`) goes
+  through the `WorkRunner` port and its `WorkHandle`, never an unstructured
+  `Task {` in a UseCase. The shader compile is the same: `ShaderCompilationDataSource` runs it
   inside a `WorkRunner` item, never on main and never in a bare `Task {`.
 - Effects compile behind the engine prelude (`Uniforms`, `hash`, `noise`) and a
   `#line 1 "effect"` directive, so diagnostics carry the author's line numbers;
@@ -122,6 +122,18 @@ Shared conventions:
   token was still live, `liveCount` is the invariant. A UseCase releases the
   token it was given exactly once; it never sees an `IOSurface` or a
   retain/release pair.
+- Host frame path: camera → latest-frame slot (newest wins) → one effect pass
+  per tick → sink. At most one pass is in flight; a tick that finds one running
+  drops its frame as `.inFlightCapReached`. A pass holds two leases and only
+  its answer ends them: on success the input is released at the answer and the
+  output after the send; on any failure the output is released at the answer
+  and the input is sent unchanged, then released. No failure state is kept
+  between frames. `stop()` abandons the pass rather than cancelling it (the GPU
+  may still use both surfaces): it bumps a stop count first, so no answer sends
+  after it; the pass keeps its leases and the cap until its answer, which
+  releases both unsent; and `releaseAll()` waits for that answer. A pass
+  carries the count its run's `start()` read, never one a tick reads, so a
+  tick still running when `stop()` bumps the count cannot adopt the new one.
 - Shells (`Apps/**`) hold only `main.swift` and assets; `make check` bounds
   their size. `Info.plist` and entitlements are generated from `project.yml`
   by `make generate` (gitignored), never hand-written.
@@ -170,6 +182,12 @@ Shared conventions:
   cancellation.
   `FakeShaderLibraryGateway` reports an issue when called on the main thread;
   `FakeTextureCacheGateway.isBalanced` is the bind/unbind invariant.
+- The pipeline's in-flight cap is driven by answering its `apply` by hand: a
+  pipeline test answers each pass (`Rig.completeEffect` / `answer`, and
+  `answerAbandoned` for a pass `stop()` gave up on), and `LoopbackRig.capture`
+  answers with pass-through unless told otherwise. The fake runtime ignores
+  cancellation like the live one, so an abandoned pass stays pending
+  (`pendingCount`) until the test answers it.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
   wall clock.

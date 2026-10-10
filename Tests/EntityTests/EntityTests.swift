@@ -47,6 +47,16 @@ import Testing
         stats.note(.dropped(.noClient))
         #expect(stats.summary == "frames=1 received=2 dropped=1 maxGapMs=40 slate=0")
     }
+
+    @Test func dropsAreAlsoCountedByReason() {
+        var stats = PipelineStats.empty
+        stats.note(.dropped(.inFlightCapReached))
+        stats.note(.dropped(.inFlightCapReached))
+        stats.note(.dropped(.sendFailed(code: 7)))
+        stats.note(.sent)
+        #expect(stats.framesDropped == 3)
+        #expect(stats.dropReasons == [.inFlightCapReached: 2, .sendFailed(code: 7): 1])
+    }
 }
 
 @Suite struct RetryPolicyTests {
