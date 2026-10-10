@@ -70,7 +70,10 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   arrived, then `drain()`s; passes complete through `FakeGPUGateway`. Removing
   the hop turns that suite red. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
-  records `attached` targets. Requests are `Collector`s, so a test awaits
+  records `attached` targets; with `holding: .onceAttached` it keeps the live
+  sink's contract for a preview nobody has opened: until a target is attached
+  every frame is recorded and completes at once, inside `present`.
+  Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
 - The pipeline's in-flight cap is driven by **manual completion**: the fake
   runtime never answers on its own — nor, like the live one, on cancellation —

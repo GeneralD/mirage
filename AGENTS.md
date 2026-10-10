@@ -183,8 +183,10 @@ Shared conventions:
   (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
   `completeApply`), `FakeGPURenderer` (`complete(request, with:)`, or a
   scripted `respond(with:)`), `FakeShaderCompiler` (`complete(request, with:)` /
-  `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`),
-  `FakePreviewGateway` (`complete(draw, with:)`).
+  `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`; with
+  `holding: .onceAttached` it completes at once, inside `present`, until a
+  target is attached, as the live sink does), `FakePreviewGateway`
+  (`complete(draw, with:)`).
   Each completion is exactly once; a second one, or one another instance
   issued, returns `false` (`FakeShaderCompiler.succeed` returns `nil`). Like
   their live counterparts, the runtime, renderer and compiler fakes ignore

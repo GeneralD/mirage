@@ -64,6 +64,31 @@ struct InMemoryPreviewSinkTests {
         #expect(throws: PreviewError.foreignTarget) { try sink.attach(ForeignPreviewTarget()) }
         #expect(sink.attached.count == 1)
     }
+
+    @Test("holding once attached: until a target is attached every frame completes inside present, is recorded and cannot complete again")
+    func completesAtOnceUntilAttached() throws {
+        let sink = InMemoryPreviewSink(holding: .onceAttached)
+        let completions = Collector<Int>()
+        sink.present(frame(1)) { completions.append(1) }
+        #expect(completions.values == [1], "completed before present returned")
+        #expect(sink.presented.values.map(\.frame) == [frame(1)])
+        #expect(sink.pending.isEmpty)
+        let early = try #require(sink.presented.values.first)
+        #expect(!sink.complete(early), "a frame that completed at once is not completed twice")
+
+        #expect(throws: PreviewError.foreignTarget) { try sink.attach(ForeignPreviewTarget()) }
+        sink.present(frame(2)) { completions.append(2) }
+        #expect(completions.values == [1, 2], "a refused attach leaves the sink completing at once")
+
+        try sink.attach(FakePreviewTargetHandle())
+        sink.present(frame(3)) { completions.append(3) }
+        #expect(completions.values == [1, 2], "once attached the completion is held")
+        let held = try #require(sink.pending.first)
+        #expect(held.frame == frame(3))
+        #expect(sink.complete(held))
+        #expect(completions.values == [1, 2, 3])
+        #expect(sink.presented.values.map(\.frame) == [frame(1), frame(2), frame(3)])
+    }
 }
 
 private final class ForeignPreviewTarget: PreviewTargetHandle, Sendable {
