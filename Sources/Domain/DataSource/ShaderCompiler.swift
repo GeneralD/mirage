@@ -7,7 +7,7 @@ import Dependencies
 /// rewritten to the author's file (`effect:<line>:`) or to the prelude
 /// (`prelude:<line>:`). The compile runs off the main thread through the
 /// `WorkRunner` port. Nothing is cached here: the compile cache and "newest
-/// wins" belong to `EffectRuntimeRepository`.
+/// wins" belong to `EffectRuntimeStateDataSource`.
 public protocol ShaderCompiler: Sendable {
     /// One compile of `effect.source` with `effect.options`.
     ///

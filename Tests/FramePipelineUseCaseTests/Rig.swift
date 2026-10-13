@@ -151,9 +151,9 @@ extension Rig {
         return await tickUntil(tick: { executor.drain() }, until: { surfaces.liveCount <= before - 2 })
     }
 
-    /// Answers the next pass in start order — by default with the `.internalError` the
-    /// live pass-through runtime answers, so the input frame goes on to the sink — and
-    /// drains until the pipeline has taken it. For tests whose every pass is answered here.
+    /// Answers the next pass in start order — by default with an `.internalError`, a
+    /// failure, so the input frame goes on to the sink — and drains until the pipeline
+    /// has taken it. For tests whose every pass is answered here.
     func completeEffect(with result: Result<Void, EffectFailure> = .failure(.internalError)) async {
         let index = completed.withLock { count -> Int in
             defer { count += 1 }

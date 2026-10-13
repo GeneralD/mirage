@@ -3,7 +3,7 @@ import IOSurface
 import Testing
 
 /// What the GPU suites share: the one fixed tolerance, a compute pass awaited on
-/// its completion handler, and a surface's pixels read back on the CPU.
+/// its completion handler, and a surface's pixels written and read back on the CPU.
 enum GPUSmokeSupport {
     /// One 8-bit step: the GPU rounds the unorm store, the reference rounds in
     /// Swift. Every GPU-vs-Swift comparison uses this value and no other.
@@ -28,6 +28,20 @@ enum GPUSmokeSupport {
         let base = IOSurfaceGetBaseAddress(raw).assumingMemoryBound(to: UInt8.self)
         return SurfacePixels(
             bytes: Array(UnsafeBufferPointer(start: base, count: IOSurfaceGetAllocSize(raw))), stride: IOSurfaceGetBytesPerRow(raw))
+    }
+
+    /// Writes `pixel(x, y)` (`[B, G, R, A]`) into every pixel of the surface, under a write lock.
+    static func write(_ surface: any SurfaceHandle, pixel: (Int, Int) -> [UInt8]) throws {
+        let raw = try #require(surface.backing as? IOSurface)
+        IOSurfaceLock(raw, [], nil)
+        defer { IOSurfaceUnlock(raw, [], nil) }
+        let base = IOSurfaceGetBaseAddress(raw).assumingMemoryBound(to: UInt8.self)
+        let stride = IOSurfaceGetBytesPerRow(raw)
+        for y in 0..<IOSurfaceGetHeight(raw) {
+            for x in 0..<IOSurfaceGetWidth(raw) {
+                for (channel, value) in pixel(x, y).enumerated() { base[y * stride + x * 4 + channel] = value }
+            }
+        }
     }
 
     /// The largest channel difference between two pixels.

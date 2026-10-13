@@ -7,8 +7,9 @@ import Dependencies
 /// Cancelling the caller cuts neither call short: a compile or a GPU pass that
 /// has started runs to its end and the call answers with its real outcome, so
 /// the caller holds the leases it handed in until `apply` returns.
-/// The live value is `PassthroughEffectRuntimeRepository` (no effect loaded)
-/// until the real runtime lands in the same module (#19).
+/// The live value is `EffectRuntimeRepositoryImpl`, which only orchestrates the
+/// compile and the render; the in-process compile cache, newest-wins and the
+/// bundled effect while nothing has been prepared live in `EffectRuntimeState`.
 public protocol EffectRuntimeRepository: Sendable {
     /// Compiles `effect` (or finds it in the cache) so `apply` can run it.
     /// Never on the main thread; a slow compile overtaken by a newer `prepare`

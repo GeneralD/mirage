@@ -1,6 +1,10 @@
+import BundledEffectDataSource
 import Dependencies
 import Domain
+import EffectRuntimeRepository
+import EffectRuntimeStateDataSource
 import Foundation
+import GPURenderDataSource
 import IOSurfaceGateway
 import MetalGateway
 import ShaderCompilationDataSource
@@ -20,6 +24,9 @@ import Testing
 /// Every kernel is assembled the way `ShaderCompilationDataSource` assembles an
 /// effect (the prelude's `Uniforms`, then `#line 1 "effect"`), so the suite also
 /// proves the prelude compiles and that `#line` maps diagnostics on this compiler.
+/// The bundled effect is compiled the same way and its pixels compared with
+/// `ChromaticGrainReference`, once through the gateway and once through
+/// `EffectRuntimeRepository` over the live DataSources.
 @Suite("MetalGateway smoke", .serialized, .enabled(if: MetalDeviceProbe.isAvailable), .timeLimit(.minutes(1)))
 struct MetalGatewaySmokeTests {
     private let gateway = MetalGatewayImpl()
@@ -218,6 +225,123 @@ struct MetalGatewaySmokeTests {
         #expect(completion.error == nil)
         #expect(try GPUSmokeSupport.pixels(of: surface).pixel(x: 17, y: 201) == [64, 128, 255, 255])
         try gateway.unbind(texture)
+    }
+
+    // MARK: - The bundled effect
+
+    private static let effectDescriptor = SurfaceDescriptor.bgra(width: 160, height: 96)
+
+    private static func effectUniforms(time: Float, frameIndex: UInt32, seed: UInt32) -> EffectUniforms {
+        EffectUniforms(
+            time: time, frameIndex: frameIndex, resolution: SIMD2(Float(effectDescriptor.width), Float(effectDescriptor.height)), seed: seed)
+    }
+
+    /// The input surface of the bundled-effect checks, filled with `ChromaticGrainReference.input`.
+    private func effectInput() throws -> any SurfaceHandle {
+        let surface = try surfaces.create(Self.effectDescriptor)
+        try GPUSmokeSupport.write(surface) { ChromaticGrainReference.input($0, $1) }
+        return surface
+    }
+
+    /// Checks `output` against the reference for `uniforms`, pixel by pixel, plus what the
+    /// tolerance cannot hide: alpha is opaque everywhere, and red really drifted.
+    private static func expectBundledEffect(in output: any SurfaceHandle, uniforms: EffectUniforms) throws {
+        let image = try GPUSmokeSupport.pixels(of: output)
+        let (width, height) = (effectDescriptor.width, effectDescriptor.height)
+        let distances = (0..<height).flatMap { y in
+            (0..<width).map { x in
+                GPUSmokeSupport.distance(
+                    image.pixel(x: x, y: y),
+                    ChromaticGrainReference.pixel(x: x, y: y, uniforms: uniforms, width: width, height: height, input: ChromaticGrainReference.input))
+            }
+        }
+        let outside = distances.filter { $0 > GPUSmokeSupport.tolerance }.count
+        #expect(outside == 0, "\(outside) pixels outside the tolerance; worst channel difference \(distances.max() ?? 0)")
+        let pixels = (0..<height).flatMap { y in (0..<width).map { x in (image.pixel(x: x, y: y), ChromaticGrainReference.input(x, y)) } }
+        #expect(pixels.allSatisfy { $0.0[3] == 255 }, "alpha is written opaque")
+        // The grain moves a channel by at most 8 levels; a red channel 9 levels a pixel steep moves further only by drifting.
+        let drifted = pixels.filter { abs(Int($0.0[2]) - Int($0.1[2])) > 8 }.count
+        #expect(drifted > pixels.count / 2, "only \(drifted) of \(pixels.count) pixels show the red drift")
+    }
+
+    @Test(
+        "the bundled effect compiles behind the prelude and one pass over a fixed input matches its Swift reference within one 8-bit step",
+        arguments: [(Float(3.25), UInt32(7), UInt32(0)), (0.6, 120, 0x5EED_1234)]
+    )
+    func bundledEffectMatchesReference(time: Float, frameIndex: UInt32, seed: UInt32) async throws {
+        let effect = BundledEffectDataSourceImpl().defaultEffect
+        let context = try gateway.makeContext()
+        let kernel = try gateway.compile(source: ShaderSourceAssembly.assemble(effect.source), options: effect.options, on: context).get()
+        let output = try surfaces.create(Self.effectDescriptor)
+        let textures = [try gateway.bind(try effectInput(), on: context), try gateway.bind(output, on: context)]
+        let uniforms = Self.effectUniforms(time: time, frameIndex: frameIndex, seed: seed)
+
+        let grid = DispatchGrid.covering(width: Self.effectDescriptor.width, height: Self.effectDescriptor.height)
+        let completion = try await run(ComputePass(kernel: kernel, textures: textures, uniforms: uniforms, grid: grid), on: context)
+        #expect(completion.error == nil)
+        try textures.forEach(gateway.unbind)
+        try Self.expectBundledEffect(in: output, uniforms: uniforms)
+    }
+
+    @Test("EffectRuntimeRepository over the live stack: with nothing prepared, apply compiles the bundled effect once and renders it")
+    @MainActor
+    func runtimeOverLiveStack() async throws {
+        let executor = ManualFrameExecutor()
+        let pool = FakeSurfacePool(capacity: 2)
+        let log = RecordingLog()
+        let gateway = gateway
+        let (compiler, renderer) = withDependencies {
+            $0.gpuGateway = gateway
+            $0.shaderLibraryGateway = gateway
+            $0.textureCacheGateway = gateway
+            $0.workRunner = RecordingWorkRunner()
+            $0.surfacePool = pool
+            $0.frameExecutor = executor
+            $0.errorLog = log
+        } operation: {
+            (ShaderCompilationDataSourceImpl(), GPURenderDataSourceImpl())
+        }
+        let state = withDependencies {
+            $0.frameExecutor = executor
+        } operation: {
+            EffectRuntimeStateDataSourceImpl()
+        }
+        // The compile the first `apply` starts runs here; the test waits for it to end before it reads the log.
+        let runtimeWork = RecordingWorkRunner()
+        let runtime = withDependencies {
+            $0.effectRuntimeState = state
+            $0.workRunner = runtimeWork
+            $0.shaderCompiler = compiler
+            $0.gpuRenderer = renderer
+            $0.bundledEffects = BundledEffectDataSourceImpl()
+            $0.errorLog = log
+            $0.developerLog = log
+        } operation: {
+            EffectRuntimeRepositoryImpl()
+        }
+        let descriptor = Self.effectDescriptor
+        let output = try surfaces.create(descriptor)
+        let input = try #require(pool.adopt(try effectInput(), descriptor: descriptor))
+        let target = try #require(pool.adopt(output, descriptor: descriptor))
+
+        // Two frames of one run, 0.75 s apart: the first compiles, the second hits the cache.
+        for (index, seconds) in [(UInt32(0), 5.0), (1, 5.75)] {
+            let time = HostTimestamp.seconds(seconds)
+            let answered = Collector<EffectFailure?>()
+            Task {
+                let result = await runtime.apply(
+                    input: FrameRef(token: input, descriptor: descriptor, presentationTime: time),
+                    output: FrameRef(token: target, descriptor: descriptor, presentationTime: time),
+                    frameContext: FrameContext(presentationTime: time, frameIndex: index))
+                answered.append(result.failure)
+            }
+            #expect(await tickUntil(tick: { executor.drain() }, until: { answered.count == 1 }))
+            #expect(answered.values == [nil], "frame \(index)")
+            try Self.expectBundledEffect(in: output, uniforms: Self.effectUniforms(time: index == 0 ? 0 : 0.75, frameIndex: index, seed: 0))
+        }
+        #expect(await tickUntil(tick: { executor.drain() }, until: { runtimeWork.finished.count == 1 }), "the one compile ended")
+        #expect(log.entries.values.map(\.message) == ["effect 'Chromatic Grain' compiled"])
+        #expect(pool.release(input) && pool.release(target), "the leases stayed the caller's")
     }
 
     @Test("a surface can be bound again after unbind, and foreign handles are refused")

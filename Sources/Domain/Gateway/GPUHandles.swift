@@ -10,7 +10,7 @@ public protocol GPUContextHandle: AnyObject, Sendable {
 }
 
 /// One compiled effect, resolved to its entry kernel and ready to dispatch
-/// (live: the compute pipeline state). `EffectRuntimeRepository` caches these.
+/// (live: the compute pipeline state). `EffectRuntimeStateDataSource` caches these.
 public protocol LibraryHandle: AnyObject, Sendable {
     var backing: AnyObject { get }
 }

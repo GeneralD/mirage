@@ -126,7 +126,17 @@ struct ShaderCompilationDataSourceTests {
 
         #expect(diagnostics.message.hasPrefix("no GPU context to compile on: noDevice"))
         #expect(diagnostics.code == (GPUError.noDevice as NSError).code)
+        #expect(diagnostics.cause == .environment, "not the source's fault: the runtime may try again")
         #expect(library.calls.count == 0)
+    }
+
+    @Test("a source the compiler rejects is the source's fault: its diagnostics carry the source cause")
+    func sourceFailureCause() async throws {
+        let assembled = ShaderSourceAssembly.assemble(effect.source)
+        library.failCompile(of: assembled, with: ShaderDiagnostics(message: "program_source:1:1: error: x", code: 3))
+        let diagnostics = try #require(await makeSubject().compile(effect).failure)
+
+        #expect(diagnostics.cause == .source)
     }
 
     @Test("nothing is cached: the same effect compiled twice reaches the compiler twice")
@@ -136,7 +146,7 @@ struct ShaderCompilationDataSourceTests {
         let second = try await subject.compile(effect).get()
 
         #expect(library.calls.count == 2)
-        #expect(ObjectIdentifier(first) != ObjectIdentifier(second), "caching is EffectRuntimeRepository's")
+        #expect(ObjectIdentifier(first) != ObjectIdentifier(second), "caching is EffectRuntimeStateDataSource's")
     }
 
     /// Lines an author might write around the broken one; none of them breaks the arithmetic.

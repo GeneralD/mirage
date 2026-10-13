@@ -71,7 +71,7 @@ struct PreviewSmokeTests {
     func scaledToFit(_ fit: Fit) async throws {
         let input = try surfaces.create(.bgra(width: fit.width, height: fit.height))
         let pixel = { (x: Int, y: Int) in Self.gradient(x, y, width: fit.width, height: fit.height) }
-        try Self.write(input) { pixel($0, $1) }
+        try GPUSmokeSupport.write(input) { pixel($0, $1) }
         let rows = try await blit(input, into: try surfaces.create(.bgra(width: fit.targetWidth, height: fit.targetHeight)))
 
         let expected = Self.aspectFit(width: fit.width, height: fit.height, into: fit.targetWidth, fit.targetHeight, pixel: pixel)
@@ -88,7 +88,7 @@ struct PreviewSmokeTests {
         let size = 16
         let input = try surfaces.create(.bgra(width: size, height: size))
         let pattern = { (x: Int, y: Int) -> [UInt8] in [UInt8(x * 16), UInt8(y * 16), 200, 255] }
-        try Self.write(input) { pattern($0, $1) }
+        try GPUSmokeSupport.write(input) { pattern($0, $1) }
         let rows = try await blit(input, into: try surfaces.create(.bgra(width: size, height: size)))
 
         let mismatches = (0..<size).flatMap { y in (0..<size).filter { x in rows[y][x] != pattern(x, y) } }
@@ -255,19 +255,6 @@ struct PreviewSmokeTests {
         let stride = IOSurfaceGetBytesPerRow(raw)
         return (0..<IOSurfaceGetHeight(raw)).map { y in
             (0..<IOSurfaceGetWidth(raw)).map { x in (0..<4).map { base[y * stride + x * 4 + $0] } }
-        }
-    }
-
-    private static func write(_ surface: any SurfaceHandle, pixel: (Int, Int) -> [UInt8]) throws {
-        let raw = try #require(surface.backing as? IOSurface)
-        IOSurfaceLock(raw, [], nil)
-        defer { IOSurfaceUnlock(raw, [], nil) }
-        let base = IOSurfaceGetBaseAddress(raw).assumingMemoryBound(to: UInt8.self)
-        let stride = IOSurfaceGetBytesPerRow(raw)
-        for y in 0..<IOSurfaceGetHeight(raw) {
-            for x in 0..<IOSurfaceGetWidth(raw) {
-                for (channel, value) in pixel(x, y).enumerated() { base[y * stride + x * 4 + channel] = value }
-            }
         }
     }
 }

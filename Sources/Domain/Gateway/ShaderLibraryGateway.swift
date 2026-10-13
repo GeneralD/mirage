@@ -2,7 +2,7 @@ import Dependencies
 
 /// Thin pass-through to the runtime shader compiler. Source assembly (prelude,
 /// `#line`), the compile cache and the "never on main" guarantee belong to
-/// `ShaderCompilationDataSource` / `EffectRuntimeRepository`; this port only
+/// `ShaderCompilationDataSource` / `EffectRuntimeStateDataSource`; this port only
 /// turns one source into one executable handle or the compiler's diagnostics.
 public protocol ShaderLibraryGateway: Sendable {
     /// `makeLibrary(source:options:)`, then `options.entryPoint` resolved to its

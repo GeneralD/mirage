@@ -224,9 +224,9 @@ extension LoopbackRig {
 
     /// One camera frame into the host's slot, then one scheduler tick to send it. The
     /// tick hands the frame to the effect stage; the pass is answered with `effect`
-    /// (by default the `.internalError` of the live pass-through runtime, so the
-    /// camera's own surface goes on) and its result is drained, so the frame has
-    /// reached the transport — and the preview — when this returns.
+    /// (by default an `.internalError`, a failure, so the camera's own surface goes
+    /// on) and its result is drained, so the frame has reached the transport — and
+    /// the preview — when this returns.
     @MainActor
     func capture(
         _ handle: FakeSurfaceHandle,

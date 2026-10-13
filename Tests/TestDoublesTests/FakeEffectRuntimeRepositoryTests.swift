@@ -91,17 +91,18 @@ struct FakeEffectRuntimeRepositoryTests {
     @Test("requests issued by another repository complete nothing here")
     func foreignRequestsAreRefused() async throws {
         let other = FakeEffectRuntimeRepository()
+        // One caller at a time, so each repository numbers its prepare 1 and its apply 2.
         let preparing = Task { await runtime.prepare(effect) }
+        await runtime.prepareRequests.waitForCount(1)
         let applying = Task {
             await runtime.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))
         }
+        await runtime.applyRequests.waitForCount(1)
         let strangerPreparing = Task { await other.prepare(effect) }
+        await other.prepareRequests.waitForCount(1)
         let strangerApplying = Task {
             await other.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))
         }
-        await runtime.prepareRequests.waitForCount(1)
-        await runtime.applyRequests.waitForCount(1)
-        await other.prepareRequests.waitForCount(1)
         await other.applyRequests.waitForCount(1)
         let strangerPrepare = try #require(other.prepareRequests.last)
         let strangerApply = try #require(other.applyRequests.last)

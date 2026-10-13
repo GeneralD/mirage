@@ -9,8 +9,8 @@ public enum EffectFailure: Error, Sendable, Hashable {
     case accessRevoked
     case outOfMemory
     case invalidResource
-    /// A failure of the runtime itself rather than of the effect — including
-    /// "no effect is loaded", which is what the pass-through runtime reports.
+    /// A failure of the runtime itself rather than of the effect (no GPU context,
+    /// a pass that could not be committed), never something the effect's author caused.
     case internalError
     /// A raw code no mapping claims; kept so it is visible in the logs.
     case unknown(code: Int)

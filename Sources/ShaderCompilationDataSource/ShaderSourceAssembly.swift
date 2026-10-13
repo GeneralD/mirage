@@ -34,9 +34,9 @@ public enum ShaderSourceAssembly {
     }
 
     /// `diagnostics` with every `program_source:<line>:` location rewritten to the
-    /// author's file or the prelude; the code is kept.
+    /// author's file or the prelude; the code and the cause are kept.
     public static func authorRelative(_ diagnostics: ShaderDiagnostics) -> ShaderDiagnostics {
-        ShaderDiagnostics(message: authorRelative(diagnostics.message), code: diagnostics.code)
+        ShaderDiagnostics(message: authorRelative(diagnostics.message), code: diagnostics.code, cause: diagnostics.cause)
     }
 
     /// `message` with every `program_source:<line>:` location at the start of a

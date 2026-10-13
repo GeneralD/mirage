@@ -18,7 +18,7 @@ struct FakeShaderLibraryGatewayTests {
         let handle = try #require(first as? FakeLibraryHandle)
         #expect(handle.source == "a")
         #expect(handle.options == options)
-        #expect(ObjectIdentifier(first) != ObjectIdentifier(second), "a fresh handle per compile; caching is the repository's")
+        #expect(ObjectIdentifier(first) != ObjectIdentifier(second), "a fresh handle per compile; caching is EffectRuntimeStateDataSource's")
         #expect(gateway.calls.values.map(\.onMainThread) == [false, false])
     }
 

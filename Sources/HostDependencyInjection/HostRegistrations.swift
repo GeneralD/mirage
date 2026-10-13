@@ -1,4 +1,5 @@
 import AVFoundationGateway
+import BundledEffectDataSource
 import CameraControlUseCase
 import CameraDataSource
 import CameraInteractor
@@ -8,6 +9,7 @@ import CommonDependencyInjection
 import Dependencies
 import Domain
 import EffectRuntimeRepository
+import EffectRuntimeStateDataSource
 import ExtensionInstallDataSource
 import ExtensionInstallRepository
 import ExtensionInstallUseCase
@@ -62,9 +64,8 @@ extension ExtensionInstallRepositoryKey: DependencyKey {
     public static let liveValue: any ExtensionInstallRepository = ExtensionInstallRepositoryImpl()
 }
 
-// Pass-through default (epic #14, D18): replaced in place by #19.
 extension EffectRuntimeRepositoryKey: DependencyKey {
-    public static let liveValue: any EffectRuntimeRepository = PassthroughEffectRuntimeRepository()
+    public static let liveValue: any EffectRuntimeRepository = EffectRuntimeRepositoryImpl()
 }
 
 extension PreviewSinkKey: DependencyKey {
@@ -89,6 +90,14 @@ extension PreviewRendererKey: DependencyKey {
 
 extension CameraExtensionInstallerKey: DependencyKey {
     public static let liveValue: any CameraExtensionInstaller = ExtensionInstallDataSourceImpl()
+}
+
+extension BundledEffectsKey: DependencyKey {
+    public static let liveValue: any BundledEffects = BundledEffectDataSourceImpl()
+}
+
+extension EffectRuntimeStateKey: DependencyKey {
+    public static let liveValue: any EffectRuntimeState = EffectRuntimeStateDataSourceImpl()
 }
 
 extension ShaderCompilerKey: DependencyKey {
