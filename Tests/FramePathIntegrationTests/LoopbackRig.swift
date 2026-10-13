@@ -57,6 +57,9 @@ struct HostSide {
     let work = RecordingWorkRunner()
     let clock = TestClock<Duration>()
     let camera = FakeCameraSource()
+    /// Which runtime the pipeline applies its effect with; `LoopbackRig.capture` drives a
+    /// `.fake` host and `captureThroughRuntime` a `.real` one, and each refuses the other.
+    let effectsKind: HostEffects
     /// The effect runtime of a `.fake` host: every `apply` waits until the test answers it
     /// (`LoopbackRig.capture`). Unused by a `.real` one.
     let effects = FakeEffectRuntimeRepository()
@@ -80,6 +83,7 @@ struct HostSide {
         kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int, preview choice: HostPreview,
         effects effectsChoice: HostEffects
     ) {
+        effectsKind = effectsChoice
         let executor = executor
         let scheduler = scheduler
         let work = work
@@ -283,6 +287,10 @@ extension LoopbackRig {
         at nanoseconds: UInt64,
         effect: Result<Void, EffectFailure> = .failure(.internalError)
     ) async {
+        guard host.effectsKind == .fake else {
+            Issue.record("capture answers a FakeEffectRuntimeRepository; a .real host goes through captureThroughRuntime")
+            return
+        }
         host.camera.emit(handle, at: HostTimestamp(nanoseconds: nanoseconds))
         // Only an effect pass starts work inside a tick (a reconnect starts on the executor),
         // so a new work item means this tick started one, and its number is the item's.
@@ -307,10 +315,16 @@ extension LoopbackRig {
     /// a GPU (a source that did not compile) or has committed its command buffer, completes
     /// that with `completion` — what the device would report — and drains until the pipeline
     /// has taken the answer. The frame has reached the transport, and the preview, when this
-    /// returns. The first frame also compiles the bundled effect, on the work runner, off
-    /// this thread; a compile that never arrives fails the test by its time limit.
+    /// returns, and so has every work item the tick started: the first frame also compiles the
+    /// bundled effect, on the work runner, off this thread, and the `apply` answers when the
+    /// selection settles, before that item has logged, so this waits for the item to finish before
+    /// the log is read. A compile that never arrives fails the test by its time limit.
     @MainActor
     func captureThroughRuntime(_ handle: FakeSurfaceHandle, at nanoseconds: UInt64, completing completion: GPUCompletion = .finished) async {
+        guard host.effectsKind == .real else {
+            Issue.record("captureThroughRuntime drives the real runtime; a .fake host goes through capture")
+            return
+        }
         let answers = { host.pipeline.stats.effectsApplied + host.pipeline.stats.effectFailures.values.reduce(0, +) }
         let (answered, submitted) = (answers(), host.gpu.submissions.count)
         host.camera.emit(handle, at: HostTimestamp(nanoseconds: nanoseconds))
@@ -320,7 +334,7 @@ extension LoopbackRig {
             Issue.record("the tick started a pass but it neither answered nor committed a command buffer")
             return
         }
-        guard answers() == answered else { return }
+        guard answers() == answered else { return await workSettled() }
         guard let submission = host.gpu.pending.last else {
             Issue.record("a command buffer was committed but is not pending")
             return
@@ -328,6 +342,13 @@ extension LoopbackRig {
         host.gpu.complete(submission, with: completion)
         let taken = await tickUntil(tick: { host.executor.drain() }, until: { answers() > answered })
         if !taken { Issue.record("the pipeline never took the answer to the pass") }
+        await workSettled()
+    }
+
+    /// Every item the run has handed the work runner has finished: the compile an `apply` starts
+    /// itself is started before the `apply` answers, but may log after it.
+    private func workSettled() async {
+        await host.work.finished.waitForCount(host.work.started.count)
     }
 
     /// Pumps the extension until its relay has counted `count` received frames.
@@ -349,6 +370,14 @@ extension LoopbackRig {
     func stopHost() {
         host.pipeline.stop()
         host.executor.drain()
+    }
+
+    /// `stopHost()` for a test that drove the fake GPU layer by hand: every effect pass and
+    /// every preview draw it started was completed, so none is left pending when the host stops.
+    func stopHostExpectingIdleGPU() {
+        #expect(host.gpu.pending.isEmpty, "an effect pass was left pending on the fake GPU")
+        #expect(host.previewGateway.pending.isEmpty, "a preview draw was left pending on the fake GPU")
+        stopHost()
     }
 
     /// The presentation times the stream has received, in arrival order.

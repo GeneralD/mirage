@@ -59,7 +59,7 @@ struct RealEffectRuntimeIntegrationTests {
         #expect(rig.ext.pool.liveCount == 0)
 
         try await rig.stopExtension(relay)
-        rig.stopHost()
+        rig.stopHostExpectingIdleGPU()
     }
 
     @Test func laterFramesReuseTheCompiledEffectAndTheSessionClockRuns() async throws {
@@ -86,7 +86,7 @@ struct RealEffectRuntimeIntegrationTests {
         #expect(rig.host.textures.isBalanced)
 
         try await rig.stopExtension(relay)
-        rig.stopHost()
+        rig.stopHostExpectingIdleGPU()
     }
 
     // MARK: A broken effect never costs the picture
@@ -123,7 +123,7 @@ struct RealEffectRuntimeIntegrationTests {
         #expect(rig.ext.pool.liveCount == 0)
 
         try await rig.stopExtension(relay)
-        rig.stopHost()
+        rig.stopHostExpectingIdleGPU()
     }
 
     @Test func aCommandBufferThatFailsPassesTheFrameThroughAndTheNextFrameIsAppliedAgain() async throws {
@@ -150,7 +150,7 @@ struct RealEffectRuntimeIntegrationTests {
         #expect(rig.ext.pool.liveCount == 0)
 
         try await rig.stopExtension(relay)
-        rig.stopHost()
+        rig.stopHostExpectingIdleGPU()
     }
 
     // MARK: With the real preview as well
@@ -181,7 +181,7 @@ struct RealEffectRuntimeIntegrationTests {
         #expect(rig.host.errors.entries.count == 0)
 
         try await rig.stopExtension(relay)
-        rig.stopHost()
+        rig.stopHostExpectingIdleGPU()
     }
 
     // MARK: Helpers
