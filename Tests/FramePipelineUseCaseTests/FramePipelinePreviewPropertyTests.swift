@@ -40,9 +40,15 @@ private struct PreviewModel {
     var passesStarted = 0
     var emitted = 0
     var ticksTaking = 0
+    /// The sink refuses every send (`.queueFull`) while this is set; the test flips it.
+    var refusing = false
+    /// Every frame handed on, in order: the link took it or refused it, and the preview shows it either way.
+    var shown: [FrameRef] = []
+    /// The frames the link took: `shown` less the refused ones.
     var sent: [FrameRef] = []
     var capDrops = 0
     var poolDrops = 0
+    var sinkDrops = 0
     var abandoned = 0
     var applied = 0
     var failed = 0
@@ -61,6 +67,10 @@ private struct PreviewModel {
     var stopsWithFrameOnPreview = 0
     var completionsAfterRestart = 0
     var restarts = 0
+    var refusedSends = 0
+    var refusedShownAtOnce = 0
+    var refusedHeld = 0
+    var refusedPassedThrough = 0
 
     var live: Int { (latest == nil ? 0 : 1) + (pass == nil ? 0 : 2) + showing.count + completing }
     var stopQueued: Bool { queue.contains(.stop) }
@@ -78,6 +88,10 @@ private struct PreviewCoverage {
     var completedOutOfOrder = 0
     var stopsWithFrameOnPreview = 0
     var completionsAfterRestart = 0
+    var refusedSends = 0
+    var refusedShownAtOnce = 0
+    var refusedHeld = 0
+    var refusedPassedThrough = 0
 
     mutating func add(_ model: PreviewModel) {
         applied += model.applied
@@ -91,20 +105,24 @@ private struct PreviewCoverage {
         completedOutOfOrder += model.completedOutOfOrder
         stopsWithFrameOnPreview += model.stopsWithFrameOnPreview
         completionsAfterRestart += model.completionsAfterRestart
+        refusedSends += model.refusedSends
+        refusedShownAtOnce += model.refusedShownAtOnce
+        refusedHeld += model.refusedHeld
+        refusedPassedThrough += model.refusedPassedThrough
     }
 }
 
 @Suite("FramePipelineUseCaseImpl preview fan-out properties", .timeLimit(.minutes(1)))
 struct FramePipelinePreviewPropertyTests {
     @Test(
-        "any order of emit, tick, effect answer, send, preview completion, attach, stop and restart keeps every lease balanced, shows every sent frame and accounts for every taken one",
+        "any order of emit, tick, effect answer, send or refusal, preview completion, attach, stop and restart keeps every lease balanced, shows every frame the link took or refused and accounts for every taken one",
         arguments: Seeds.range(0..<50))
     func invariantsHold(seed: UInt64) async throws {
         _ = try await run(seed: seed)
     }
 
     @Test(
-        "across the seeds every path is taken: shown at once and held, completed out of order, stopped and completed after a restart with a frame on the preview, a full pool"
+        "across the seeds every path is taken: shown at once and held, completed out of order, stopped and completed after a restart with a frame on the preview, a full pool, a refused send shown at once, held and passed through"
     )
     func seedsCoverEveryPath() async throws {
         var total = PreviewCoverage()
@@ -122,6 +140,10 @@ struct FramePipelinePreviewPropertyTests {
         #expect(total.completedOutOfOrder > 0, "no seed ever completed a later frame first")
         #expect(total.stopsWithFrameOnPreview > 0, "no seed ever stopped with a frame on the preview")
         #expect(total.completionsAfterRestart > 0, "no seed ever completed an earlier run's frame after a restart")
+        #expect(total.refusedSends > 0, "no seed ever had the sink refuse a send")
+        #expect(total.refusedShownAtOnce > 0, "no seed ever showed a refused frame before the preview was attached")
+        #expect(total.refusedHeld > 0, "no seed ever showed a refused frame on an attached preview")
+        #expect(total.refusedPassedThrough > 0, "no seed ever had the sink refuse a frame that had passed through")
     }
 
     private func run(seed: UInt64) async throws -> PreviewModel {
@@ -135,7 +157,7 @@ struct FramePipelinePreviewPropertyTests {
 
         for _ in 0..<80 {
             time += UInt64.random(in: 1...40_000_000, using: &generator)
-            try await step(Int.random(in: 0..<49, using: &generator), at: time, model: &model, rig: rig, generator: &generator)
+            try await step(Int.random(in: 0..<52, using: &generator), at: time, model: &model, rig: rig, generator: &generator)
             #expect(rig.surfaces.liveCount == model.live, "seed \(seed): the pipeline holds exactly the slot, the pass and the frames on the preview")
             #expect(rig.surfaces.refusedReleases == 0, "seed \(seed): no lease released twice")
             #expect(rig.preview.pending.count == model.showing.count, "seed \(seed)")
@@ -159,29 +181,34 @@ struct FramePipelinePreviewPropertyTests {
         #expect(rig.preview.pending.isEmpty, "seed \(seed)")
         #expect(rig.surfaces.liveCount == 0, "seed \(seed)")
         #expect(rig.surfaces.refusedReleases == 0, "seed \(seed)")
-        #expect(rig.sink.sent.values == model.sent, "seed \(seed): success sends the output, any failure the input itself")
-        #expect(rig.preview.presented.values.map(\.frame) == model.sent, "seed \(seed): every frame sent is shown once, in the same order")
+        #expect(rig.sink.sent.values == model.sent, "seed \(seed): success sends the output, any failure the input itself; a refusal sends nothing")
+        #expect(
+            rig.preview.presented.values.map(\.frame) == model.shown,
+            "seed \(seed): every frame handed on is shown once, in the same order — the ones the link refused too")
         let times = rig.sink.sent.values.map(\.presentationTime)
         #expect(zip(times, times.dropFirst()).allSatisfy { $0 < $1 }, "seed \(seed): PTS strictly increasing")
         #expect(stats.framesReceived == model.emitted, "seed \(seed)")
         #expect(stats.framesSent == model.sent.count, "seed \(seed)")
-        #expect(stats.framesDropped == model.capDrops + model.poolDrops, "seed \(seed)")
+        #expect(stats.framesDropped == model.capDrops + model.poolDrops + model.sinkDrops, "seed \(seed)")
         var reasons: [FrameDropReason: Int] = [:]
         if model.capDrops > 0 { reasons[.inFlightCapReached] = model.capDrops }
         if model.poolDrops > 0 { reasons[.poolExhausted] = model.poolDrops }
+        if model.sinkDrops > 0 { reasons[.queueFull] = model.sinkDrops }
         #expect(stats.dropReasons == reasons, "seed \(seed)")
         #expect(
             model.ticksTaking == stats.framesSent + stats.framesDropped + model.abandoned,
-            "seed \(seed): every frame a tick took was sent, counted as a drop, or abandoned by stop — the preview changes none of it")
+            "seed \(seed): every frame a tick took was sent, counted as a drop (the link's refusals included), or abandoned by stop — the preview changes none of it"
+        )
         #expect(stats.effectsApplied == model.applied, "seed \(seed)")
         #expect(stats.effectsFailed == model.failed, "seed \(seed)")
         return model
     }
 
-    /// `roll` in 0..<49 picks the step; stop (48) is rare so most runs do real work
-    /// first. A preview completion is rarer than a send, so frames pile up on the preview
-    /// and the pool fills. While stopped (and the stop has run), the emit and tick rolls
-    /// restart instead, and an abandoned pass is answered by only a few of the answer rolls.
+    /// `roll` in 0..<52 picks the step; stop (48) is rare so most runs do real work
+    /// first, and 49..<52 flip whether the sink refuses sends. A preview completion is
+    /// rarer than a send, so frames pile up on the preview and the pool fills. While
+    /// stopped (and the stop has run), the emit and tick rolls restart instead, and an
+    /// abandoned pass is answered by only a few of the answer rolls.
     private func step(
         _ roll: Int, at time: UInt64, model: inout PreviewModel, rig: Rig, generator: inout SeededGenerator
     ) async throws {
@@ -219,6 +246,10 @@ struct FramePipelinePreviewPropertyTests {
             if !model.showing.isEmpty || model.completing > 0 { model.stopsWithFrameOnPreview += 1 }
             abandon(&model)
             model.queue.append(.stop)
+        case 49..<52:
+            // Takes effect at the next send, which is the next drain that runs an answer.
+            model.refusing.toggle()
+            rig.sink.dropSends(with: model.refusing ? .queueFull : nil)
         default:
             return
         }
@@ -289,7 +320,7 @@ struct FramePipelinePreviewPropertyTests {
         model.abandoned += 1
     }
 
-    /// Runs what is queued, in queue order: an answer ends its pass (sent and shown, or for
+    /// Runs what is queued, in queue order: an answer ends its pass (sent or refused, and shown, or for
     /// an abandoned pass only its leases ended); the stop's cleanup ends the slot; every
     /// completion's hop ends its frame's lease.
     private func drain(_ model: inout PreviewModel, _ rig: Rig) {
@@ -312,13 +343,24 @@ struct FramePipelinePreviewPropertyTests {
         case .success: model.applied += 1
         case .failure: model.failed += 1
         }
-        model.sent.append(sends)
+        // The send comes first and the preview shows the frame whatever its outcome: a refusal
+        // is a counted drop, not a frame the pipeline stops owning.
+        model.shown.append(sends)
+        if model.refusing {
+            model.sinkDrops += 1
+            model.refusedSends += 1
+            if case .failure = result { model.refusedPassedThrough += 1 }
+        } else {
+            model.sent.append(sends)
+        }
         // Before an attach the preview completes inside `present`, and the hop runs in this drain.
         guard model.attached else {
             model.shownAtOnce += 1
+            if model.refusing { model.refusedShownAtOnce += 1 }
             return
         }
         model.showing.append(model.run)
         model.held += 1
+        if model.refusing { model.refusedHeld += 1 }
     }
 }
