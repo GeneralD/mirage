@@ -78,7 +78,12 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   executor of its own, so one that reached for it would meet the unimplemented
   default. A negative check ("the apply is still waiting") is a bounded
   `tickUntil(...) == false` (`stillWaiting`), never a count read right after one
-  `drain()`: an answer on its way to the call's task is invisible to that. `InMemoryPreviewSink` —
+  `drain()`: an answer on its way to the call's task is invisible to that. A
+  compile an `apply` starts itself runs on a `RecordingWorkRunner`, and the
+  `apply` answers when the selection settles, which is before that compile's own
+  task has logged: the Repository suite waits for it with `compilesFinished(n)`
+  (draining the executor) before it reads the log, and leaves a compile held
+  to prove that an `apply` does not wait for it. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
   records `attached` targets. Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.

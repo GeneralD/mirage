@@ -107,13 +107,18 @@ Shared conventions:
   `(source, compile options)` and never by the effect's name; device id / OS
   version and a cache on disk are MVP-B. The newest `prepare` decides what
   `apply` runs (newest wins, success or failure); a stale compile still answers
-  its own caller and fills the cache but never releases a waiting `apply`.
+  its own caller and fills the cache but never releases a waiting `apply`. An
+  `apply` that compiles an effect itself starts the compile on the `WorkRunner`
+  and waits for the selection, not for that compile, so a newer `prepare` that
+  settles first answers it at once.
   While nothing is prepared, the first `apply` prepares
   `BundledEffects.defaultEffect`, served by `BundledEffectDataSource` as an
   MSL string constant (no `Bundle.main`). A source that does not compile is
   `.compileFailed` and final; a compile that found no GPU context is
   `.internalError` and retried by the next `apply`
-  (`ShaderDiagnostics.cause`). `EffectUniforms.pass` is pure: `time` is seconds
+  (`ShaderDiagnostics.cause`; every compile error the Gateway returns is
+  `.source`), and that streak is logged once, plus its recovery.
+  `EffectUniforms.pass` is pure: `time` is seconds
   since the session's first frame (`EffectSession`, PTS minus the session
   start), `resolution` the output size in pixels (the grid is rounded up to
   whole threadgroups, so a kernel bounds-checks `gid`), `seed` 0 until MVP-C.
