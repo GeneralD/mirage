@@ -57,7 +57,12 @@ A key's port kind is the `Sources/Domain/<Kind>/` directory that declares its
 is its name. Each lane may resolve the kind of the layer right below it plus
 Support (`errorLog`, `developerLog`, `hostTime`, and swift-dependencies'
 `continuousClock`), and nothing else. A key resolved across the chain is a
-per-key exception in the script, with the decision it rests on.
+per-key exception in the script, with the decision it rests on; an exception
+nothing resolves any more fails, so the list cannot outlive its reason. The
+resolutions are found through the AST (`@Dependency` in any layout, and the
+wrapper's initializer), so comments and strings never count, and only the plain
+`\.key` form passes: a key-path chain, `Key.self` or `\DependencyValues.key`
+fails instead of slipping through.
 
 | Lane (modules) | May resolve | Per-key exceptions |
 |---|---|---|
