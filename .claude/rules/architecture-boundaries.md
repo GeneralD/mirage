@@ -69,8 +69,8 @@ layout, and the wrapper's initializer spelled `Dependency(...)`,
 so comments and strings never count, and only the plain `\.key` form passes: a
 key-path chain, `Key.self`, `\DependencyValues.key` or a second argument fails
 instead of slipping through. Not seen: an initializer reached through inference
-(`.init(\.key)`), and `withDependencies` overrides, which assign rather than
-resolve.
+(`.init(\.key)`) or spelled `Dependency<T>.init(...)`, and `withDependencies`
+overrides, which assign rather than resolve.
 
 | Lane (modules) | May resolve | Per-key exceptions |
 |---|---|---|
