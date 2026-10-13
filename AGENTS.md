@@ -83,12 +83,13 @@ Shared conventions:
   CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, os) outside
   Gateway modules and the View/Router/App lane. `make check` fails otherwise.
 - No layer skipping through `@Dependency`: a module resolves only the ports of
-  the layer right below it plus Support (`scripts/check-dependency-keypaths.sh`,
-  in `make check`; a port's kind is its `Sources/Domain/<Kind>/` directory).
-  The per-key exceptions — the frame path's execution context for UseCases,
-  `workRunner` for Repositories, `surfacePool` for the two GPU DataSources,
+  the layer right below it, plus Support (`scripts/check-dependency-keypaths.sh`,
+  run by `make check`; a port's kind is its `Sources/Domain/<Kind>/` directory).
+  The exceptions are listed in `.claude/rules/architecture-boundaries.md`: the
+  frame path's execution context for UseCases, `workRunner` for Repositories,
+  `surfacePool` for `GPURenderDataSource` and `PreviewDataSource`, and
   `extensionRelayUseCase` for `ExtensionApp`, whose process has no GUI and so
-  no Interactor lane — are tabled in `.claude/rules/architecture-boundaries.md`.
+  no Interactor lane.
 - The extension process never links Metal: `MetalGateway` and
   `MetalKitPreviewGateway` are registered in `HostDependencyInjection` only,
   and `scripts/check-extension-no-metal.sh` (in `make check`) walks the

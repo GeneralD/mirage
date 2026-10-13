@@ -15,9 +15,10 @@ When adding a new module (UseCase, Repository, DataSource, Gateway, …):
    to `scripts/check-imports.sh` (framework allow) and
    `scripts/check-physical-symbols.sh` (live-module allow). A new port needs
    no key-path entry (its `Sources/Domain/<Kind>/` directory is its kind); a
-   module whose name carries no layer suffix (an entry point, a view lane)
-   needs a lane in `scripts/check-dependency-keypaths.sh`, and a key resolved
-   across the chain is a per-key exception there, with its decision.
+   module whose name carries no layer suffix (an entry point, a view or
+   presenter module) needs a lane in `scripts/check-dependency-keypaths.sh`,
+   and a key outside the lane's kinds is a per-key exception there that cites
+   the decision it rests on.
 7. **codecov.yml** — if the module is a CI-unreachable Gateway, add it to
    `ignore` and make it obey the thin-live rule.
 8. **Documentation**:

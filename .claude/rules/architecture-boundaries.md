@@ -56,10 +56,12 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 
 A key's port kind is the `Sources/Domain/<Kind>/` directory that declares its
 `DependencyValues` member, so a new port needs no lint entry; a module's lane
-is its name. Each lane may resolve the kind of the layer right below it plus
-Support (`errorLog`, `developerLog`, `hostTime`, and swift-dependencies'
-`continuousClock`), and nothing else. A key resolved across the chain is a
-per-key exception in the script, with the decision it rests on; an exception
+is derived from its name (the layer suffix, or the entry and view names). Each
+lane may resolve the kind of the layer right below it plus Support (the ports
+under `Sources/Domain/Support/` — today `errorLog`, `developerLog`, `hostTime`
+— and swift-dependencies' `continuousClock`), and nothing else. A key outside
+those kinds is a per-key exception in the script, each citing the decision it
+rests on; an exception
 nothing resolves any more fails, so the list cannot outlive its reason. The
 resolutions are found through the AST (`@Dependency` in any layout, and the
 wrapper's initializer), so comments and strings never count, and only the plain
@@ -72,9 +74,9 @@ fails instead of slipping through.
 | View (`Views`, `AppRouter`) | Presenter, Support | |
 | Presenter (`Presenters`, `*Presenter`) | Interactor, Support | |
 | `*Interactor` | UseCase, Support | |
-| `*UseCase` | Repository, Support | `frameExecutor`, `frameScheduler`, `workRunner` — the execution context the frame path runs on |
-| `*Repository` | DataSource, DataStore, Support | `workRunner` only; never `frameExecutor` or `frameScheduler` (D14, #36) |
-| `*DataSource` / `*DataStore` | Gateway, Support | `GPURenderDataSource`, `PreviewDataSource`: `surfacePool` — leases resolve through the executor-confined pool (D4) |
+| `*UseCase` | Repository, Support | `frameExecutor`, `frameScheduler`, `workRunner` — the execution context the frame path runs on (Physical Abstraction Table: *Frame execution context*, *Frame pacing*; → *Effect runtime*) |
+| `*Repository` | DataSource, DataStore, Support | `workRunner` only; never `frameExecutor` or `frameScheduler` (→ *Effect runtime*, epic #14 D14; the decision of #36) |
+| `*DataSource` / `*DataStore` | Gateway, Support | `GPURenderDataSource`, `PreviewDataSource`: `surfacePool` — leases resolve through the executor-confined pool (→ *One effect, one command buffer*, epic #14 D4; Physical Abstraction Table: *Texture binding*) |
 | Everything else (Entity, Domain, Gateway and Support lives, DI targets) | nothing | |
 
 ## Protocol API Design
