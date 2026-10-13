@@ -17,7 +17,8 @@ import Foundation
 /// context of the same device — the system default device, in the live gateway.
 /// A context that cannot be made is reported as diagnostics (its `GPUError`
 /// described, its `NSError` code kept), as the live gateway reports any error that
-/// is not the compiler's, and the compiler is never asked.
+/// is not the compiler's, and the compiler is never asked. Those diagnostics say
+/// `cause: .environment`, so the runtime can tell them from a broken source.
 public struct ShaderCompilationDataSourceImpl: Sendable {
     @Dependency(\.gpuGateway) private var gpuGateway
     @Dependency(\.shaderLibraryGateway) private var libraryGateway
@@ -43,8 +44,9 @@ extension ShaderCompilationDataSourceImpl: ShaderCompiler {
 }
 
 extension ShaderDiagnostics {
-    /// `GPUGateway.makeContext()` failed: nothing was compiled.
+    /// `GPUGateway.makeContext()` failed: nothing was compiled, and it is the
+    /// environment's fault rather than the source's (`cause`), so a later compile may succeed.
     static func contextUnavailable(_ error: any Error) -> ShaderDiagnostics {
-        ShaderDiagnostics(message: "no GPU context to compile on: \(error)", code: (error as NSError).code)
+        ShaderDiagnostics(message: "no GPU context to compile on: \(error)", code: (error as NSError).code, cause: .environment)
     }
 }

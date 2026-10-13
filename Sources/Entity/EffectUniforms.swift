@@ -7,8 +7,11 @@
 /// ```
 ///
 /// Offsets 0 / 4 / 8 / 16, stride 24 on both sides (`float2` is 8-aligned);
-/// `EntityTests` pins them. `time` is PTS minus the session start, `seed` is
-/// the `RandomSource` seed the hash-noise helpers consume.
+/// `EntityTests` pins them. `time` is seconds: PTS minus the session start
+/// (`EffectSession`). `resolution` is the output surface's size in pixels; the
+/// pass's grid is rounded up to whole threadgroups (`DispatchGrid.covering`), so it
+/// can overshoot it and a kernel bounds-checks its `gid`. `seed` is what the
+/// hash-noise helpers consume: 0 until a `RandomSource` exists (MVP-C).
 public struct EffectUniforms: Sendable, Hashable {
     public let time: Float
     public let frameIndex: UInt32

@@ -8,8 +8,9 @@ paths:
 # GPU Tests — Separate Process, CI-Capable
 
 Everything that *decides* (pass-through, auto-disable, budget, in-flight cap,
-newest-wins compile, the preview's latest-wins and exactly-once completion) is
-tested against `FakeGPUGateway` / `FakePreviewGateway` and never needs a GPU.
+the compile cache and newest-wins, the preview's latest-wins and exactly-once
+completion) is tested against the fakes (`FakeGPUGateway`, `FakeShaderCompiler`,
+`FakeGPURenderer`, `FakePreviewGateway`) and never needs a GPU.
 Only four things touch a real `MTLDevice`:
 
 1. `MetalDeviceSmokeTests` — the issue #4 runner probe kept as a test: a
@@ -35,6 +36,13 @@ Only four things touch a real `MTLDevice`:
    gateway keeps author lines, rewrites a prelude note to `prelude:<line>:` and
    returns a handle that dispatches on another context of the device.
    `ShaderCompileOptions.precise` (→ `fastMathEnabled = false`) is the default.
+   The bundled effect (`ChromaticGrainEffect`) compiles behind the prelude and
+   one pass over a fixed input matches its Swift twin (`ChromaticGrainReference`)
+   within the tolerance, for two sets of uniforms, with alpha checked exactly
+   and the red drift required to show; and `EffectRuntimeRepository` over the
+   live `ShaderCompilationDataSource` and `GPURenderDataSource` compiles it on
+   the first `apply`, renders two frames of one session (`time` 0, then 0.75)
+   that match the same reference, and logs one compile.
 3. `HashNoiseParityTests` (suite `hash-noise parity`) — the prelude's `hash` /
    `noise` on a 256 × 256 image against `HashNoiseReference` (Tests/TestSupport),
    for seed 0 and another seed: every pixel within the same single tolerance
@@ -75,8 +83,11 @@ SDK's `MTLCommandBufferErrorDomain` / `MTLCommandBufferError.Code`, wrapped as
 - Never write a test that provokes a real `timeout` / `pageFault` /
   `accessRevoked`: a repeated hang can revoke the test process's Metal access.
   Those scenarios are a manual VM lane (`.claude/rules/dev-verification.md`).
-- The compile cache key is `(source hash, compile options, device id, OS
-  version)`; a GPU test that depends on cache state resets it first.
+- The compile cache is `EffectRuntimeStateDataSource`'s (behind
+  `EffectRuntimeRepository`), in-process only: MVP-A keys it by
+  `(source, compile options)`, and device id / OS version (a cache on disk) are
+  MVP-B. A GPU test builds its own runtime and state, so it never shares cache
+  state with another test.
 - **GitHub-hosted macOS runners do expose a Metal device** (measured
   2026-10-09, issue #4, on both `macos-latest` = macOS 26.6.2 / Xcode 26.6 and
   `macos-15` = macOS 15.7.9 / Xcode 16.4; hardware `VirtualMac2,1`, "Apple M2

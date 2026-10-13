@@ -115,27 +115,6 @@ struct Progress: Equatable {
     let submissions: Int
 }
 
-/// `ManualFrameExecutor` that also records every enqueue, so a test can await the
-/// subject's hop instead of polling for it. Private to this suite: no other suite
-/// waits for work being queued.
-final class RecordingFrameExecutor: FrameExecutor, Sendable {
-    private let manual = ManualFrameExecutor()
-    /// One element per `run`, recorded after the work is queued.
-    let enqueued = Collector<Void>()
-
-    var pendingCount: Int { manual.pendingCount }
-
-    func run(_ work: @escaping @Sendable () -> Void) {
-        manual.run(work)
-        enqueued.append(())
-    }
-
-    @discardableResult
-    func drain() -> Int {
-        manual.drain()
-    }
-}
-
 extension EffectUniforms {
     static let sample = EffectUniforms(time: 1.5, frameIndex: 42, resolution: SIMD2(1280, 720), seed: 7)
 }

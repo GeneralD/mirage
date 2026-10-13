@@ -1,5 +1,5 @@
 /// How a shader source is compiled. Part of the compile cache key
-/// (`EffectRuntimeRepository`), so every field is `Hashable`.
+/// (`EffectRuntimeStateDataSource`), so every field is `Hashable`.
 public struct ShaderCompileOptions: Sendable, Hashable {
     /// The kernel the compiled handle executes. Every effect exposes one entry
     /// point under this name; the prelude never defines it.
@@ -18,13 +18,25 @@ public struct ShaderCompileOptions: Sendable, Hashable {
 /// line numbers back to the author's file (after the prelude is prepended) is
 /// `ShaderCompilationDataSource`'s job.
 public struct ShaderDiagnostics: Error, Sendable, Hashable {
+    /// Where a failure comes from, which decides whether trying again can help.
+    public enum Cause: Sendable, Hashable {
+        /// The effect's own source (or its entry point): compiling it again fails
+        /// the same way.
+        case source
+        /// The environment, not the source: no GPU context could be made, so
+        /// nothing was compiled. A later compile may succeed.
+        case environment
+    }
+
     public let message: String
     /// The OS error code (`MTLLibraryError`); `0` when the source compiled but
     /// the entry point was not found.
     public let code: Int
+    public let cause: Cause
 
-    public init(message: String, code: Int) {
+    public init(message: String, code: Int, cause: Cause = .source) {
         self.message = message
         self.code = code
+        self.cause = cause
     }
 }

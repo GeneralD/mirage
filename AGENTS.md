@@ -93,14 +93,35 @@ Shared conventions:
   `// allow-physical: <PortName>` only inside the port's live module.
 - No layer skipping. An Interactor never holds a Gateway; a UseCase never
   holds a DataSource. Thread pass-through contracts through adjacent layers.
-- Every host port has a live value from the day its contract exists:
-  `EffectRuntimeRepository` is registered as
-  `PassthroughEffectRuntimeRepository` (`prepare` and `apply` →
-  `.failure(.internalError)`, the pipeline passes the frame through) until the
-  real one replaces it in the same module. `PreviewSink` is already real
-  (`PreviewRepositoryImpl` over `PreviewDataSource`, which completes frames at
-  once until a view is attached). A PR merged out of order never leaves the
-  pipeline without a runtime or a sink.
+- Every host port has a live value from the day its contract exists, so a PR
+  merged out of order never leaves the pipeline without a runtime or a sink.
+  Both are real now: `PreviewSink` is `PreviewRepositoryImpl` over
+  `PreviewDataSource` (which completes frames at once until a view is
+  attached), and `EffectRuntimeRepository` is `EffectRuntimeRepositoryImpl`.
+- The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
+  orchestrates (compile through `ShaderCompiler`, render through
+  `GPURenderer`) and holds no state and no executor; its memory is
+  `EffectRuntimeStateDataSource` (port `EffectRuntimeState`), confined to
+  `FrameExecutor` (no lock, no actor), whose calls hop onto the executor
+  themselves. The compile cache is in-process, keyed by
+  `(source, compile options)` and never by the effect's name; device id / OS
+  version and a cache on disk are MVP-B. The newest `prepare` decides what
+  `apply` runs (newest wins, success or failure); a stale compile still answers
+  its own caller and fills the cache but never releases a waiting `apply`. An
+  `apply` that compiles an effect itself starts the compile on the `WorkRunner`
+  and waits for the selection, not for that compile, so a newer `prepare` that
+  settles first answers it at once.
+  While nothing is prepared, the first `apply` prepares
+  `BundledEffects.defaultEffect`, served by `BundledEffectDataSource` as an
+  MSL string constant (no `Bundle.main`). A source that does not compile is
+  `.compileFailed` and final; a compile that found no GPU context is
+  `.internalError` and retried by the next `apply`
+  (`ShaderDiagnostics.cause`; every compile error the Gateway returns is
+  `.source`), and that streak is logged once, plus its recovery.
+  `EffectUniforms.pass` is pure: `time` is seconds
+  since the session's first frame (`EffectSession`, PTS minus the session
+  start), `resolution` the output size in pixels (the grid is rounded up to
+  whole threadgroups, so a kernel bounds-checks `gid`), `seed` 0 until MVP-C.
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
   the owning UseCase module, never as a second UseCase.

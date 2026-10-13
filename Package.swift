@@ -107,6 +107,12 @@ let package = Package(
         // Host only: the prelude, `#line` assembly, diagnostic mapping and the off-main compile.
         .target(name: "ShaderCompilationDataSource", dependencies: dependencies),
         .testTarget(name: "ShaderCompilationDataSourceTests", dependencies: ["ShaderCompilationDataSource"] + testDependencies),
+        // Host only: the bundled effect's MSL as a string constant (epic #14, D1).
+        .target(name: "BundledEffectDataSource", dependencies: dependencies),
+        .testTarget(name: "BundledEffectDataSourceTests", dependencies: ["BundledEffectDataSource"] + testDependencies),
+        // Host only: the effect runtime's executor-confined memory (compile cache, selection, tickets, session clock).
+        .target(name: "EffectRuntimeStateDataSource", dependencies: dependencies),
+        .testTarget(name: "EffectRuntimeStateDataSourceTests", dependencies: ["EffectRuntimeStateDataSource"] + testDependencies),
         // Host only (it drives MetalGateway through the GPU ports): one effect pass, one command buffer.
         .target(name: "GPURenderDataSource", dependencies: dependencies),
         .testTarget(name: "GPURenderDataSourceTests", dependencies: ["GPURenderDataSource"] + testDependencies),
@@ -127,10 +133,10 @@ let package = Package(
         .testTarget(name: "StreamOutputRepositoryTests", dependencies: ["StreamOutputRepository"] + testDependencies),
         .target(name: "ExtensionInstallRepository", dependencies: dependencies),
         .testTarget(name: "ExtensionInstallRepositoryTests", dependencies: ["ExtensionInstallRepository"] + testDependencies),
-        // Host only. EffectRuntimeRepository ships a pass-through live value until #19
-        // adds the real runtime to the same module (epic #14, D18).
+        // Host only: orchestrates the compile, the runtime's state and the render pass; holds no state.
         .target(name: "EffectRuntimeRepository", dependencies: dependencies),
-        .testTarget(name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository"] + testDependencies),
+        .testTarget(
+            name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository", "EffectRuntimeStateDataSource"] + testDependencies),
         .target(name: "PreviewRepository", dependencies: dependencies),
         .testTarget(name: "PreviewRepositoryTests", dependencies: ["PreviewRepository"] + testDependencies),
 
@@ -171,7 +177,8 @@ let package = Package(
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
-                "ShaderCompilationDataSource", "GPURenderDataSource", "PreviewDataSource",
+                "BundledEffectDataSource", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
+                "PreviewDataSource",
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
             ]
         ),
@@ -222,7 +229,8 @@ let package = Package(
             name: "GPUSmokeTests",
             dependencies: dependencies + [
                 "MetalGateway", "MetalKitPreviewGateway", "IOSurfaceGateway", "ShaderCompilationDataSource", "GPURenderDataSource",
-                "PreviewDataSource", "Views", "TestDoubles", "TestSupport",
+                "BundledEffectDataSource", "EffectRuntimeRepository", "EffectRuntimeStateDataSource", "PreviewDataSource", "Views",
+                "TestDoubles", "TestSupport",
             ]
         ),
 

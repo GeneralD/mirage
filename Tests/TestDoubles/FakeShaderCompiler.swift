@@ -4,7 +4,7 @@ import TestSupport
 /// `ShaderCompiler` whose every `compile` suspends until the test completes it
 /// with whatever result it chooses — a handle or diagnostics — exactly once and
 /// in any order, so "a slow compile overtaken by a newer one" is a sequence the
-/// test writes down (`EffectRuntimeRepository`'s newest-wins). `succeed(_:)` is
+/// test writes down (`EffectRuntimeStateDataSource`'s newest-wins). `succeed(_:)` is
 /// the common completion: a fresh `FakeLibraryHandle` of the request's source,
 /// which `FakeGPUGateway` accepts.
 ///
