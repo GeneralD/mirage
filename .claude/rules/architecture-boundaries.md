@@ -31,9 +31,11 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 - **Knowledge placement follows the chain.** Path resolution, manifest
   decoding, source assembly, IPC framing live in DataSources; the layers above
   see only the contract.
-- **`make check` enforces two mechanical halves**: the import allow-list per
-  layer, and the `@Dependency(\.xxx)` key-path allow-list per layer (which port
-  kinds a layer may resolve). The judgement calls stay in review.
+- **`make check` enforces the mechanical half**: the import allow-list per
+  layer (`scripts/check-imports.sh`). Which port kinds a layer may resolve
+  through `@Dependency(\.xxx)` — the key-path allow-list — is a review
+  judgement today; the lint for it is #38. The other judgement calls stay in
+  review as well.
 
 ## Import Allow-List (enforced by `scripts/check-imports.sh`)
 
@@ -43,7 +45,7 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 | Domain | Foundation, Combine, Dependencies, Entity |
 | UseCase / Repository / DataSource / DataStore / Interactor / Presenters / Support (non-live) | Foundation, Combine, Dependencies, Domain |
 | Gateway live, Support live | the one OS framework the module wraps (+ Foundation, Dependencies, Domain) |
-| Views / AppRouter | AppKit, SwiftUI, MetalKit (preview view only), Dependencies, Domain, Presenters |
+| Views / AppRouter | AppKit, SwiftUI, MetalKit (only the preview view files use it; the lint allows it module-wide), Dependencies, Domain, Presenters |
 | App / ExtensionApp / DevHarness (composition roots) | the above plus the process's DI target (`HostDependencyInjection` / `ExtensionDependencyInjection`), so the `liveValue` registrations are linked into the shell; `DevHarness` takes only AppKit and SwiftUI from the row above, plus `Views` for `PreviewView` |
 | DI targets | everything in their process |
 | Shells | only their SPM products |
