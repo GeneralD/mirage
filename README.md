@@ -85,7 +85,7 @@ Conventions for contributors and AI agents: [`AGENTS.md`](AGENTS.md), [`.claude/
 | Stage | Goal |
 |---|---|
 | M0 | Pass-through frame visible in Zoom via the real Camera Extension |
-| MVP-A | One bundled effect end to end |
+| MVP-A | One bundled effect end to end: camera → GPU → preview in the dev harness and the loopback (the extension path is M0's) |
 | MVP-B | Runtime `.lens` loading, hot reload, menu switching |
 | MVP-C | Parameter UI generated from the manifest |
 | MVP-D | Pass-through on failure, auto-disable |
