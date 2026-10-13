@@ -259,6 +259,8 @@ let package = Package(
                 "SurfacePoolDataSource", "CameraDataSource", "FrameTransportDataSource",
                 "ExtensionRelayUseCase", "FrameReceiverRepository", "StreamOutputRepository",
                 "FrameReceiverDataSource", "StreamOutputDataSource", "PreviewRepository", "PreviewDataSource",
+                "EffectRuntimeRepository", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
+                "BundledEffectDataSource",
             ]
         ),
     ]
