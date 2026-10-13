@@ -33,8 +33,9 @@ public struct EffectSession: Sendable, Hashable {
 extension EffectUniforms {
     /// The uniforms of one pass: `time` in seconds since `session` started, the
     /// caller's `frameIndex`, the output surface's size in pixels as `resolution`
-    /// (the pass's grid covers it, so a kernel's `gid` runs over `[0, resolution)`),
-    /// and seed 0 — there is no `RandomSource` before MVP-C (epic #14, D3).
+    /// (the pass's grid is rounded up to whole threadgroups, so it can overshoot
+    /// `resolution` and a kernel bounds-checks its `gid`), and seed 0 — there is no
+    /// `RandomSource` before MVP-C (epic #14, D3).
     public static func pass(_ context: FrameContext, in session: EffectSession, output: SurfaceDescriptor) -> EffectUniforms {
         EffectUniforms(
             time: session.time(at: context.presentationTime),
