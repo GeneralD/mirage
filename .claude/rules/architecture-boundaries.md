@@ -31,11 +31,11 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 - **Knowledge placement follows the chain.** Path resolution, manifest
   decoding, source assembly, IPC framing live in DataSources; the layers above
   see only the contract.
-- **`make check` enforces the mechanical half**: the import allow-list per
-  layer (`scripts/check-imports.sh`). Which port kinds a layer may resolve
-  through `@Dependency(\.xxx)` — the key-path allow-list — is a review
-  judgement today; the lint for it is #38. The other judgement calls stay in
-  review as well.
+- **`make check` enforces two mechanical halves**: the import allow-list per
+  layer (`scripts/check-imports.sh`) and the key-path allow-list per layer
+  (`scripts/check-dependency-keypaths.sh`: which port kinds a layer may
+  resolve through `@Dependency(\.xxx)`). Both tables are below. The judgement
+  calls stay in review.
 
 ## Import Allow-List (enforced by `scripts/check-imports.sh`)
 
@@ -49,6 +49,26 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 | App / ExtensionApp / DevHarness (composition roots) | the above plus the process's DI target (`HostDependencyInjection` / `ExtensionDependencyInjection`), so the `liveValue` registrations are linked into the shell; `DevHarness` takes only AppKit and SwiftUI from the row above, plus `Views` for `PreviewView` |
 | DI targets | everything in their process |
 | Shells | only their SPM products |
+
+## Key-Path Allow-List (enforced by `scripts/check-dependency-keypaths.sh`)
+
+A key's port kind is the `Sources/Domain/<Kind>/` directory that declares its
+`DependencyValues` member, so a new port needs no lint entry; a module's lane
+is its name. Each lane may resolve the kind of the layer right below it plus
+Support (`errorLog`, `developerLog`, `hostTime`, and swift-dependencies'
+`continuousClock`), and nothing else. A key resolved across the chain is a
+per-key exception in the script, with the decision it rests on.
+
+| Lane (modules) | May resolve | Per-key exceptions |
+|---|---|---|
+| Entry (`App`, `DevHarness`, `ExtensionApp`) | Interactor, Support | `ExtensionApp`: `extensionRelayUseCase`, until `ExtensionInteractor` lands (MVP-B) |
+| View (`Views`, `AppRouter`) | Presenter, Support | |
+| Presenter (`Presenters`) | Interactor, Support | |
+| `*Interactor` | UseCase, Support | |
+| `*UseCase` | Repository, Support | `frameExecutor`, `frameScheduler`, `workRunner` — the execution context the frame path runs on |
+| `*Repository` | DataSource, Support | `workRunner` only; never `frameExecutor` or `frameScheduler` (D14, #36) |
+| `*DataSource` / `*DataStore` | Gateway, Support | `GPURenderDataSource`, `PreviewDataSource`: `surfacePool` — leases resolve through the executor-confined pool (D4) |
+| Everything else (Entity, Domain, Gateway and Support lives, DI targets) | nothing | |
 
 ## Protocol API Design
 

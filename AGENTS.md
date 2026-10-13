@@ -80,6 +80,13 @@ Shared conventions:
 - No OS framework import (AVFoundation, Metal, MetalKit, IOSurface,
   CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, os) outside
   Gateway modules and the View/Router/App lane. `make check` fails otherwise.
+- No layer skipping through `@Dependency`: a module resolves only the ports of
+  the layer right below it plus Support (`scripts/check-dependency-keypaths.sh`,
+  in `make check`; a port's kind is its `Sources/Domain/<Kind>/` directory).
+  The per-key exceptions — the frame path's execution context for UseCases,
+  `workRunner` for Repositories, `surfacePool` for the two GPU DataSources,
+  `extensionRelayUseCase` for `ExtensionApp` until `ExtensionInteractor` —
+  are tabled in `.claude/rules/architecture-boundaries.md`.
 - The extension process never links Metal: `MetalGateway` and
   `MetalKitPreviewGateway` are registered in `HostDependencyInjection` only,
   and `scripts/check-extension-no-metal.sh` (in `make check`) walks the
