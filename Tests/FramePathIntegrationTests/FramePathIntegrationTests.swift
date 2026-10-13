@@ -213,6 +213,31 @@ struct FramePathIntegrationTests {
         #expect(rig.host.textures.isBalanced)
     }
 
+    /// The state every launch starts in: the pipeline presents before any view exists. The real
+    /// `PreviewDataSource` queues the frame on the executor and gives it back in that job, after
+    /// `present` has returned (the test double completes inside `present`, so only this rig
+    /// exercises the live timing); nothing is compiled, bound or drawn.
+    @Test func beforeAViewIsOpenTheLivePreviewGivesEveryFrameBackWithoutDrawing() async throws {
+        let rig = LoopbackRig(preview: .rendered)
+        let relay = await rig.startExtension()
+        try await rig.startHost()
+
+        await rig.capture(FakeSurfaceHandle(id: 1), at: 1_000, effect: .success(()))
+        await rig.capture(FakeSurfaceHandle(id: 2), at: 2_000)
+        await rig.pumpExtension(untilReceived: 2)
+
+        #expect(rig.streamedTimes == [1_000, 2_000], "the stream gets the applied frame and the passed-through one alike")
+        #expect(rig.host.pool.liveCount == 0, "each lease ended with the drain that sent the frame")
+        #expect(rig.ext.pool.liveCount == 0)
+        #expect(rig.host.shaders.calls.count == 0, "no kernel is compiled before a view is attached")
+        #expect(rig.host.textures.bindCount == 0)
+        #expect(rig.host.previewGateway.draws.count == 0)
+        #expect(rig.host.errors.entries.count == 0)
+
+        try await rig.stopExtension(relay)
+        rig.stopHost()
+    }
+
     @Test func stoppingBothSidesEndsTheReceiveAndReturnsEveryRight() async throws {
         let rig = LoopbackRig()
         let relay = await rig.startExtension()
