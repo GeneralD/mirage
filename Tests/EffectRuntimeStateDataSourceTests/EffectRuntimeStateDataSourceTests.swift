@@ -204,8 +204,9 @@ struct EffectRuntimeStateDataSourceTests {
     func waitingCallersAreReleasedTogether() async throws {
         let fixture = StateFixture()
         let compile = try await fixture.startCompile(.first)
-        let early = fixture.admit(Frame(index: 0, nanoseconds: 5_000_000_000))
-        let late = fixture.admit(Frame(index: 1, nanoseconds: 5_250_000_000))
+        // Queued one after the other: the session starts at whichever step runs first.
+        let early = await fixture.admitQueued(Frame(index: 0, nanoseconds: 5_000_000_000))
+        let late = await fixture.admitQueued(Frame(index: 1, nanoseconds: 5_250_000_000))
         #expect(await fixture.stillWaiting(early))
         #expect(await fixture.stillWaiting(late))
 

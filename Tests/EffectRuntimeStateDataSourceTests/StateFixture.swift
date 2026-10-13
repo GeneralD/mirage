@@ -53,6 +53,16 @@ struct StateFixture {
         }
     }
 
+    /// Starts `admit` and returns once its step is queued on the executor, before anything of
+    /// it has run: calls started one after another this way reach the executor in that order,
+    /// which two bare `admit`s, each on its own task, do not promise.
+    func admitQueued(_ frame: Frame = Frame(index: 0), fallback: EffectSource = .bundled) async -> Pending<EffectAdmission> {
+        let hops = executor.enqueued.count
+        let call = admit(frame, fallback: fallback)
+        await executor.enqueued.waitForCount(hops + 1)
+        return call
+    }
+
     func selected() -> Pending<Result<any LibraryHandle, EffectFailure>> {
         let subject = subject
         return Pending { await subject.selected() }
