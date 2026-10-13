@@ -117,4 +117,10 @@ struct ShaderSourceAssemblyTests {
         let raw = ShaderDiagnostics(message: "program_source:\(Self.offset + 1):1: error: x", code: 3)
         #expect(ShaderSourceAssembly.authorRelative(raw) == ShaderDiagnostics(message: "effect:1:1: error: x", code: 3))
     }
+
+    @Test("rewriting diagnostics keeps their cause", arguments: [ShaderDiagnostics.Cause.source, .environment])
+    func causeIsKept(_ cause: ShaderDiagnostics.Cause) {
+        let raw = ShaderDiagnostics(message: "program_source:\(Self.offset + 1):1: error: x", code: 3, cause: cause)
+        #expect(ShaderSourceAssembly.authorRelative(raw).cause == cause)
+    }
 }

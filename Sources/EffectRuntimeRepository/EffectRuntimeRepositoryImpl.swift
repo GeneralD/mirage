@@ -29,10 +29,13 @@ import Domain
 /// bundled effect without knowing it exists (MVP-A has no effect menu).
 ///
 /// **Waiting, not failing.** An `apply` that finds the newest compile still
-/// running waits for it to settle and then runs it, or answers `.compileFailed`
-/// when it failed — one slow pass rather than frames counted as failures. A
-/// failed compile is final for the frames that follow: they answer
-/// `.compileFailed` at once, without compiling again, until a newer `prepare`.
+/// running waits for it to settle and then runs it, or answers its failure —
+/// one slow pass rather than frames counted as failures. A source that does not
+/// compile is final for the frames that follow: they answer `.compileFailed` at
+/// once, without compiling again, until a newer `prepare`. A compile that failed
+/// for want of a GPU context (`ShaderDiagnostics.cause == .environment`) is not
+/// the effect's fault: it answers `.internalError`, as the renderer does for the
+/// same cause, and the next `apply` compiles that effect again.
 ///
 /// **Uniforms** are built on the executor when the frame arrives
 /// (`EffectUniforms.pass`): `time` from the `EffectSession`, the caller's
@@ -75,7 +78,7 @@ extension EffectRuntimeRepositoryImpl: EffectRuntimeRepository {
         switch await admit(frameContext, output: output.descriptor) {
         case .ready(let admitted, let passUniforms):
             (library, uniforms) = (admitted, passUniforms)
-        case .compileDefault(let effect, let ticket, let passUniforms):
+        case .compile(let effect, let ticket, let passUniforms):
             _ = await compile(effect, ticket: ticket)
             (library, uniforms) = (await selected(), passUniforms)
         }
@@ -101,8 +104,10 @@ extension EffectRuntimeRepositoryImpl {
     private enum Admission: Sendable {
         /// The selection has settled (at once, or after waiting for the newest compile).
         case ready(Result<any LibraryHandle, EffectFailure>, EffectUniforms)
-        /// Nothing was prepared: this `apply` compiles the bundled effect, then reads the selection.
-        case compileDefault(EffectSource, ticket: Int, EffectUniforms)
+        /// Nothing is ready but there is an effect to compile (the bundled one while nothing
+        /// was prepared, or the one whose compile found no GPU context): this `apply`
+        /// compiles it, then reads the selection.
+        case compile(EffectSource, ticket: Int, EffectUniforms)
     }
 
     /// Takes the next ticket: a cache hit is selected at once, anything else starts
@@ -137,8 +142,14 @@ extension EffectRuntimeRepositoryImpl {
             return .success(())
         case .failure(let diagnostics):
             errorLog.record(.effect, "effect '\(effect.name)' did not compile: \(diagnostics.message)")
-            if isNewest { select(.failed) }
-            return .failure(.compileFailed)
+            switch diagnostics.cause {
+            case .source:
+                if isNewest { select(.failed) }
+                return .failure(.compileFailed)
+            case .environment:
+                if isNewest { select(.retry(effect)) }
+                return .failure(.internalError)
+            }
         }
     }
 
@@ -159,14 +170,21 @@ extension EffectRuntimeRepositoryImpl {
                 let current = EffectSession.of(context, after: session)
                 session = current
                 let uniforms = EffectUniforms.pass(context, in: current, output: output)
-                if case .nothing = selection {
-                    let effect = bundledEffects.defaultEffect
-                    if case .compile(let ticket) = begin(effect) {
-                        return continuation.resume(returning: .compileDefault(effect, ticket: ticket, uniforms))
-                    }
+                if let effect = compilable, case .compile(let ticket) = begin(effect) {
+                    return continuation.resume(returning: .compile(effect, ticket: ticket, uniforms))
                 }
                 whenSettled { continuation.resume(returning: .ready($0, uniforms)) }
             }
+        }
+    }
+
+    /// The effect an `apply` compiles itself: the bundled one while nothing has been
+    /// prepared, or the one whose compile found no GPU context. Executor-confined.
+    private var compilable: EffectSource? {
+        switch selection {
+        case .nothing: bundledEffects.defaultEffect
+        case .retry(let effect): effect
+        case .compiling, .ready, .failed: nil
         }
     }
 
@@ -208,14 +226,18 @@ private enum Selection {
     /// The newest `prepare`'s compile is running.
     case compiling
     case ready(any LibraryHandle)
-    /// The newest `prepare`'s compile failed.
+    /// The newest `prepare`'s source does not compile: final until a newer `prepare`.
     case failed
+    /// The newest `prepare`'s compile found no GPU context, which is not the effect's
+    /// fault: not final. The next `apply` compiles this effect again.
+    case retry(EffectSource)
 
     /// What an `apply` gets from it, or `nil` while there is nothing to run yet.
     var settled: Result<any LibraryHandle, EffectFailure>? {
         switch self {
         case .ready(let library): .success(library)
         case .failed: .failure(.compileFailed)
+        case .retry: .failure(.internalError)
         case .nothing, .compiling: nil
         }
     }

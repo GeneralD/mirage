@@ -294,6 +294,86 @@ struct EffectRuntimeRepositoryTests {
         #expect(fixture.renderer.requests.count == 0)
     }
 
+    // MARK: - No GPU context
+
+    @Test("a compile that found no GPU context is not final: prepare answers internalError, the next apply compiles that effect again")
+    func contextFailureIsRetried() async throws {
+        let fixture = RuntimeFixture()
+        let prepare = fixture.prepare(.first)
+        try await fixture.failCompileForWantOfAContext(1)
+        #expect(await fixture.answer(prepare) == .failure(.internalError), "the runtime failed, not the effect")
+        #expect(fixture.log.messages(in: .effect) == ["effect 'first' did not compile: no GPU context to compile on: noDevice"])
+
+        // The prepared effect is the one retried, not the bundled one.
+        fixture.renderer.respond(with: .success(.sample))
+        let apply = fixture.apply()
+        let library = try await fixture.succeedCompile(2)
+        #expect(fixture.compiler.requests.values.map(\.effect) == [.first, .first])
+        #expect(await fixture.answer(apply) == .success)
+        #expect(identity(try #require(fixture.renderer.requests.values.only).library) == identity(library))
+
+        // Once it compiled, it is cached like any other.
+        #expect(await fixture.answer(fixture.apply(Frame(index: 1))) == .success)
+        #expect(fixture.compiler.requests.count == 2)
+    }
+
+    @Test("with the bundled effect, a missing context answers internalError for that frame and the next frame compiles it again")
+    func bundledContextFailureIsRetried() async throws {
+        let fixture = RuntimeFixture()
+        let first = fixture.apply()
+        try await fixture.failCompileForWantOfAContext(1)
+        #expect(await fixture.answer(first) == .failure(.internalError))
+
+        fixture.renderer.respond(with: .success(.sample))
+        let second = fixture.apply(Frame(index: 1))
+        let library = try await fixture.succeedCompile(2)
+        #expect(fixture.compiler.requests.values.map(\.effect) == [.bundled, .bundled])
+        #expect(await fixture.answer(second) == .success)
+        #expect(identity(try #require(fixture.renderer.requests.values.only).library) == identity(library))
+    }
+
+    @Test("an apply waiting on a compile that found no GPU context is released with internalError, not left waiting")
+    func waitingApplyIsReleasedWhenTheContextIsMissing() async throws {
+        let fixture = RuntimeFixture()
+        let prepare = fixture.prepare(.first)
+        _ = try #require(await fixture.compileRequest(1))
+        let waiting = await fixture.applyQueued()
+        #expect(await fixture.stillWaiting(waiting))
+
+        try await fixture.failCompileForWantOfAContext(1)
+        #expect(await fixture.answer(prepare) == .failure(.internalError))
+        #expect(await fixture.answer(waiting) == .failure(.internalError))
+        #expect(fixture.renderer.requests.count == 0)
+    }
+
+    @Test("a superseded compile that found no GPU context answers internalError and leaves the newer effect running")
+    func supersededContextFailureLoses() async throws {
+        let fixture = RuntimeFixture()
+        let older = fixture.prepare(.first)
+        _ = try #require(await fixture.compileRequest(1))
+        let newer = fixture.prepare(.second)
+        let newest = try await fixture.succeedCompile(2)
+        #expect(await fixture.answer(newer) == .success)
+
+        try await fixture.failCompileForWantOfAContext(1)
+        #expect(await fixture.answer(older) == .failure(.internalError))
+
+        fixture.renderer.respond(with: .success(.sample))
+        #expect(await fixture.answer(fixture.apply()) == .success)
+        #expect(identity(try #require(fixture.renderer.requests.values.only).library) == identity(newest))
+        #expect(fixture.compiler.requests.count == 2, "the older effect was not retried over the newer one")
+    }
+
+    @Test("a source that does not compile stays final: later frames answer compileFailed without compiling again")
+    func sourceFailureStaysFinal() async throws {
+        let fixture = RuntimeFixture()
+        let prepare = fixture.prepare(.first)
+        try await fixture.failCompile(1)
+        #expect(await fixture.answer(prepare) == .failure(.compileFailed))
+        #expect(await fixture.answer(fixture.apply()) == .failure(.compileFailed))
+        #expect(fixture.compiler.requests.count == 1)
+    }
+
     // MARK: - The bundled default
 
     @Test("with nothing prepared, the first apply compiles the bundled effect, waits for it and renders with it; later frames reuse it")

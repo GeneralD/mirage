@@ -95,11 +95,19 @@ struct RuntimeFixture {
         return try #require(compiler.succeed(request))
     }
 
-    /// Completes the `number`-th compile with diagnostics.
+    /// Completes the `number`-th compile with diagnostics (a broken source unless `cause` says otherwise).
     @MainActor
-    func failCompile(_ number: Int, message: String = "effect:3:5: error: expected expression") async throws {
+    func failCompile(
+        _ number: Int, message: String = "effect:3:5: error: expected expression", cause: ShaderDiagnostics.Cause = .source
+    ) async throws {
         let request = try #require(await compileRequest(number), "compile \(number) was never requested")
-        #expect(compiler.complete(request, with: .failure(ShaderDiagnostics(message: message, code: 3))))
+        #expect(compiler.complete(request, with: .failure(ShaderDiagnostics(message: message, code: 3, cause: cause))))
+    }
+
+    /// Completes the `number`-th compile as the compiler does when no GPU context could be made.
+    @MainActor
+    func failCompileForWantOfAContext(_ number: Int) async throws {
+        try await failCompile(number, message: "no GPU context to compile on: noDevice", cause: .environment)
     }
 
     /// Prepares `effect` from scratch: its compile succeeds and the prepare answers.
