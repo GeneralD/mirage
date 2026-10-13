@@ -220,7 +220,11 @@ let package = Package(
                 ])
             ]
         ),
-        .testTarget(name: "DevHarnessTests", dependencies: ["DevHarness"] + testDependencies),
+        .testTarget(
+            name: "DevHarnessTests",
+            dependencies: ["DevHarness", "FramePipelineUseCase", "HarnessInteractor", "HostDependencyInjection", "VirtualCameraRepository"]
+                + testDependencies
+        ),
 
         // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──
         // Imports Metal and IOSurface directly: a test target, not a Gateway, so the
