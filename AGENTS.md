@@ -39,7 +39,7 @@ make lint
 make format
 make check
 make generate
-swift run dev-harness   # preview window + camera prompt (a solid frame until #24); .claude/rules/dev-verification.md Lane 1
+swift run dev-harness   # camera prompt, then camera → effect → preview window, no virtual camera; .claude/rules/dev-verification.md Lane 1
 ```
 
 ## Project Summary
@@ -169,9 +169,15 @@ Shared conventions:
   product name, and `make check` scans `Tools/` for one.
 - `DevHarness` keeps `main.swift` to AppKit's launch and `HarnessSession` to
   the lifecycle and the view wiring; it resolves only `HarnessInteractor`,
-  which drives `SolidFrameUseCase` and `CameraControlUseCase`. Each layer is
+  which drives `CameraControlUseCase` and `FramePipelineUseCase`. Each layer is
   tested against fakes. It logs through `DeveloperLog` / `ErrorLog` like
-  every other module, never `print`.
+  every other module, never `print`. `HarnessSession.live()` builds the
+  session inside `withDependencies { $0.useDiscardingVirtualCameraSink() }`:
+  the host's real graph with one substitution, `DiscardingVirtualCameraSink`
+  (dev-only, in `VirtualCameraRepository`: it accepts and drops every frame
+  because the harness has no extension). The host app keeps the real sink, and
+  the substitution must wrap the construction, because `@Dependency` captures
+  the scope where it is built.
 - Host absence: the extension detects it by frame gap (watchdog every
   `frameGap / 4`, counted from the last frame, or from `start` while no host
   has been seen yet, so a host that never launched is lost too) and by dead-name
@@ -231,7 +237,13 @@ Shared conventions:
   attaches (`Rig.attachPreview`) completes each presentation by hand.
   `LoopbackRig(preview: .rendered)` puts the real `PreviewRepository` /
   `PreviewDataSource` on the host side, over the fake GPU layer — the one rig
-  with the live timing for an unattached preview.
+  with the live timing for an unattached preview. `LoopbackRig(effects: .real)`
+  does the same for the effect stage: the real `EffectRuntimeRepository` over
+  its live DataSources and the fake GPU layer, driven by
+  `captureThroughRuntime` (the compile runs on the work runner and the GPU
+  completes by hand); `RealEffectRuntimeIntegrationTests` asserts the
+  extension streams the effect's output, and that a source that does not
+  compile still streams the camera's own frames.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
   wall clock.

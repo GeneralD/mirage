@@ -1,6 +1,6 @@
 import Dependencies
 
-/// The dev harness's launch sequence (#24) for the entry lane: ask for the camera
+/// The dev harness's launch sequence for the entry lane: ask for the camera
 /// once, then run the host pipeline — camera → effect → preview — in this process,
 /// with no extension. It is `CameraInteractor` without the install step, which a
 /// SwiftPM executable cannot take, and every outcome is a log line: the harness has no
