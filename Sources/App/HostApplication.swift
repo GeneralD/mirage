@@ -5,7 +5,7 @@ import HostDependencyInjection
 
 /// The host process entry point behind `Apps/Host/main.swift`: an accessory
 /// (menu-bar) application whose whole M0 job is to run the launch sequence
-/// and expose a way to quit. The menu-bar UI proper arrives with MVP-A.
+/// and expose a way to quit. The menu-bar UI proper arrives with MVP-B.
 public struct HostApplication {
     public init() {}
 

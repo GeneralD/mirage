@@ -15,8 +15,8 @@ Only four things touch a real `MTLDevice`:
 
 1. `MetalDeviceSmokeTests` — the issue #4 runner probe kept as a test: a
    device exists, it is in the `mac2` family, and a kernel compiled from
-   source fills a buffer correctly. It predates `MetalGateway` (MVP-A) so the
-   CI job exists before the gateway does; `MetalDeviceProbe` next to it is
+   source fills a buffer correctly. It predates `MetalGateway` (issue #4, before
+   MVP-A), so the CI job existed before the gateway did; `MetalDeviceProbe` next to it is
    the one place the suites ask whether a device exists.
 2. `MetalGatewaySmokeTests` — the three ports against the real device:
    `compile` of kernels assembled with the engine prelude exactly as an effect

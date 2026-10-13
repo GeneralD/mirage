@@ -10,8 +10,9 @@ Real-time Metal shader effects for your webcam, served to Zoom, Meet, OBS — an
 virtual camera. The lens experience Snap Camera left behind when it shut down, rebuilt for
 macOS, with effects you can write, drop in, and share without rebuilding the app.
 
-> **Pre-alpha.** The architecture is settled (see `docs/ARCHITECTURE.md`); the code is not here
-> yet. The first milestone is a pass-through frame reaching Zoom through the Camera Extension.
+> **Pre-alpha.** The architecture is settled (see `docs/ARCHITECTURE.md`). The frame path, the
+> bundled effect and the preview run today in the dev harness (`swift run dev-harness`, below);
+> the virtual camera itself still awaits its first run on a device through the Camera Extension.
 
 ## How it works
 
