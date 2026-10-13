@@ -99,14 +99,18 @@ allowed_kinds() {
 # EXCEPTIONS — "<module glob> <key>": a key a module may resolve beyond its lane's kinds, and
 # why. An entry no module resolves any more is a violation: remove it with its reason.
 #
-#   *UseCase    — the frame path runs on the execution context the UseCase owns: no actors on
-#                 the frame path (docs/ARCHITECTURE.md → Key Design Decisions).
-#   *Repository — off-path work (shader compiles) runs on the work runner; the frame executor
-#                 and the scheduler stay with the UseCase and the DataSources (→ Effect
-#                 runtime, D14, #36).
-#   GPURenderDataSource, PreviewDataSource — the two GPU DataSources resolve their leases
-#                 through the pool, which is confined to the frame executor they hop onto
-#                 first (→ One effect, one command buffer, D4).
+#   *UseCase    — the frame path runs on the execution context the UseCase owns
+#                 (docs/ARCHITECTURE.md → Physical Abstraction Table, the "Frame execution
+#                 context" and "Frame pacing" rows; → Effect runtime, where the apply's
+#                 lifetime starts on the work runner).
+#   *Repository — off-path work (shader compiles) runs on the work runner; a Repository does
+#                 not reach for the executor or the scheduler (→ Effect runtime, epic #14
+#                 D14, the decision of #36).
+#   GPURenderDataSource, PreviewDataSource — both resolve their leases through the pool, which
+#                 is confined to the frame executor they hop onto first (→ One effect, one
+#                 command buffer, epic #14 D4; → Physical Abstraction Table, the "Texture
+#                 binding" row: the DataSource resolves SurfaceToken → SurfaceHandle through
+#                 the pool first).
 #   ExtensionApp — the extension process's entry point. That process has no GUI, so it has no
 #                 Interactor lane (Interactors are Combine pipelines over UseCases for the GUI,
 #                 wired by the host's DI only); its DI target wires the relay UseCase directly
@@ -140,6 +144,19 @@ excepted() {
         esac
     done <<< "$EXCEPTIONS"
     return 1
+}
+
+# exception_keys_for <module> — the keys EXCEPTIONS grants a module, for the violation message.
+exception_keys_for() {
+    local module="$1" glob entry_key keys=""
+    while IFS=' ' read -r glob entry_key; do
+        [ -n "$glob" ] || continue
+        # shellcheck disable=SC2254
+        case "$module" in
+            $glob) keys="$keys $entry_key" ;;
+        esac
+    done <<< "$EXCEPTIONS"
+    printf '%s\n' "${keys# }"
 }
 
 # resolutions — "<file>\t<line>\t<argument>" for every `Dependency(...)` under Sources/: the
@@ -180,7 +197,8 @@ while IFS="$(printf '\t')" read -r file line_no arg; do
             if [ "$lane" = "None" ]; then
                 fail "$file:$line_no" "module $module resolves \\.$key, but a module outside the layer chain (Entity, Domain, Gateway and Support lives, DI targets) resolves nothing"
             else
-                fail "$file:$line_no" "module $module may not resolve \\.$key (port kind $kind); the $lane lane resolves: $kinds"
+                granted=$(exception_keys_for "$module")
+                fail "$file:$line_no" "module $module may not resolve \\.$key (port kind $kind); the $lane lane resolves: $kinds${granted:+, plus by exception: $granted}"
             fi
             ;;
     esac
