@@ -22,7 +22,6 @@ import MetalKitPreviewGateway
 import PreviewDataSource
 import PreviewRepository
 import ShaderCompilationDataSource
-import SolidFrameUseCase
 import SystemExtensionGateway
 import VirtualCameraRepository
 
@@ -46,10 +45,6 @@ extension CameraControlUseCaseKey: DependencyKey {
 
 extension ExtensionInstallUseCaseKey: DependencyKey {
     public static let liveValue: any ExtensionInstallUseCase = ExtensionInstallUseCaseImpl()
-}
-
-extension SolidFrameUseCaseKey: DependencyKey {
-    public static let liveValue: any SolidFrameUseCase = SolidFrameUseCaseImpl()
 }
 
 extension CameraRepositoryKey: DependencyKey {
