@@ -3,7 +3,7 @@ import Dependencies
 import Domain
 
 /// The host frame path: camera → latest-frame slot → one effect pass per
-/// scheduler tick → virtual camera sink.
+/// scheduler tick → virtual camera sink and preview.
 ///
 /// Capture runs at the camera's pace and the sink at the scheduler's, so the
 /// two are decoupled by a one-element slot where the newest frame wins: a frame
@@ -12,20 +12,26 @@ import Domain
 /// executor, at most one pass at a time; a tick that finds a pass still running
 /// drops its frame as `.inFlightCapReached`, so every frame a tick takes is
 /// sent, counted as a drop, or abandoned by `stop`. The pass's answer comes back
-/// on the executor: on success the rendered output goes to the sink, on any
-/// failure the input goes instead, unchanged — judged frame by frame, with no
-/// memory of earlier failures. Every lease ends exactly once, and only the
-/// answer ends a pass's two:
+/// on the executor: on success the rendered output goes to the sink and then to
+/// the preview, on any failure the input goes instead, unchanged — judged frame
+/// by frame, with no memory of earlier failures. Every lease ends exactly once,
+/// and only the answer ends a pass's two:
 /// - success: the input's at the answer, the runtime being done reading it; the
-///   output's after the send, sent or not, because the extension holds its own
-///   reference;
-/// - failure: the unused output's at the answer; the input's after the send;
-/// - abandoned by `stop`: both at the answer, with nothing sent or counted. Until
-///   then the pass keeps them, and the in-flight cap, because the GPU may still be
-///   reading or writing them.
+///   output's once the sink and the preview are both done with it — after the
+///   send, sent or not, because the extension holds its own reference, and after
+///   the preview's completion, because the preview draws from the surface;
+/// - failure: the unused output's at the answer; the input's, likewise, once the
+///   send and the preview's completion are both behind it;
+/// - abandoned by `stop`: both at the answer, with nothing sent, shown or counted.
+///   Until then the pass keeps them, and the in-flight cap, because the GPU may
+///   still be reading or writing them.
+///
+/// The preview holds only the lease of the frame it shows, never the in-flight cap:
+/// a preview slower than the camera delays no pass and no send.
 public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Sendable {
     @Dependency(\.cameraRepository) private var cameraRepository
     @Dependency(\.virtualCameraSink) private var virtualCameraSink
+    @Dependency(\.previewSink) private var previewSink
     @Dependency(\.surfaceRepository) private var surfaceRepository
     @Dependency(\.effectRuntimeRepository) private var effectRuntimeRepository
     @Dependency(\.frameExecutor) private var frameExecutor
@@ -59,6 +65,10 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     // and the index the next pass of this run hands the effect.
     private var inFlight: EffectPass?
     private var frameIndex: UInt32 = 0
+    // Executor-confined, the preview: frames handed to it whose completion has not come
+    // back onto the executor yet. Each keeps its lease until then, and `stop`'s pool
+    // reset waits for them as it waits for a pass in flight.
+    private var presenting = 0
     /// How many times `stop` was called. `stop` bumps it first thing, from the caller's
     /// context (the subject synchronizes its `value`; `stop` is its only writer), and
     /// the executor compares a pass's epoch with it before sending anything. A pass's
@@ -153,12 +163,37 @@ extension FramePipelineUseCaseImpl {
         startEffect(on: frame, run: run)
     }
 
-    /// Hands one frame to the sink and ends its lease, sent or not.
+    /// Hands one frame to the sink, then to the preview; its lease ends once both are
+    /// done with it, sent or not. The send is over when `send` returns, so the
+    /// preview's completion is the later of the two and ends the lease. The preview
+    /// shows the frame whether or not the extension took it: it is the host's own
+    /// view, not a mirror of the link.
     private func deliver(_ frame: FrameRef) {
         let outcome = virtualCameraSink.send(frame)
         update { $0.note(outcome) }
         if outcome.wasSent { lossStreak = 0 }
+        present(frame)
+    }
+
+    /// The preview borrows the frame until its completion, which may run on any
+    /// thread and at any point — inside `present` itself (the in-memory double, before
+    /// an attach) or in a later job on the executor (`PreviewDataSource`) — so it hops
+    /// onto the executor before the lease ends.
+    private func present(_ frame: FrameRef) {
+        presenting += 1
+        previewSink.present(frame) { [weak self] in
+            self?.frameExecutor.run { [weak self] in self?.presentationEnded(frame) }
+        }
+    }
+
+    /// The preview is done with a frame: its lease ends. A pool reset `stop` deferred
+    /// for it runs now if nothing else is still out; after a restart the pool belongs
+    /// to the new run and is left alone.
+    private func presentationEnded(_ frame: FrameRef) {
+        presenting -= 1
         surfaceRepository.release(frame.token)
+        guard phase == .stopped else { return }
+        resetPoolWhenIdle()
     }
 
     /// A frame the pipeline itself gives up on: its lease ends and the drop is counted.
@@ -230,9 +265,9 @@ extension FramePipelineUseCaseImpl {
 
     /// The runtime's answer, back on the executor; it frees the in-flight cap. On
     /// success the input's lease ends now that the runtime is done reading it and the
-    /// output goes on; on any failure the unused output is given back first and the
-    /// input goes on unchanged. A pass whose run a `stop` has ended is only ended,
-    /// even when its answer was already queued before that `stop`.
+    /// output goes on to the sink and the preview; on any failure the unused output is
+    /// given back first and the input goes on unchanged. A pass whose run a `stop` has
+    /// ended is only ended, even when its answer was already queued before that `stop`.
     private func effectFinished(with result: Result<Void, EffectFailure>) {
         guard let pass = inFlight else { return }
         inFlight = nil
@@ -248,27 +283,30 @@ extension FramePipelineUseCaseImpl {
         }
     }
 
-    /// `stop`'s pool reset (`releaseAll`), run only when no pass is in flight. A pass
-    /// still running was abandoned by `stop` but cannot be called back — the GPU
-    /// finishes what it was given and `apply` answers with the real outcome — so it
-    /// keeps both leases, and the in-flight cap, until that answer; resetting the pool
-    /// now would hand surfaces the GPU still reads or writes to the next frame. The
-    /// reset then waits for the answer (`endAbandoned`).
+    /// `stop`'s pool reset (`releaseAll`), run only when nothing the pipeline handed out
+    /// is still out: no pass in flight and no frame on the preview. A pass still running
+    /// was abandoned by `stop` but cannot be called back — the GPU finishes what it was
+    /// given and `apply` answers with the real outcome — so it keeps both leases, and
+    /// the in-flight cap, until that answer. A frame on the preview may still be drawn
+    /// from until its completion. Resetting the pool before either would hand a surface
+    /// still in use to the next frame, and the late answer or completion would then end
+    /// a lease the reset already ended. The reset waits for the last of them
+    /// (`endAbandoned`, `presentationEnded`).
     private func resetPoolWhenIdle() {
-        guard inFlight == nil else { return }
+        guard inFlight == nil, presenting == 0 else { return }
         surfaceRepository.releaseAll()
     }
 
-    /// The answer to a pass `stop` abandoned: nothing is sent and the outcome is not
-    /// counted as applied or failed; both leases end. If `stop`'s cleanup has run and
-    /// the pipeline is still stopped, the pool reset it deferred runs now (an answer
-    /// that overtakes the cleanup leaves the reset to it); after a restart the pool
-    /// belongs to the new run and is left alone.
+    /// The answer to a pass `stop` abandoned: nothing is sent or shown and the outcome
+    /// is not counted as applied or failed; both leases end. If `stop`'s cleanup has run
+    /// and the pipeline is still stopped, the pool reset it deferred runs now unless a
+    /// frame is still on the preview (an answer that overtakes the cleanup leaves the
+    /// reset to it); after a restart the pool belongs to the new run and is left alone.
     private func endAbandoned(_ pass: EffectPass) {
         surfaceRepository.release(pass.input.token)
         surfaceRepository.release(pass.output.token)
         guard phase == .stopped else { return }
-        surfaceRepository.releaseAll()
+        resetPoolWhenIdle()
     }
 }
 

@@ -8,6 +8,9 @@ import Testing
 /// its real repositories and data sources, joined by `InMemoryFrameTransport` in place
 /// of Mach. What the real deployment adds is only the kernel and the OS
 /// gateways, which `MachGatewayTests` and the dev-verification lanes cover.
+/// The effect runtime is a fake (the real one joins in #24); the preview is an
+/// `InMemoryPreviewSink` unless a test asks for the real one over the fake GPU
+/// layer (`LoopbackRig(preview: .rendered)`).
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct FramePathIntegrationTests {
@@ -119,6 +122,117 @@ struct FramePathIntegrationTests {
         let presence = rig.ext.developer.messages(in: .receiver).filter { $0 == "hostConnected" }
         #expect(presence.count == 2, "the host counts as connected again on the first frame after the gap")
         #expect(rig.streamedTimes == [1_000, 2_000])
+
+        try await rig.stopExtension(relay)
+        rig.stopHost()
+    }
+
+    // MARK: Preview fan-out, on the real preview over the fake GPU layer
+
+    @Test func anAppliedFrameReachesTheStreamAndThePreviewAndItsLeaseEndsWithTheDraw() async throws {
+        let rig = LoopbackRig(preview: .rendered)
+        let relay = await rig.startExtension()
+        try await rig.startHost()
+        try await rig.attachPreview()
+        #expect(rig.host.shaders.calls.values.map(\.onMainThread) == [false], "the preview kernel compiled once, off the main thread")
+
+        await rig.capture(FakeSurfaceHandle(id: 7), at: 1_000, effect: .success(()))
+        await rig.pumpExtension(untilReceived: 1)
+
+        let request = try #require(rig.host.effects.applyRequests.values.first)
+        let output = try #require(rig.host.pool.handle(for: request.output.token) as? FakeSurfaceHandle, "the output is still leased")
+        let streamed = try #require(rig.ext.stream.sent.values.first?.surface as? FakeSurfaceHandle)
+        let draw = try #require(rig.host.previewGateway.pending.first)
+        #expect(ObjectIdentifier(streamed) == ObjectIdentifier(output), "the extension streams the effect's output")
+        #expect(ObjectIdentifier(draw.texture.surface) == ObjectIdentifier(output), "the preview draws that same surface")
+        #expect(rig.host.pool.liveCount == 1, "the camera's frame ended at the answer; the output waits for the draw")
+        #expect(rig.ext.pool.liveCount == 0, "the extension is done with the frame whatever the preview does")
+
+        #expect(rig.host.previewGateway.complete(draw))
+        rig.host.executor.drain()
+        #expect(rig.host.pool.liveCount == 0)
+        #expect(rig.host.textures.isBalanced)
+        #expect(rig.host.errors.entries.count == 0)
+
+        try await rig.stopExtension(relay)
+        rig.stopHost()
+    }
+
+    @Test func aPreviewSlowerThanTheCameraNeverHoldsTheStreamBackAndKeepsOnlyTheNewestFrameWaiting() async throws {
+        let rig = LoopbackRig(preview: .rendered)
+        let relay = await rig.startExtension()
+        try await rig.startHost()
+        try await rig.attachPreview()
+        let frames = (1...4).map { FakeSurfaceHandle(id: UInt32($0)) }
+
+        // Pass-through: each camera surface goes to the stream and to the preview as it is.
+        for (index, frame) in frames.enumerated() {
+            await rig.capture(frame, at: UInt64(index + 1) * 1_000)
+        }
+        await rig.pumpExtension(untilReceived: 4)
+
+        #expect(rig.streamedTimes == [1_000, 2_000, 3_000, 4_000], "the stream got every frame while the first was still drawn")
+        #expect(rig.host.pipeline.stats.framesDropped == 0)
+        let first = try #require(rig.host.previewGateway.pending.first)
+        #expect(rig.host.previewGateway.draws.count == 1, "one draw in flight")
+        #expect(ObjectIdentifier(first.texture.surface) == ObjectIdentifier(frames[0]))
+        #expect(rig.host.pool.liveCount == 2, "the frame drawn and the newest one waiting; the frames it replaced ended at once")
+
+        #expect(rig.host.previewGateway.complete(first))
+        rig.host.executor.drain()
+        let next = try #require(rig.host.previewGateway.pending.first)
+        #expect(ObjectIdentifier(next.texture.surface) == ObjectIdentifier(frames[3]), "the newest waiting frame is drawn next")
+        #expect(rig.host.pool.liveCount == 1)
+
+        #expect(rig.host.previewGateway.complete(next))
+        rig.host.executor.drain()
+        #expect(rig.host.pool.liveCount == 0)
+        #expect(rig.ext.pool.liveCount == 0)
+        #expect(rig.host.textures.isBalanced)
+
+        try await rig.stopExtension(relay)
+        rig.stopHost()
+    }
+
+    @Test func stoppingTheHostWhileAFrameIsDrawnEndsItsLeaseWithTheDraw() async throws {
+        let rig = LoopbackRig(preview: .rendered)
+        let relay = await rig.startExtension()
+        try await rig.startHost()
+        try await rig.attachPreview()
+        await rig.capture(FakeSurfaceHandle(id: 1), at: 1_000)
+        await rig.pumpExtension(untilReceived: 1)
+        let draw = try #require(rig.host.previewGateway.pending.first)
+
+        try await rig.stopExtension(relay)
+        rig.stopHost()
+        #expect(rig.host.pool.liveCount == 1, "the pool reset waits: the GPU may still read the surface")
+
+        #expect(rig.host.previewGateway.complete(draw))
+        rig.host.executor.drain()
+        #expect(rig.host.pool.liveCount == 0)
+        #expect(rig.host.textures.isBalanced)
+    }
+
+    /// The state every launch starts in: the pipeline presents before any view exists. The real
+    /// `PreviewDataSource` queues the frame on the executor and gives it back in that job, after
+    /// `present` has returned (the test double completes inside `present`, so only this rig
+    /// exercises the live timing); nothing is compiled, bound or drawn.
+    @Test func beforeAViewIsOpenTheLivePreviewGivesEveryFrameBackWithoutDrawing() async throws {
+        let rig = LoopbackRig(preview: .rendered)
+        let relay = await rig.startExtension()
+        try await rig.startHost()
+
+        await rig.capture(FakeSurfaceHandle(id: 1), at: 1_000, effect: .success(()))
+        await rig.capture(FakeSurfaceHandle(id: 2), at: 2_000)
+        await rig.pumpExtension(untilReceived: 2)
+
+        #expect(rig.streamedTimes == [1_000, 2_000], "the stream gets the applied frame and the passed-through one alike")
+        #expect(rig.host.pool.liveCount == 0, "each lease ended with the drain that sent the frame")
+        #expect(rig.ext.pool.liveCount == 0)
+        #expect(rig.host.shaders.calls.count == 0, "no kernel is compiled before a view is attached")
+        #expect(rig.host.textures.bindCount == 0)
+        #expect(rig.host.previewGateway.draws.count == 0)
+        #expect(rig.host.errors.entries.count == 0)
 
         try await rig.stopExtension(relay)
         rig.stopHost()

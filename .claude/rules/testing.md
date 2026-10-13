@@ -85,7 +85,13 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   (draining the executor) before it reads the log, and leaves a compile held
   to prove that an `apply` does not wait for it. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
-  records `attached` targets. Requests are `Collector`s, so a test awaits
+  records `attached` targets; with `holding: .onceAttached` it models a
+  preview nobody has opened: until a target is attached every frame is
+  recorded and completes inside `present`. That is stricter than live, where
+  `PreviewDataSource` queues the frame on the executor and gives it back in
+  that job, after `present` has returned (`PreviewDataSourceTests` pins it;
+  the pipeline hops the completion onto its executor either way).
+  Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
 - The pipeline's in-flight cap is driven by **manual completion**: the fake
   runtime never answers on its own — nor, like the live one, on cancellation —
@@ -105,7 +111,17 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `FakeEffectRuntimeRepository.pendingCount` shows that no `apply` was left
   waiting. `LoopbackRig.capture` answers the pass it
   started (pass-through by default, `effect:` to choose) and drains its result,
-  so integration tests stay one frame per call.
+  so integration tests stay one frame per call. Both rigs present on an
+  `InMemoryPreviewSink(holding: .onceAttached)`, so a test that never attaches
+  sees each frame's lease end with the drain that sent it. A pipeline test that
+  wants the preview late calls `Rig.attachPreview()`, finds what was shown with
+  `presentation(n)` and ends it with `completePresentation(_:)` (complete, then
+  drain). `LoopbackRig(preview: .rendered)` puts the real `PreviewRepository` /
+  `PreviewDataSource` on the host side instead, over the fake GPU layer
+  (`gpu`, `shaders`, `textures`, `previewGateway` on `HostSide`); until it is
+  attached it gives each frame back in a later executor job, as live, and its
+  `attachPreview()` drains the attach's executor half off the main thread,
+  where the kernel compile must run.
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
   answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
   `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing

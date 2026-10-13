@@ -145,17 +145,22 @@ Shared conventions:
   token it was given exactly once; it never sees an `IOSurface` or a
   retain/release pair.
 - Host frame path: camera → latest-frame slot (newest wins) → one effect pass
-  per tick → sink. At most one pass is in flight; a tick that finds one running
-  drops its frame as `.inFlightCapReached`. A pass holds two leases and only
-  its answer ends them: on success the input is released at the answer and the
-  output after the send; on any failure the output is released at the answer
-  and the input is sent unchanged, then released. No failure state is kept
-  between frames. `stop()` abandons the pass rather than cancelling it (the GPU
-  may still use both surfaces): it bumps a stop count first, so no answer sends
-  after it; the pass keeps its leases and the cap until its answer, which
-  releases both unsent; and `releaseAll()` waits for that answer. A pass
-  carries the count its run's `start()` read, never one a tick reads, so a
-  tick still running when `stop()` bumps the count cannot adopt the new one.
+  per tick → sink and preview. At most one pass is in flight; a tick that finds
+  one running drops its frame as `.inFlightCapReached`. A pass holds two leases
+  and only its answer ends them: on success the input is released at the
+  answer; on any failure the output is released at the answer and the input
+  goes on unchanged. The frame that goes on is sent, then presented on the
+  `PreviewSink` (sent or not), and released once both are done with it — the
+  send returns synchronously, so the preview's completion, hopped back onto
+  the executor, ends the lease. The preview holds that lease, never the
+  in-flight cap. No failure state is kept between frames. `stop()` abandons
+  the pass rather than cancelling it (the GPU may still use both surfaces): it
+  bumps a stop count first, so no answer sends or presents after it; the pass
+  keeps its leases and the cap until its answer, which releases both unsent;
+  and `releaseAll()` waits for that answer and for every frame still on the
+  preview (and is left out once a restart owns the pool). A pass carries the
+  count its run's `start()` read, never one a tick reads, so a tick still
+  running when `stop()` bumps the count cannot adopt the new one.
 - Shells (`Apps/**`) hold only `main.swift` and assets; `make check` bounds
   their size. `Info.plist` and entitlements are generated from `project.yml`
   by `make generate` (gitignored), never hand-written. The one exception is
@@ -204,7 +209,10 @@ Shared conventions:
   (pending `Submission`s), `FakeEffectRuntimeRepository` (`completePrepare` /
   `completeApply`), `FakeGPURenderer` (`complete(request, with:)`, or a
   scripted `respond(with:)`), `FakeShaderCompiler` (`complete(request, with:)` /
-  `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`),
+  `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`; with
+  `holding: .onceAttached` it completes every frame inside `present` until a
+  target is attached — stricter than the live sink, whose `PreviewDataSource`
+  gives them back in a later executor job, after `present` has returned),
   `FakePreviewGateway` (`complete(draw, with:)`).
   Each completion is exactly once; a second one, or one another instance
   issued, returns `false` (`FakeShaderCompiler.succeed` returns `nil`). Like
@@ -217,7 +225,13 @@ Shared conventions:
   `answerAbandoned` for a pass `stop()` gave up on), and `LoopbackRig.capture`
   answers with pass-through unless told otherwise. The fake runtime ignores
   cancellation like the live one, so an abandoned pass stays pending
-  (`pendingCount`) until the test answers it.
+  (`pendingCount`) until the test answers it. Both rigs present on an
+  `InMemoryPreviewSink(holding: .onceAttached)`, so a test that never attaches
+  a preview sees a frame's lease end with the drain that sent it; one that
+  attaches (`Rig.attachPreview`) completes each presentation by hand.
+  `LoopbackRig(preview: .rendered)` puts the real `PreviewRepository` /
+  `PreviewDataSource` on the host side, over the fake GPU layer — the one rig
+  with the live timing for an unattached preview.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
   wall clock.
