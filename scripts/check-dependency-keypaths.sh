@@ -73,7 +73,7 @@ lane_of() {
     case "$1" in
         App | DevHarness | ExtensionApp) echo "Entry" ;;
         Views | AppRouter)               echo "View" ;;
-        Presenters)                      echo "Presenter" ;;
+        Presenters | *Presenter)         echo "Presenter" ;;
         *Interactor)                     echo "Interactor" ;;
         *UseCase)                        echo "UseCase" ;;
         *Repository)                     echo "Repository" ;;
@@ -90,7 +90,7 @@ allowed_kinds() {
         Presenter)  echo "Interactor Support" ;;
         Interactor) echo "UseCase Support" ;;
         UseCase)    echo "Repository Support" ;;
-        Repository) echo "DataSource Support" ;;
+        Repository) echo "DataSource DataStore Support" ;;
         DataSource) echo "Gateway Support" ;;
         *)          echo "" ;;
     esac
@@ -107,8 +107,11 @@ allowed_kinds() {
 #   GPURenderDataSource, PreviewDataSource — the two GPU DataSources resolve their leases
 #                 through the pool, which is confined to the frame executor they hop onto
 #                 first (→ One effect, one command buffer, D4).
-#   ExtensionApp — the extension has no Interactor yet; `ExtensionInteractor` arrives with
-#                 MVP-B (→ the legend under the Layer Summary), and this entry leaves with it.
+#   ExtensionApp — the extension process's entry point. That process has no GUI, so it has no
+#                 Interactor lane (Interactors are Combine pipelines over UseCases for the GUI,
+#                 wired by the host's DI only); its DI target wires the relay UseCase directly
+#                 (→ the dependency graph, and "The extension's entry point resolves the relay
+#                 UseCase" under Key Design Decisions).
 EXCEPTIONS='
 *UseCase frameExecutor
 *UseCase frameScheduler
