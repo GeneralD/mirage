@@ -34,7 +34,7 @@ struct HarnessInteractorTests {
 
     @Test(
         "an answer that does not grant the camera starts nothing and is an error-log line too",
-        arguments: [CameraAuthorizationStatus.denied, .restricted, .notDetermined, .unrecognized])
+        arguments: CameraAuthorizationStatus.allCases.filter { !$0.isGranted })
     func refusedAnswer(answer: CameraAuthorizationStatus) async {
         let rig = HarnessInteractorRig(answer: answer)
         await rig.subject.launch(descriptor: .hd720, frameRate: .standard)
@@ -177,7 +177,9 @@ private struct HarnessInteractorRig {
 }
 
 /// A camera prompt the user never answers: `ensureAuthorized()` returns only
-/// when its task is cancelled, and then with `.notDetermined`.
+/// when its task is cancelled, and then with `.authorized`: the answer that would start a
+/// pipeline, so a launch that starts nothing after it is held back by its own cancellation
+/// check and by nothing the prompt said.
 private final class PromptLeftOpen: CameraControlUseCase, Sendable {
     let asks = Collector<Void>()
     let cancelled = Collector<Void>()
@@ -185,6 +187,6 @@ private final class PromptLeftOpen: CameraControlUseCase, Sendable {
     func ensureAuthorized() async -> CameraAuthorizationStatus {
         asks.append(())
         if await suspendUntilCancelled() { cancelled.append(()) }
-        return .notDetermined
+        return .authorized
     }
 }
