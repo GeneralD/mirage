@@ -7,9 +7,9 @@ import PackageDescription
 // are the only importers of implementation targets. Gateway modules are the
 // sole importers of OS frameworks (`make check` → scripts/check-imports.sh).
 //
-// M0 scope: the pass-through frame path host → Camera Extension, the
-// installer, and the three DI targets. Effects, preview and the GUI lane
-// arrive with MVP-A.
+// M0 built the pass-through frame path host → Camera Extension, the
+// installer and the three DI targets; MVP-A added the effect runtime, the
+// preview and the dev harness. The menu-bar UI lane arrives with MVP-B.
 
 let dependencies: [Target.Dependency] = [
     "Domain",

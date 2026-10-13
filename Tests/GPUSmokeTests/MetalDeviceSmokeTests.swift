@@ -4,8 +4,8 @@ import Testing
 /// The issue #4 runner probe, kept as a test: a device exists, it is in the
 /// `mac2` family, and a kernel compiled from source runs a compute pass with
 /// correct results. This is the floor every later GPU smoke suite stands on
-/// (`MetalGateway` arrives with MVP-A), and it is what the CI `test-gpu` job
-/// proves on every PR.
+/// (the `MetalGateway` suites of MVP-A included), and it is what the CI
+/// `test-gpu` job proves on every PR.
 ///
 /// Written against the `mac2` family only: the GitHub runner's "Apple
 /// Paravirtual device" reports `supportsFamily(.apple7) == false`, so nothing
