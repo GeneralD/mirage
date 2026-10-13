@@ -2,9 +2,12 @@
 # Key-path allow-list per layer (.claude/rules/architecture-boundaries.md).
 #
 # The import lint bounds what a module can see; this one bounds what it may resolve. Every
-# `Dependency(\.key)` under Sources/ — the `@Dependency` wrapper in any layout, and the
-# wrapper's initializer in an `init` — is found through the AST (ast-grep), so comments and
-# strings never count, and is checked against the lane of the module that resolves it. A key's
+# resolution under Sources/ — the `@Dependency(...)` attribute in any layout, and the wrapper's
+# initializer spelled `Dependency(...)`, `Dependency<T>(...)`, `Dependencies.Dependency(...)`
+# or `Dependency.init(...)` — is found through the AST (ast-grep), so comments and strings
+# never count, and is checked against the lane of the module that resolves it. An initializer
+# reached through inference (`.init(\.key)`) is not seen; a `withDependencies` override is an
+# assignment, not a resolution, and is not checked either. A key's
 # port kind is the `Sources/Domain/<Kind>/` directory that declares its `DependencyValues`
 # member, so a new port needs no entry here: its directory is its kind. A lane may resolve the
 # kind of the layer right below it plus Support; the few keys a lane may resolve beyond that
@@ -21,6 +24,18 @@ for tool in sg jq; do
         exit 1
     fi
 done
+
+# run_sg <args>... — `sg` with "no match" (exit 1) treated as an empty result; any other failure
+# aborts, so a broken ast-grep cannot surface as a wall of misleading violations.
+run_sg() {
+    local out status
+    out=$(sg "$@" 2>/dev/null) && status=0 || status=$?
+    if [ "$status" -gt 1 ]; then
+        echo "check-dependency-keypaths: sg $* failed with status $status" >&2
+        exit 1
+    fi
+    printf '%s\n' "$out"
+}
 
 # A property declared directly in the body of an `extension DependencyValues`, whatever its
 # modifiers; `$NAME` is the member's name.
@@ -46,7 +61,7 @@ rule:
 # swift-dependencies built-ins this codebase treats as Support ports. A member declared at the
 # root of Sources/Domain has no kind and fails.
 KEY_TABLE=""
-while IFS=' ' read -r file key; do
+while IFS="$(printf '\t')" read -r file key; do
     [ -n "$key" ] || continue
     kind="${file#Sources/Domain/}"
     case "$kind" in
@@ -58,8 +73,12 @@ while IFS=' ' read -r file key; do
     esac
     KEY_TABLE="$KEY_TABLE$key $kind
 "
-done < <(sg scan --inline-rules "$MEMBER_RULE" --json=compact Sources/Domain 2>/dev/null \
-    | jq -r '.[] | "\(.file) \(.metaVariables.single.NAME.text)"')
+done < <(run_sg scan --inline-rules "$MEMBER_RULE" --json=compact Sources/Domain \
+    | jq -r '.[] | "\(.file)\t\(.metaVariables.single.NAME.text)"')
+if [ -z "$KEY_TABLE" ]; then
+    echo "check-dependency-keypaths: no DependencyValues member found under Sources/Domain/<Kind>/ (did the ports move, or did ast-grep not run?)" >&2
+    exit 1
+fi
 KEY_TABLE="${KEY_TABLE}continuousClock Support"
 
 # kind_of_key <key> — the port kind of a key, empty when no Domain subdirectory declares it.
@@ -159,15 +178,18 @@ exception_keys_for() {
     printf '%s\n' "${keys# }"
 }
 
-# resolutions — "<file>\t<line>\t<argument>" for every `Dependency(...)` under Sources/: the
-# `@Dependency` wrapper (whatever its layout) and the wrapper's own initializer.
+# resolutions — "<file>\t<line>\t<arguments>" for every resolution under Sources/: the
+# `@Dependency` attribute (whatever its layout) and the wrapper's initializer in each spelling
+# ast-grep can name. The argument list is joined and its whitespace collapsed, so a second
+# argument or a layout across lines reaches the check as one readable string.
 resolutions() {
     local pattern
     # shellcheck disable=SC2016
-    for pattern in '@Dependency($ARG)' 'Dependency($ARG)'; do
-        sg run --lang swift --pattern "$pattern" --json=compact Sources 2>/dev/null \
-            | jq -r '.[] | "\(.file)\t\(.range.start.line + 1)\t\(.metaVariables.single.ARG.text)"'
-    done | sort -t "$(printf '\t')" -k1,1 -k2,2n
+    for pattern in '@Dependency($$$ARGS)' 'Dependency($$$ARGS)' 'Dependency<$T>($$$ARGS)' \
+        '$Q.Dependency($$$ARGS)' '$Q.Dependency<$T>($$$ARGS)' 'Dependency.init($$$ARGS)'; do
+        run_sg run --lang swift --pattern "$pattern" --json=compact Sources \
+            | jq -r '.[] | "\(.file)\t\(.range.start.line + 1)\t\((.metaVariables.multi.ARGS // []) | map(.text) | join(" ") | gsub("\\s+"; " "))"'
+    done | sort -u -t "$(printf '\t')" -k1,1 -k2,2n
 }
 
 while IFS="$(printf '\t')" read -r file line_no arg; do

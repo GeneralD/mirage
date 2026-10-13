@@ -63,10 +63,14 @@ under `Sources/Domain/Support/` — today `errorLog`, `developerLog`, `hostTime`
 those kinds is a per-key exception in the script, each citing the decision it
 rests on; an exception
 nothing resolves any more fails, so the list cannot outlive its reason. The
-resolutions are found through the AST (`@Dependency` in any layout, and the
-wrapper's initializer), so comments and strings never count, and only the plain
-`\.key` form passes: a key-path chain, `Key.self` or `\DependencyValues.key`
-fails instead of slipping through.
+resolutions are found through the AST — the `@Dependency(...)` attribute in any
+layout, and the wrapper's initializer spelled `Dependency(...)`,
+`Dependency<T>(...)`, `Dependencies.Dependency(...)` or `Dependency.init(...)` —
+so comments and strings never count, and only the plain `\.key` form passes: a
+key-path chain, `Key.self`, `\DependencyValues.key` or a second argument fails
+instead of slipping through. Not seen: an initializer reached through inference
+(`.init(\.key)`), and `withDependencies` overrides, which assign rather than
+resolve.
 
 | Lane (modules) | May resolve | Per-key exceptions |
 |---|---|---|
