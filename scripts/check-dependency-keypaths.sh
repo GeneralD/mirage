@@ -6,8 +6,9 @@
 # initializer spelled `Dependency(...)`, `Dependency<T>(...)`, `Dependencies.Dependency(...)`
 # or `Dependency.init(...)` — is found through the AST (ast-grep), so comments and strings
 # never count, and is checked against the lane of the module that resolves it. An initializer
-# reached through inference (`.init(\.key)`) is not seen; a `withDependencies` override is an
-# assignment, not a resolution, and is not checked either. A key's
+# reached through inference (`.init(\.key)`) or spelled `Dependency<T>.init(...)` is not seen; a
+# `withDependencies` override is an assignment, not a resolution, and is not checked either
+# (any other type named `Dependency` would be reported as a non-plain form; none exists). A key's
 # port kind is the `Sources/Domain/<Kind>/` directory that declares its `DependencyValues`
 # member, so a new port needs no entry here: its directory is its kind. A lane may resolve the
 # kind of the layer right below it plus Support; the few keys a lane may resolve beyond that
@@ -25,14 +26,17 @@ for tool in sg jq; do
     fi
 done
 
-# run_sg <args>... — `sg` with "no match" (exit 1) treated as an empty result; any other failure
-# aborts, so a broken ast-grep cannot surface as a wall of misleading violations.
+# run_sg <label> <args>... — `sg` with "no match" (exit 1) treated as an empty result. Any other
+# failure names the step and returns 1; every caller assigns the result in the main shell and
+# exits on it, so a broken ast-grep ends the run instead of passing as green or as a wall of
+# misleading violations.
 run_sg() {
-    local out status
+    local label="$1" out status
+    shift
     out=$(sg "$@" 2>/dev/null) && status=0 || status=$?
     if [ "$status" -gt 1 ]; then
-        echo "check-dependency-keypaths: sg $* failed with status $status" >&2
-        exit 1
+        echo "check-dependency-keypaths: ast-grep failed with status $status while $label" >&2
+        return 1
     fi
     printf '%s\n' "$out"
 }
@@ -60,6 +64,8 @@ rule:
 # KEY_TABLE — one "<key> <kind>" line per member under Sources/Domain/<Kind>/, plus the
 # swift-dependencies built-ins this codebase treats as Support ports. A member declared at the
 # root of Sources/Domain has no kind and fails.
+MEMBERS=$(run_sg "listing the DependencyValues members under Sources/Domain" \
+    scan --inline-rules "$MEMBER_RULE" --json=compact Sources/Domain) || exit 1
 KEY_TABLE=""
 while IFS="$(printf '\t')" read -r file key; do
     [ -n "$key" ] || continue
@@ -73,8 +79,7 @@ while IFS="$(printf '\t')" read -r file key; do
     esac
     KEY_TABLE="$KEY_TABLE$key $kind
 "
-done < <(run_sg scan --inline-rules "$MEMBER_RULE" --json=compact Sources/Domain \
-    | jq -r '.[] | "\(.file)\t\(.metaVariables.single.NAME.text)"')
+done < <(jq -r '.[] | "\(.file)\t\(.metaVariables.single.NAME.text)"' <<< "$MEMBERS")
 if [ -z "$KEY_TABLE" ]; then
     echo "check-dependency-keypaths: no DependencyValues member found under Sources/Domain/<Kind>/ (did the ports move, or did ast-grep not run?)" >&2
     exit 1
@@ -178,19 +183,21 @@ exception_keys_for() {
     printf '%s\n' "${keys# }"
 }
 
-# resolutions — "<file>\t<line>\t<arguments>" for every resolution under Sources/: the
+# RESOLUTIONS — "<file>\t<line>\t<arguments>" for every resolution under Sources/: the
 # `@Dependency` attribute (whatever its layout) and the wrapper's initializer in each spelling
 # ast-grep can name. The argument list is joined and its whitespace collapsed, so a second
-# argument or a layout across lines reaches the check as one readable string.
-resolutions() {
-    local pattern
-    # shellcheck disable=SC2016
-    for pattern in '@Dependency($$$ARGS)' 'Dependency($$$ARGS)' 'Dependency<$T>($$$ARGS)' \
-        '$Q.Dependency($$$ARGS)' '$Q.Dependency<$T>($$$ARGS)' 'Dependency.init($$$ARGS)'; do
-        run_sg run --lang swift --pattern "$pattern" --json=compact Sources \
-            | jq -r '.[] | "\(.file)\t\(.range.start.line + 1)\t\((.metaVariables.multi.ARGS // []) | map(.text) | join(" ") | gsub("\\s+"; " "))"'
-    done | sort -u -t "$(printf '\t')" -k1,1 -k2,2n
-}
+# argument or a layout across lines reaches the check as one readable string. Collected in the
+# main shell, so a failing pattern ends the run; sorted on all three fields, so two resolutions
+# on one line both survive and only an exact duplicate goes.
+RESOLUTIONS=""
+# shellcheck disable=SC2016
+for pattern in '@Dependency($$$ARGS)' 'Dependency($$$ARGS)' 'Dependency<$T>($$$ARGS)' \
+    '$Q.Dependency($$$ARGS)' '$Q.Dependency<$T>($$$ARGS)' 'Dependency.init($$$ARGS)'; do
+    matches=$(run_sg "matching $pattern under Sources" run --lang swift --pattern "$pattern" --json=compact Sources) || exit 1
+    RESOLUTIONS="$RESOLUTIONS$(jq -r '.[] | "\(.file)\t\(.range.start.line + 1)\t\((.metaVariables.multi.ARGS // []) | map(.text) | join(" ") | gsub("\\s+"; " "))"' <<< "$matches")
+"
+done
+RESOLUTIONS=$(sort -u -t "$(printf '\t')" -k1,1 -k2,2n -k3 <<< "$RESOLUTIONS")
 
 while IFS="$(printf '\t')" read -r file line_no arg; do
     [ -n "$file" ] || continue
@@ -224,7 +231,7 @@ while IFS="$(printf '\t')" read -r file line_no arg; do
             fi
             ;;
     esac
-done < <(resolutions)
+done <<< "$RESOLUTIONS"
 
 while IFS=' ' read -r glob entry_key; do
     [ -n "$glob" ] || continue
