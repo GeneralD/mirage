@@ -11,13 +11,14 @@ import VirtualCameraRepository
 @testable import DevHarness
 
 /// The harness's own graph on fakes: a `HarnessSession` over the real
-/// `HarnessInteractorImpl` and the real `FramePipelineUseCaseImpl`, built inside the
-/// scope of the harness's one substitution (`useDiscardingVirtualCameraSink`, which
-/// `HarnessSession.live()` applies around the same construction). Everything below the
-/// pipeline is a fake, so what is proven here is the harness's sequence — camera
-/// question, pipeline, preview, stop — and that frames cross the pipeline into the
-/// discarding sink and the preview, with the sink left at its unimplemented default
-/// that would fail the test if the substitution did not reach the pipeline.
+/// `HarnessInteractorImpl` and the real `FramePipelineUseCaseImpl`, built by hand inside the
+/// scope of the harness's one substitution (`useDiscardingVirtualCameraSink`). It does not
+/// call `HarnessSession.live()`: that route, through the live registrations, is
+/// `HarnessLiveWiringTests`'. Everything below the pipeline is a fake, so what is proven
+/// here is the harness's sequence — camera question, pipeline, preview, stop — and that
+/// frames cross the pipeline into the discarding sink and the preview, with the sink left
+/// at its unimplemented default that would fail the test if the substitution did not reach
+/// the pipeline.
 /// The real effect runtime and GPU layer are the loopback's (`FramePathIntegrationTests`).
 @MainActor
 @Suite("Dev harness wiring", .timeLimit(.minutes(1)))
@@ -45,7 +46,8 @@ struct HarnessWiringTests {
         await rig.effects.applyRequests.waitForCount(1)
         let request = try #require(rig.effects.applyRequests.values.first)
         rig.effects.completeApply(request, with: .success(()))
-        await tickUntil(tick: { rig.executor.drain() }, until: { rig.pipeline.stats.effectsApplied == 1 })
+        let applied = await tickUntil(tick: { rig.executor.drain() }, until: { rig.pipeline.stats.effectsApplied == 1 })
+        #expect(applied, "the effect pass was never taken")
 
         #expect(rig.pipeline.stats.framesReceived == 1)
         #expect(rig.pipeline.stats.framesSent == 1, "the discarding sink reports the frame as sent, not dropped as notConnected")
