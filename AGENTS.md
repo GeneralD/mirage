@@ -65,7 +65,9 @@ Shared conventions:
   (`CommonDependencyInjection`, `HostDependencyInjection`,
   `ExtensionDependencyInjection`) are the only places that import
   implementation targets; one wiring point per process.
-- OS boundaries are `*Gateway` modules consumed at the DataSource layer.
+- OS boundaries are `*Gateway` modules consumed at the DataSource layer (the
+  execution-context ports — `frameExecutor`, `frameScheduler`, `workRunner` —
+  are the exception: UseCases run the frame path on them).
   Cross-cutting seams (`RandomSource`, `UnifiedLog`, `HostTime`,
   `AppDirectoriesProvider`) are Support modules.
 - Frames travel as `FrameRef` (dimensions, format, PTS) + `SurfaceToken`
@@ -85,8 +87,8 @@ Shared conventions:
   in `make check`; a port's kind is its `Sources/Domain/<Kind>/` directory).
   The per-key exceptions — the frame path's execution context for UseCases,
   `workRunner` for Repositories, `surfacePool` for the two GPU DataSources,
-  `extensionRelayUseCase` for `ExtensionApp` until `ExtensionInteractor` —
-  are tabled in `.claude/rules/architecture-boundaries.md`.
+  `extensionRelayUseCase` for `ExtensionApp`, whose process has no GUI and so
+  no Interactor lane — are tabled in `.claude/rules/architecture-boundaries.md`.
 - The extension process never links Metal: `MetalGateway` and
   `MetalKitPreviewGateway` are registered in `HostDependencyInjection` only,
   and `scripts/check-extension-no-metal.sh` (in `make check`) walks the

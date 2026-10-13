@@ -6,13 +6,13 @@
 |---|---|---|
 | **Entity** | Pure data types, enums, Codable structs, `ProductIdentity` constants | Logic; imports beyond Foundation |
 | **Domain** | Protocols, `TestDependencyKey`s, `Unimplemented*` | Data type definitions; imports beyond Foundation, Combine (Interactor streams) and Dependencies |
-| **UseCase** | Business logic, pure policy types (`EffectHealthPolicy`, `ParameterPacker`) | Another UseCase; a DataSource or Gateway; locks; OS frameworks |
-| **Repository** | Orchestration of DataSources/DataStores, cache strategy, surface lifetime (`SurfaceRepository`) | Gateways; the `FrameExecutor`; OS frameworks |
+| **UseCase** | Business logic, pure policy types (`EffectHealthPolicy`, `ParameterPacker`) | Another UseCase; a DataSource; a Gateway other than the execution-context ports (`frameExecutor`, `frameScheduler`, `workRunner`: Key-Path table); locks; OS frameworks |
+| **Repository** | Orchestration of DataSources/DataStores, cache strategy, surface lifetime (`SurfaceRepository`) | Gateways other than `workRunner`; the `FrameExecutor`; OS frameworks |
 | **DataSource / DataStore** | Real work against Gateways plus persistence-shaped knowledge (paths, manifests, source assembly, IPC state machines, receive loops, pool bookkeeping, the effect runtime's executor-confined state) | Business policy; OS frameworks (those stay in the Gateway) |
 | **Gateway** | 1:1 thin pass-through to one OS API | Branching, timing, ordering, retries, loops — anything that needs a test |
 | **Support** | Cross-cutting seams (random, log, host time, app directories) | Business logic |
 | **Presenter** | `@Published` display state | AppKit / SwiftUI / MetalKit imports; business logic |
-| **Views / Router / App** | Declarative rendering, wiring, lifecycle | Business logic; direct UseCase/Gateway access |
+| **Views / Router / App** | Declarative rendering, wiring, lifecycle | Business logic; direct UseCase/Gateway access (`ExtensionApp` → `extensionRelayUseCase` excepted: Key-Path table) |
 | **DI targets** | `liveValue` registrations, and dev-only `DependencyValues` extensions whose members each only assign one value (no branch, no `var`; `scripts/check-live-thin.sh` checks `DevelopmentSubstitutions.swift`) | Implementation |
 | **Shells (`Apps/**`)** | `main.swift`, assets (plus generated `Info.plist` / entitlements from `project.yml`) | Any logic; hand-written plists |
 
@@ -25,7 +25,9 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 - **No layer skipping.** An Interactor holding a Gateway, or a UseCase holding
   a DataSource, is a violation even when `@Dependency` makes it a one-liner.
   Thread pass-through contracts through the adjacent layers instead.
-- **OS-boundary gateways are consumed at the DataSource layer only.**
+- **OS-boundary gateways are consumed at the DataSource layer only.** The
+  execution-context ports (`frameExecutor`, `frameScheduler`, `workRunner`,
+  live in `DispatchExecutorGateway`) are the exception: the Key-Path table.
 - **No UseCase → UseCase.** Shared pure policy lives as sibling pure types
   inside the owning UseCase module.
 - **Knowledge placement follows the chain.** Path resolution, manifest
@@ -66,12 +68,12 @@ fails instead of slipping through.
 
 | Lane (modules) | May resolve | Per-key exceptions |
 |---|---|---|
-| Entry (`App`, `DevHarness`, `ExtensionApp`) | Interactor, Support | `ExtensionApp`: `extensionRelayUseCase`, until `ExtensionInteractor` lands (MVP-B) |
+| Entry (`App`, `DevHarness`, `ExtensionApp`) | Interactor, Support | `ExtensionApp`: `extensionRelayUseCase` — the extension process has no GUI and so no Interactor lane; its entry point resolves the relay UseCase (Key Design Decisions) |
 | View (`Views`, `AppRouter`) | Presenter, Support | |
-| Presenter (`Presenters`) | Interactor, Support | |
+| Presenter (`Presenters`, `*Presenter`) | Interactor, Support | |
 | `*Interactor` | UseCase, Support | |
 | `*UseCase` | Repository, Support | `frameExecutor`, `frameScheduler`, `workRunner` — the execution context the frame path runs on |
-| `*Repository` | DataSource, Support | `workRunner` only; never `frameExecutor` or `frameScheduler` (D14, #36) |
+| `*Repository` | DataSource, DataStore, Support | `workRunner` only; never `frameExecutor` or `frameScheduler` (D14, #36) |
 | `*DataSource` / `*DataStore` | Gateway, Support | `GPURenderDataSource`, `PreviewDataSource`: `surfacePool` — leases resolve through the executor-confined pool (D4) |
 | Everything else (Entity, Domain, Gateway and Support lives, DI targets) | nothing | |
 
