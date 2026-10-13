@@ -5,7 +5,7 @@ import TestSupport
 /// subject's hop onto the executor instead of polling for it: the subject's task
 /// queues its work at a moment the test cannot see, and `enqueued` is that moment.
 /// Shared by the suites whose subject hops from its own task
-/// (`GPURenderDataSource`, `EffectRuntimeRepository`).
+/// (`GPURenderDataSource`, `EffectRuntimeStateDataSource`).
 public final class RecordingFrameExecutor: FrameExecutor, Sendable {
     private let manual = ManualFrameExecutor()
     /// One element per `run`, recorded after the work is queued.

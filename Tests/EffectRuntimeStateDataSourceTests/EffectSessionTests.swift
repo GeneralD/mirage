@@ -1,5 +1,5 @@
 import Domain
-import EffectRuntimeRepository
+import EffectRuntimeStateDataSource
 import TestSupport
 import Testing
 

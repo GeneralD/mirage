@@ -1,6 +1,7 @@
 import Dependencies
 import Domain
 import EffectRuntimeRepository
+import EffectRuntimeStateDataSource
 import TestDoubles
 import TestSupport
 import Testing
@@ -8,10 +9,13 @@ import Testing
 typealias Answer = Result<Void, EffectFailure>
 
 /// The runtime wired to its fakes: `FakeShaderCompiler` holds every compile and
-/// `FakeGPURenderer` every pass until the test completes them, and
-/// `RecordingFrameExecutor` runs the runtime's executor steps only when the test
-/// drains it. The subject is built inside `withDependencies`, so it captures these
-/// fakes rather than the defaults.
+/// `FakeGPURenderer` every pass until the test completes them, and the real
+/// `EffectRuntimeStateDataSourceImpl` (in-memory, no Gateway) runs its steps on a
+/// `RecordingFrameExecutor` only when the test drains it. The subject is given no
+/// executor of its own: it must reach the executor only through the state, so a
+/// Repository that resolved `frameExecutor` itself would meet the unimplemented
+/// default and fail. The objects are built inside `withDependencies`, so they
+/// capture these fakes rather than the defaults.
 struct RuntimeFixture {
     let compiler = FakeShaderCompiler()
     let renderer = FakeGPURenderer()
@@ -24,11 +28,16 @@ struct RuntimeFixture {
         let renderer = renderer
         let executor = executor
         let log = log
+        let state = withDependencies {
+            $0.frameExecutor = executor
+        } operation: {
+            EffectRuntimeStateDataSourceImpl()
+        }
         subject = withDependencies {
+            $0.effectRuntimeState = state
             $0.shaderCompiler = compiler
             $0.gpuRenderer = renderer
             $0.bundledEffects = FixedBundledEffects(defaultEffect: bundled)
-            $0.frameExecutor = executor
             $0.errorLog = log
             $0.developerLog = log
         } operation: {

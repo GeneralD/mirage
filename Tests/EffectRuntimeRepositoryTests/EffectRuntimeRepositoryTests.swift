@@ -4,10 +4,14 @@ import TestDoubles
 import TestSupport
 import Testing
 
-/// The runtime against `FakeShaderCompiler` and `FakeGPURenderer`: the test
-/// decides when each compile and each pass ends, and drains the executor the
-/// runtime decides on, so every interleaving below is written down rather than
-/// waited for.
+/// The Repository over the real `EffectRuntimeStateDataSource`, against
+/// `FakeShaderCompiler` and `FakeGPURenderer`: the test decides when each compile and
+/// each pass ends, and drains the executor the state decides on, so every
+/// interleaving below is written down rather than waited for. This suite owns what
+/// the Repository decides — which port each call goes through, what it maps and logs,
+/// and that the whole stack still behaves as one runtime. The rules of the state
+/// itself (the cache, tickets, waiting, retrying, the session clock) are proven
+/// through its port in `EffectRuntimeStateDataSourceTests`.
 @Suite("EffectRuntimeRepository", .timeLimit(.minutes(1)))
 @MainActor
 struct EffectRuntimeRepositoryTests {
@@ -37,70 +41,12 @@ struct EffectRuntimeRepositoryTests {
 
         #expect(await fixture.answer(fixture.prepare(.first)) == .success)
         #expect(fixture.compiler.requests.count == 1, "the second prepare was a hit")
+        #expect(fixture.log.messages(in: .effect) == ["effect 'first' compiled"], "logged once, as selected, and not for the hit")
 
         fixture.renderer.respond(with: .success(.sample))
         #expect(await fixture.answer(fixture.apply()) == .success)
         let pass = try #require(fixture.renderer.requests.values.only)
         #expect(identity(pass.library) == identity(library))
-    }
-
-    /// A change of what is compiled is a new key; a change of the name alone is not.
-    struct KeyChange: Sendable, CustomTestStringConvertible {
-        let label: String
-        let effect: EffectSource
-        let compilesAgain: Bool
-        var testDescription: String { label }
-
-        static let all = [
-            KeyChange(label: "renamed", effect: EffectSource(name: "renamed", source: EffectSource.first.source), compilesAgain: false),
-            KeyChange(
-                label: "another source", effect: EffectSource(name: "first", source: EffectSource.first.source + "\n"), compilesAgain: true),
-            KeyChange(
-                label: "another entry point",
-                effect: EffectSource(name: "first", source: EffectSource.first.source, options: ShaderCompileOptions(entryPoint: "other")),
-                compilesAgain: true),
-            KeyChange(
-                label: "fast math",
-                effect: EffectSource(name: "first", source: EffectSource.first.source, options: ShaderCompileOptions(precise: false)),
-                compilesAgain: true),
-        ]
-    }
-
-    @Test("the cache key is the source and the compile options, never the name", arguments: KeyChange.all)
-    func cacheKey(_ change: KeyChange) async throws {
-        let fixture = RuntimeFixture()
-        let original = try await fixture.prepared(.first)
-        let call = fixture.prepare(change.effect)
-
-        let expected: FakeLibraryHandle
-        if change.compilesAgain {
-            expected = try await fixture.succeedCompile(2)
-            #expect(fixture.compiler.requests.values.last?.effect == change.effect)
-        } else {
-            expected = original
-        }
-        #expect(await fixture.answer(call) == .success)
-        #expect(fixture.compiler.requests.count == (change.compilesAgain ? 2 : 1))
-
-        fixture.renderer.respond(with: .success(.sample))
-        #expect(await fixture.answer(fixture.apply()) == .success)
-        #expect(identity(try #require(fixture.renderer.requests.last).library) == identity(expected))
-    }
-
-    @Test("a failed compile is not cached: preparing the same source again compiles it again")
-    func failureIsNotCached() async throws {
-        let fixture = RuntimeFixture()
-        let first = fixture.prepare(.first)
-        try await fixture.failCompile(1)
-        #expect(await fixture.answer(first) == .failure(.compileFailed))
-
-        let again = fixture.prepare(.first)
-        let library = try await fixture.succeedCompile(2)
-        #expect(await fixture.answer(again) == .success)
-
-        fixture.renderer.respond(with: .success(.sample))
-        #expect(await fixture.answer(fixture.apply()) == .success)
-        #expect(identity(try #require(fixture.renderer.requests.last).library) == identity(library))
     }
 
     // MARK: - Newest wins
@@ -153,116 +99,6 @@ struct EffectRuntimeRepositoryTests {
         #expect(fixture.log.contains("effect 'first' compiled, but a newer one was prepared since"), "superseded in either order")
     }
 
-    @Test("a cache hit overtakes a compile still running, and that compile's late success does not take the selection back")
-    func cacheHitOvertakesACompile() async throws {
-        let fixture = RuntimeFixture()
-        let cached = try await fixture.prepared(.first)
-        let slow = fixture.prepare(.second)
-        let slowRequest = try #require(await fixture.compileRequest(2))
-
-        #expect(await fixture.answer(fixture.prepare(.first)) == .success, "a hit answers while the other compile runs")
-        #expect(fixture.compiler.succeed(slowRequest) != nil)
-        #expect(await fixture.answer(slow) == .success)
-
-        fixture.renderer.respond(with: .success(.sample))
-        #expect(await fixture.answer(fixture.apply()) == .success)
-        #expect(identity(try #require(fixture.renderer.requests.last).library) == identity(cached))
-    }
-
-    @Test("a superseded compile's success still fills the cache: preparing that effect again compiles nothing")
-    func supersededSuccessFillsTheCache() async throws {
-        let fixture = RuntimeFixture()
-        let older = fixture.prepare(.first)
-        let olderRequest = try #require(await fixture.compileRequest(1))
-        let newer = fixture.prepare(.second)
-        let newest = try await fixture.succeedCompile(2)
-        #expect(await fixture.answer(newer) == .success)
-        let superseded = try #require(fixture.compiler.succeed(olderRequest))
-        #expect(await fixture.answer(older) == .success)
-
-        // Back to the effect that lost the selection: it is a hit, not a third compile.
-        #expect(await fixture.answer(fixture.prepare(.first)) == .success)
-        #expect(fixture.compiler.requests.count == 2)
-        fixture.renderer.respond(with: .success(.sample))
-        #expect(await fixture.answer(fixture.apply()) == .success)
-        #expect(identity(try #require(fixture.renderer.requests.last).library) == identity(superseded))
-        #expect(identity(superseded) != identity(newest))
-    }
-
-    @Test("a superseded compile that finishes while an apply waits does not release it: the apply runs the newest effect")
-    func supersededCompileDoesNotReleaseAWaitingApply() async throws {
-        let fixture = RuntimeFixture()
-        let older = fixture.prepare(.first)
-        let olderRequest = try #require(await fixture.compileRequest(1))
-        let newer = fixture.prepare(.second)
-        let newerRequest = try #require(await fixture.compileRequest(2))
-        let waiting = await fixture.applyQueued()
-
-        #expect(fixture.compiler.succeed(olderRequest) != nil)
-        #expect(await fixture.answer(older) == .success)
-        #expect(await fixture.stillWaiting(waiting), "the older library is not the effect the apply is waiting for")
-        #expect(fixture.renderer.requests.count == 0)
-
-        let newest = try #require(fixture.compiler.succeed(newerRequest))
-        #expect(await fixture.answer(newer) == .success)
-        let pass = try #require(await fixture.renderRequest(1))
-        #expect(identity(pass.library) == identity(newest))
-        #expect(fixture.renderer.complete(pass, with: .success(.sample)))
-        #expect(await fixture.answer(waiting) == .success)
-    }
-
-    @Test("a cache-hit prepare settles the selection and releases an apply that waited on the compile it overtook")
-    func cacheHitReleasesAWaitingApply() async throws {
-        let fixture = RuntimeFixture()
-        let cached = try await fixture.prepared(.first)
-        let slow = fixture.prepare(.second)
-        let slowRequest = try #require(await fixture.compileRequest(2))
-        let waiting = await fixture.applyQueued()
-        #expect(await fixture.stillWaiting(waiting), "the second effect is still compiling")
-
-        #expect(await fixture.answer(fixture.prepare(.first)) == .success)
-        let pass = try #require(await fixture.renderRequest(1))
-        #expect(identity(pass.library) == identity(cached))
-        #expect(fixture.renderer.complete(pass, with: .success(.sample)))
-        #expect(await fixture.answer(waiting) == .success)
-
-        // The overtaken compile finishes late and does not take the selection back.
-        #expect(fixture.compiler.succeed(slowRequest) != nil)
-        #expect(await fixture.answer(slow) == .success)
-        fixture.renderer.respond(with: .success(.sample))
-        #expect(await fixture.answer(fixture.apply(Frame(index: 1))) == .success)
-        #expect(identity(try #require(fixture.renderer.requests.last).library) == identity(cached))
-    }
-
-    @Test("a slow compile that fails after a newer one succeeded answers compileFailed and leaves the newer effect running")
-    func staleFailureLoses() async throws {
-        let fixture = RuntimeFixture()
-        let older = fixture.prepare(.first)
-        let olderRequest = try #require(await fixture.compileRequest(1))
-        let newer = fixture.prepare(.second)
-        let newest = try await fixture.succeedCompile(2)
-        #expect(await fixture.answer(newer) == .success)
-
-        #expect(fixture.compiler.complete(olderRequest, with: .failure(ShaderDiagnostics(message: "effect:1:1: error: late", code: 3))))
-        #expect(await fixture.answer(older) == .failure(.compileFailed))
-
-        fixture.renderer.respond(with: .success(.sample))
-        #expect(await fixture.answer(fixture.apply()) == .success)
-        #expect(identity(try #require(fixture.renderer.requests.last).library) == identity(newest))
-    }
-
-    @Test("a newer prepare that fails wins too: apply answers compileFailed rather than running the older effect")
-    func newerFailureWins() async throws {
-        let fixture = RuntimeFixture()
-        _ = try await fixture.prepared(.first)
-        let broken = fixture.prepare(.second)
-        try await fixture.failCompile(2)
-        #expect(await fixture.answer(broken) == .failure(.compileFailed))
-
-        #expect(await fixture.answer(fixture.apply()) == .failure(.compileFailed))
-        #expect(fixture.renderer.requests.count == 0)
-    }
-
     // MARK: - Compile failure
 
     @Test("a compile failure is compileFailed from prepare and from every apply after it, without rendering or compiling again")
@@ -278,20 +114,6 @@ struct EffectRuntimeRepositoryTests {
         }
         #expect(fixture.renderer.requests.count == 0)
         #expect(fixture.compiler.requests.count == 1)
-    }
-
-    @Test("an apply waiting on a compile that fails answers compileFailed")
-    func waitingApplySeesTheFailure() async throws {
-        let fixture = RuntimeFixture()
-        let prepare = fixture.prepare(.first)
-        _ = try #require(await fixture.compileRequest(1))
-        let waiting = await fixture.applyQueued()
-        #expect(await fixture.stillWaiting(waiting), "the apply waits for the compile instead of answering ahead of it")
-
-        try await fixture.failCompile(1)
-        #expect(await fixture.answer(prepare) == .failure(.compileFailed))
-        #expect(await fixture.answer(waiting) == .failure(.compileFailed))
-        #expect(fixture.renderer.requests.count == 0)
     }
 
     // MARK: - No GPU context
@@ -330,38 +152,6 @@ struct EffectRuntimeRepositoryTests {
         #expect(fixture.compiler.requests.values.map(\.effect) == [.bundled, .bundled])
         #expect(await fixture.answer(second) == .success)
         #expect(identity(try #require(fixture.renderer.requests.values.only).library) == identity(library))
-    }
-
-    @Test("an apply waiting on a compile that found no GPU context is released with internalError, not left waiting")
-    func waitingApplyIsReleasedWhenTheContextIsMissing() async throws {
-        let fixture = RuntimeFixture()
-        let prepare = fixture.prepare(.first)
-        _ = try #require(await fixture.compileRequest(1))
-        let waiting = await fixture.applyQueued()
-        #expect(await fixture.stillWaiting(waiting))
-
-        try await fixture.failCompileForWantOfAContext(1)
-        #expect(await fixture.answer(prepare) == .failure(.internalError))
-        #expect(await fixture.answer(waiting) == .failure(.internalError))
-        #expect(fixture.renderer.requests.count == 0)
-    }
-
-    @Test("a superseded compile that found no GPU context answers internalError and leaves the newer effect running")
-    func supersededContextFailureLoses() async throws {
-        let fixture = RuntimeFixture()
-        let older = fixture.prepare(.first)
-        _ = try #require(await fixture.compileRequest(1))
-        let newer = fixture.prepare(.second)
-        let newest = try await fixture.succeedCompile(2)
-        #expect(await fixture.answer(newer) == .success)
-
-        try await fixture.failCompileForWantOfAContext(1)
-        #expect(await fixture.answer(older) == .failure(.internalError))
-
-        fixture.renderer.respond(with: .success(.sample))
-        #expect(await fixture.answer(fixture.apply()) == .success)
-        #expect(identity(try #require(fixture.renderer.requests.values.only).library) == identity(newest))
-        #expect(fixture.compiler.requests.count == 2, "the older effect was not retried over the newer one")
     }
 
     @Test("a source that does not compile stays final: later frames answer compileFailed without compiling again")

@@ -1,5 +1,5 @@
 /// How a shader source is compiled. Part of the compile cache key
-/// (`EffectRuntimeRepository`), so every field is `Hashable`.
+/// (`EffectRuntimeStateDataSource`), so every field is `Hashable`.
 public struct ShaderCompileOptions: Sendable, Hashable {
     /// The kernel the compiled handle executes. Every effect exposes one entry
     /// point under this name; the prelude never defines it.

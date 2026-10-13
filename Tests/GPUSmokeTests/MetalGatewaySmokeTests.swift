@@ -2,6 +2,7 @@ import BundledEffectDataSource
 import Dependencies
 import Domain
 import EffectRuntimeRepository
+import EffectRuntimeStateDataSource
 import Foundation
 import GPURenderDataSource
 import IOSurfaceGateway
@@ -300,11 +301,16 @@ struct MetalGatewaySmokeTests {
         } operation: {
             (ShaderCompilationDataSourceImpl(), GPURenderDataSourceImpl())
         }
+        let state = withDependencies {
+            $0.frameExecutor = executor
+        } operation: {
+            EffectRuntimeStateDataSourceImpl()
+        }
         let runtime = withDependencies {
+            $0.effectRuntimeState = state
             $0.shaderCompiler = compiler
             $0.gpuRenderer = renderer
             $0.bundledEffects = BundledEffectDataSourceImpl()
-            $0.frameExecutor = executor
             $0.errorLog = log
             $0.developerLog = log
         } operation: {

@@ -9,6 +9,7 @@ import CommonDependencyInjection
 import Dependencies
 import Domain
 import EffectRuntimeRepository
+import EffectRuntimeStateDataSource
 import ExtensionInstallDataSource
 import ExtensionInstallRepository
 import ExtensionInstallUseCase
@@ -93,6 +94,10 @@ extension CameraExtensionInstallerKey: DependencyKey {
 
 extension BundledEffectsKey: DependencyKey {
     public static let liveValue: any BundledEffects = BundledEffectDataSourceImpl()
+}
+
+extension EffectRuntimeStateKey: DependencyKey {
+    public static let liveValue: any EffectRuntimeState = EffectRuntimeStateDataSourceImpl()
 }
 
 extension ShaderCompilerKey: DependencyKey {

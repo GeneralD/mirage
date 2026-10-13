@@ -146,7 +146,7 @@ struct ShaderCompilationDataSourceTests {
         let second = try await subject.compile(effect).get()
 
         #expect(library.calls.count == 2)
-        #expect(ObjectIdentifier(first) != ObjectIdentifier(second), "caching is EffectRuntimeRepository's")
+        #expect(ObjectIdentifier(first) != ObjectIdentifier(second), "caching is EffectRuntimeStateDataSource's")
     }
 
     /// Lines an author might write around the broken one; none of them breaks the arithmetic.
