@@ -20,8 +20,9 @@ import VirtualCameraRepository
 
 /// Which `PreviewSink` the host's pipeline presents to.
 enum HostPreview {
-    /// `HostSide.preview`: an `InMemoryPreviewSink` that completes every frame at once
-    /// until a test attaches it, as the live sink does with no view open.
+    /// `HostSide.preview`: an `InMemoryPreviewSink` that completes every frame inside
+    /// `present` until a test attaches it — stricter than the live sink with no view open,
+    /// which does so in a later executor job (`.rendered` has that timing).
     case inMemory
     /// The real preview — `PreviewRepositoryImpl` over `PreviewDataSourceImpl`, on the
     /// host's executor and pool — drawing through the fake GPU layer (`HostSide.gpu`,

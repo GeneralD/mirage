@@ -55,9 +55,9 @@ struct CancelledSink: VirtualCameraSink {
 struct Rig {
     let camera = FakeCameraRepository()
     let sink = FakeVirtualCameraSink()
-    /// The preview: like the live sink with no view open, it completes every frame at
-    /// once until a test attaches it (`attachPreview()`); from then on each frame waits
-    /// for `preview.complete(_:)`.
+    /// The preview with no view open: it completes every frame inside `present` until a
+    /// test attaches it (`attachPreview()`) — stricter than the live sink, which does so in
+    /// a later executor job; from then on each frame waits for `preview.complete(_:)`.
     let preview = InMemoryPreviewSink(holding: .onceAttached)
     /// Over a `FakeSurfacePool` of the capacity `init` was given (4 unless a test says otherwise).
     let surfaces: SpySurfaceRepository

@@ -176,8 +176,9 @@ extension FramePipelineUseCaseImpl {
     }
 
     /// The preview borrows the frame until its completion, which may run on any
-    /// thread — inside `present` itself while no view is attached — so it hops onto
-    /// the executor before the lease ends.
+    /// thread and at any point — inside `present` itself (the in-memory double, before
+    /// an attach) or in a later job on the executor (`PreviewDataSource`) — so it hops
+    /// onto the executor before the lease ends.
     private func present(_ frame: FrameRef) {
         presenting += 1
         previewSink.present(frame) { [weak self] in

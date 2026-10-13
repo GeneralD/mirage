@@ -189,9 +189,10 @@ Shared conventions:
   `completeApply`), `FakeGPURenderer` (`complete(request, with:)`, or a
   scripted `respond(with:)`), `FakeShaderCompiler` (`complete(request, with:)` /
   `succeed(request)`), `InMemoryPreviewSink` (`complete(presentation)`; with
-  `holding: .onceAttached` it completes at once, inside `present`, until a
-  target is attached, as the live sink does), `FakePreviewGateway`
-  (`complete(draw, with:)`).
+  `holding: .onceAttached` it completes every frame inside `present` until a
+  target is attached — stricter than the live sink, whose `PreviewDataSource`
+  gives them back in a later executor job, after `present` has returned),
+  `FakePreviewGateway` (`complete(draw, with:)`).
   Each completion is exactly once; a second one, or one another instance
   issued, returns `false` (`FakeShaderCompiler.succeed` returns `nil`). Like
   their live counterparts, the runtime, renderer and compiler fakes ignore
@@ -208,7 +209,8 @@ Shared conventions:
   a preview sees a frame's lease end with the drain that sent it; one that
   attaches (`Rig.attachPreview`) completes each presentation by hand.
   `LoopbackRig(preview: .rendered)` puts the real `PreviewRepository` /
-  `PreviewDataSource` on the host side, over the fake GPU layer.
+  `PreviewDataSource` on the host side, over the fake GPU layer — the one rig
+  with the live timing for an unattached preview.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
   wall clock.

@@ -10,13 +10,14 @@ public protocol PreviewTargetHandle: AnyObject, Sendable {
 }
 
 /// Where the host shows frames to its own user. `present` borrows the frame's
-/// surface until `completion` runs — exactly once, on any thread — and the
-/// caller releases the lease afterwards; a sink that is slower than the camera
-/// is visible to the pipeline as completions that lag. Until a target is
-/// attached every frame completes at once. `attach` runs on the main thread,
-/// because the target is a view; returning from it does not promise drawing —
-/// a preview kernel that fails to compile afterwards leaves no target attached
-/// (logged, not thrown), and frames complete at once again. The live value is `PreviewRepositoryImpl`
+/// surface until `completion` runs — exactly once, on any thread, and possibly
+/// before `present` itself returns — and the caller releases the lease
+/// afterwards; a sink that is slower than the camera is visible to the pipeline
+/// as completions that lag. Until a target is attached every frame completes at
+/// once, undrawn. `attach` runs on the main thread, because the target is a
+/// view; returning from it does not promise drawing — a preview kernel that
+/// fails to compile afterwards leaves no target attached (logged, not thrown),
+/// and frames complete at once again. The live value is `PreviewRepositoryImpl`
 /// over `PreviewDataSource`.
 public protocol PreviewSink: Sendable {
     @MainActor

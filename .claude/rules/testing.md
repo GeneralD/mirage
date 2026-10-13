@@ -70,9 +70,12 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   arrived, then `drain()`s; passes complete through `FakeGPUGateway`. Removing
   the hop turns that suite red. `InMemoryPreviewSink` —
   `present` holds the completion until `complete(_:)`, in any order, and
-  records `attached` targets; with `holding: .onceAttached` it keeps the live
-  sink's contract for a preview nobody has opened: until a target is attached
-  every frame is recorded and completes at once, inside `present`.
+  records `attached` targets; with `holding: .onceAttached` it models a
+  preview nobody has opened: until a target is attached every frame is
+  recorded and completes inside `present`. That is stricter than live, where
+  `PreviewDataSource` queues the frame on the executor and gives it back in
+  that job, after `present` has returned (`PreviewDataSourceTests` pins it;
+  the pipeline hops the completion onto its executor either way).
   Requests are `Collector`s, so a test awaits
   `applyRequests.waitForCount(n)` instead of polling.
 - The pipeline's in-flight cap is driven by **manual completion**: the fake
@@ -100,7 +103,8 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `presentation(n)` and ends it with `completePresentation(_:)` (complete, then
   drain). `LoopbackRig(preview: .rendered)` puts the real `PreviewRepository` /
   `PreviewDataSource` on the host side instead, over the fake GPU layer
-  (`gpu`, `shaders`, `textures`, `previewGateway` on `HostSide`); its
+  (`gpu`, `shaders`, `textures`, `previewGateway` on `HostSide`); until it is
+  attached it gives each frame back in a later executor job, as live, and its
   `attachPreview()` drains the attach's executor half off the main thread,
   where the kernel compile must run.
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`

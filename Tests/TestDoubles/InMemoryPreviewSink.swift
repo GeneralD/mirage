@@ -13,9 +13,11 @@ public final class FakePreviewTargetHandle: PreviewTargetHandle, Sendable {
 /// presented, in order, and holds each frame's completion until the test
 /// releases it with `complete(_:)` — exactly once, in any order — so "the
 /// preview is slower than the camera" is a sequence the test writes down.
-/// With `holding: .onceAttached` it keeps the live sink's contract for a
-/// preview nobody has opened yet: until a target is attached, every frame
-/// completes at once.
+/// With `holding: .onceAttached` it models a preview nobody has opened yet:
+/// until a target is attached, every frame completes inside `present`. The
+/// live sink is looser: `PreviewDataSource` queues the frame on the executor
+/// and completes it in that job, after `present` has returned, so this is the
+/// stricter caller-still-inside-its-own-call case, and needs no executor.
 public final class InMemoryPreviewSink: PreviewSink, Sendable {
     public struct Presentation: Sendable {
         public let id: Int
@@ -28,9 +30,10 @@ public final class InMemoryPreviewSink: PreviewSink, Sendable {
     public enum Holding: Sendable {
         /// From the first `present` on: every completion waits for `complete(_:)`.
         case always
-        /// Once a target is attached. Before that every frame completes at once,
-        /// inside `present` (the strictest reading of "at once": the caller is
-        /// still inside its own call), and is recorded as completed.
+        /// Once a target is attached. Before that every frame completes
+        /// synchronously inside `present` (the live sink completes it in a later
+        /// executor job; this is the stricter case: the caller is still inside its
+        /// own call), and is recorded as completed.
         case onceAttached
     }
 
@@ -77,7 +80,7 @@ public final class InMemoryPreviewSink: PreviewSink, Sendable {
 
     /// Runs the frame's completion, once. `false` when the presentation is
     /// unknown, came from another sink, or was already completed (one that
-    /// completed at once included).
+    /// completed inside `present` included).
     @discardableResult
     public func complete(_ presentation: Presentation) -> Bool {
         guard presentation.origin == ObjectIdentifier(self) else { return false }
