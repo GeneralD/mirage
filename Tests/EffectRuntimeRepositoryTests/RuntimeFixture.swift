@@ -64,6 +64,16 @@ struct RuntimeFixture {
         return Reply(await call.task.value)
     }
 
+    /// Whether `call` is still unanswered after `ticks` drains of the executor: the
+    /// negative check `tickUntil` documents. A release that should not have happened
+    /// answers within a tick or two, so a call that is still waiting after the budget
+    /// really was held back — unlike a count read right after one `drain()`, which
+    /// cannot see an answer still on its way to the call's task.
+    @MainActor
+    func stillWaiting(_ call: Call, ticks: Int = 25) async -> Bool {
+        await !tickUntil(ticks, tick: { executor.drain() }, until: { call.answered.count == 1 })
+    }
+
     /// Drains the executor until the compiler has received its `number`-th compile (1-based).
     @MainActor
     func compileRequest(_ number: Int) async -> FakeShaderCompiler.Request? {
