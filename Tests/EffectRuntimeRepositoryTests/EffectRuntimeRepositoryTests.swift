@@ -133,6 +133,12 @@ struct EffectRuntimeRepositoryTests {
         #expect(fixture.compiler.requests.values.map(\.effect) == [.first, .first])
         #expect(await fixture.answer(apply) == .success)
         #expect(identity(try #require(fixture.renderer.requests.values.only).library) == identity(library))
+        #expect(await fixture.compilesFinished(1), "the prepare's compile was awaited; only the apply's ran on the work runner")
+        #expect(
+            fixture.log.messages(in: .effect) == [
+                "effect 'first' did not compile: no GPU context to compile on: noDevice",
+                "effect 'first' compiled after 1 failed attempt for want of a GPU context",
+            ], "a streak of one is reported in the singular")
 
         // Once it compiled, it is cached like any other.
         #expect(await fixture.answer(fixture.apply(Frame(index: 1))) == .success)
