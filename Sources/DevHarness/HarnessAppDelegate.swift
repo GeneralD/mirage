@@ -5,15 +5,15 @@ import Views
 
 /// AppKit glue, untested by design: the harness's lifecycle and wiring are
 /// `HarnessSession`'s, and what it does is `HarnessInteractor`'s.
-/// One 4:3 window whose content is `PreviewView` (so the 16:9 frame shows the
-/// preview's black bars), a Quit item, the session started once the window is
-/// up and stopped on termination. Closing the window quits. Importing
-/// `HostDependencyInjection` links the host's live values, as `App` does.
+/// One window whose content is `PreviewView`, sized to the 1280 × 720 frame it
+/// shows (resize it and the preview's black bars appear), a Quit item, the session
+/// started once the window is up and stopped on termination. Closing the window
+/// quits. Importing `HostDependencyInjection` links the host's live values, as `App` does.
 @MainActor
 final class HarnessAppDelegate: NSObject, NSApplicationDelegate {
-    private let session = HarnessSession()
+    private let session = HarnessSession.live()
     private let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+        contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
         backing: .buffered,
         defer: false

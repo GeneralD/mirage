@@ -18,9 +18,9 @@ make test                  # swift test (parallel, no GPU)
 make test-gpu              # GPU smoke suites in their own process (needs a Metal device; CI runs it as the `test-gpu` job)
 make lint                  # swift-format lint --strict
 make format                # swift-format --in-place
-make check                 # import-boundary lint, physical-symbol lint, thin-live check, service-name check, product-name check, extension-no-Metal check
+make check                 # import-boundary lint, physical-symbol lint, thin-live check, shell-thin check, service-name check, product-name check, extension-no-Metal check, dev-substitution check
 make generate              # xcodegen → *.xcodeproj (gitignored thin shell for the .app + Camera Extension)
-swift run dev-harness      # preview window + camera prompt, no virtual camera (today a solid frame; camera → effects with #24)
+swift run dev-harness      # camera prompt, then camera → effect → preview window, no virtual camera (the virtual camera sink is discarding)
 ```
 
 The System Extension (virtual camera) cannot be exercised from `swift run`;

@@ -1,19 +1,21 @@
 import Dependencies
 
-/// The lite dev harness's launch sequence (#21) for the entry lane: show the
-/// solid frame in the preview window and ask for the camera once, so a run
-/// shows whether TCC honours the `Info.plist` linked into the binary.
+/// The dev harness's launch sequence for the entry lane: ask for the camera
+/// once, then run the host pipeline — camera → effect → preview — in this process,
+/// with no extension. It is `CameraInteractor` without the install step, which a
+/// SwiftPM executable cannot take, and every outcome is a log line: the harness has no
+/// display state of its own beyond the preview.
 public protocol HarnessInteractor: Sendable {
-    /// Starts the solid frame, then asks for the camera and logs the answer.
-    /// The frame does not wait for the prompt. An answer that arrives after the
-    /// caller's task was cancelled is not reported.
+    /// Asks for the camera and logs the answer; when it is granted, starts the
+    /// pipeline at `descriptor` and `frameRate` and logs that. An answer that arrives
+    /// after the caller's task was cancelled is not reported, and nothing starts.
     func launch(descriptor: SurfaceDescriptor, frameRate: FrameRate) async
 
     /// Main thread: attaches the preview window's view. A refusal is logged;
-    /// the window then stays empty.
+    /// the window then stays empty. It may come before the pipeline starts or after.
     @MainActor func attach(_ target: any PreviewTargetHandle)
 
-    /// Stops the solid frame.
+    /// Stops the pipeline.
     func shutDown()
 }
 

@@ -73,7 +73,7 @@ is compiled against.
 make test              # deterministic suite, no GPU or camera required
 make test-gpu          # Metal smoke tests in their own process (needs a Metal device; CI has one)
 make lint && make check
-swift run dev-harness  # lite for now: a solid frame in a preview window + the camera permission prompt; camera → effects → preview arrives with issue #24
+swift run dev-harness  # camera prompt, then your camera with the effect applied in a preview window; no virtual camera
 ```
 
 Architecture, module map and the physical-abstraction table: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

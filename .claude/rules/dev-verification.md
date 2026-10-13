@@ -10,35 +10,47 @@ paths:
 
 Three lanes, by what is being verified.
 
-## Lane 1 — effects and preview (no extension): `swift run dev-harness`
+## Lane 1 — camera → effect → preview (no extension): `swift run dev-harness`
 
 `DevHarness` links `Tools/DevHarness/Info.plist` into its binary
 (`-sectcreate __TEXT __info_plist`) so the camera prompt has a usage string
-and a stable bundle identifier (`com.generald.dev-harness`). With #24 it runs
-camera → effects → preview window with the virtual camera sink replaced by
-`InMemoryVirtualCameraSink`, for shader work, hot reload and parameter UI. It
-cannot show anything about the Camera Extension. Build it with
+and a stable bundle identifier (`com.generald.dev-harness`). It runs the host's
+real pipeline — camera → `FramePipelineUseCase` → the real effect runtime with
+the bundled effect (`Chromatic Grain`) → the preview window — with one
+substitution: the virtual camera sink is `DiscardingVirtualCameraSink`
+(`HarnessSession.live()`), which accepts every frame and sends it nowhere.
+That type is for the harness only (no extension exists to send to); the host
+app keeps the real sink. The harness shows nothing about the Camera Extension
+(Mach, the stream, the slate): that is Lane 2. Build it with
 `make build-dev-harness`, never `swift build` alone, after editing the plist:
 SwiftPM does not see the plist as a link input, and the make target relinks.
 
-Today (#21, the lite harness) it has no camera frames and no effect: it asks
-for the camera once and keeps one solid frame in a preview window, and the
-usage string says only that (rewrite it when #24 wires capture). Drive it
-yourself only when the user is at the machine — the camera prompt is a modal
-dialog on their screen:
+The automated twin of this lane is `Tests/FramePathIntegrationTests`
+(`RealEffectRuntimeIntegrationTests`): the same effect runtime and DataSources
+over the fake GPU layer. What only the device adds is the Metal compile, the
+command buffer, the camera and the screen.
+
+Not yet run on a device: the camera prompt is a modal dialog on the user's
+screen, so drive it yourself only when the user is at the machine. The numbers
+below are budgets (issue #24), not measurements; record what you see next to
+them once a run exists.
 
 ```sh
 make build-dev-harness
 swift run dev-harness
-log stream --level debug --style compact --predicate 'subsystem == "<log subsystem>"'   # second terminal
+log stream --level debug --style compact --predicate 'subsystem == "<log subsystem>"'   # second terminal; <log subsystem> is ProductIdentity.logSubsystem
+# --level debug is required: the authorization, started, attached, compiled and
+# per-second summary lines are debug-level; only the failures are error-level.
 ```
 
-| Check | Expected |
+| Check | Expected (log lines are `category: message`) |
 |---|---|
-| Window | a 640 × 480 window titled "Dev Harness": a mid-grey 16:9 frame with black bars above and below (the preview kernel's aspect fit), still filled after a resize. Empty or all black means the frame never reached a drawable; look for `preview window not attached` / `frame not shown` lines |
-| Camera prompt | on the first run, a camera dialog naming the harness (bundle `com.generald.dev-harness`) or the terminal app. Then `camera authorization: authorized` (category `camera`); anything else is followed by a `camera access not granted (…)` error line |
-| Summary | every 30 ticks (about once a second) `solid frame: ticks=… presented=… skipped=…` (category `preview`) |
-| Occluded window | cover the window or move it to another Space for a while: summary lines further apart than a second mean `nextDrawable` blocked the frame executor (`docs/ARCHITECTURE.md` → *Preview*); record what you see |
+| Camera prompt | on the first run, a camera dialog naming the harness (bundle `com.generald.dev-harness`) or the terminal app. Then these three lines appear, `preview window attached` in no fixed place (it may come first, because the window's view attaches independently of the camera prompt): `camera: camera authorization: authorized`, then `pipeline: pipeline started`, and `preview: preview window attached`. Anything but `authorized` is followed by a `camera access not granted (…)` error line and no pipeline. A granted camera that cannot start gives `pipeline: pipeline failed to start: …` instead of `pipeline started` |
+| Window | a 1280 × 720 window titled "Dev Harness" showing the live camera with the effect applied: colour fringing at the edges and moving grain, visible for 30 s. Plain camera video means the effect did not run (see the broken-source row); black or empty means the frame never reached a drawable: look for `preview window not attached`, `frame not shown`, `preview detached, its kernel did not compile (…)` and `preview draw failed: …` lines |
+| Effect | once, `effect: effect 'Chromatic Grain' compiled`; no `did not compile` line. Then every second `effect: applied=<n> failed=0 capDropped=<n>`, with `applied` rising by about the frame rate |
+| Rate | every second `pipeline: frames=<sent> received=<n> dropped=<n> maxGapMs=<ms> slate=0`. The counters are cumulative: `received` rises by at least 25 per second, and `dropped` stays at or below 5% of `received` over the run. `frames` follows `received` (the discarding sink reports every send as sent). `slate` stays 0 here. `frames` stuck at 0 while `dropped` tracks `received` means the pipeline kept the real sink (it answers `.dropped(.notConnected)`): the harness's sink substitution did not reach it (`HarnessLiveWiringTests` is meant to catch that before a device does). A few frames dropped as `capDropped` while the first pass waits on the compile are normal |
+| Broken source | local build only, never committed: break the bundled shader source (for example misspell a type name in `Sources/BundledEffectDataSource/ChromaticGrainEffect.swift`), `make build-dev-harness`, run. Expect exactly one error line `effect: effect 'Chromatic Grain' did not compile: …` (not one per frame), the **plain camera video** in the window with no fringing or grain, the per-second effect line showing `applied=0` with `compileFailed=<n>` rising, and `frames` in the pipeline line still rising with `received`. Then revert the edit |
+| Occluded window | cover the window or move it to another Space for a while: `pipeline:` summary lines further apart than a second mean `nextDrawable` blocked the frame executor (`docs/ARCHITECTURE.md` → *Preview*); record what you see |
 | Quit | ⌘Q or closing the window ends the process |
 
 **When TCC ignores the linked plist.** A process started from a terminal is
@@ -52,7 +64,7 @@ status comes back `denied`. Then:
    recorded: `tccutil reset Camera com.generald.dev-harness` and/or
    `tccutil reset Camera <terminal bundle id>` (e.g. `com.apple.Terminal`).
 3. Record which identity the dialog named, and whether granting the terminal
-   was required, in the #21 PR so this section can state it as fact.
+   was required, in the PR that ran the check so this section can state it as fact.
 
 ## Lane 2 — the virtual camera (extension): signed `.app` under `/Applications`
 

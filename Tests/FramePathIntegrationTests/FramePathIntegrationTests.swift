@@ -8,9 +8,10 @@ import Testing
 /// its real repositories and data sources, joined by `InMemoryFrameTransport` in place
 /// of Mach. What the real deployment adds is only the kernel and the OS
 /// gateways, which `MachGatewayTests` and the dev-verification lanes cover.
-/// The effect runtime is a fake (the real one joins in #24); the preview is an
-/// `InMemoryPreviewSink` unless a test asks for the real one over the fake GPU
-/// layer (`LoopbackRig(preview: .rendered)`).
+/// The effect runtime is a fake here, so a test can choose each pass's result
+/// (`RealEffectRuntimeIntegrationTests` runs the real one, `LoopbackRig(effects: .real)`);
+/// the preview is an `InMemoryPreviewSink` unless a test asks for the real one over the
+/// fake GPU layer (`LoopbackRig(preview: .rendered)`).
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct FramePathIntegrationTests {

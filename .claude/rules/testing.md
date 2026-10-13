@@ -121,7 +121,21 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   (`gpu`, `shaders`, `textures`, `previewGateway` on `HostSide`); until it is
   attached it gives each frame back in a later executor job, as live, and its
   `attachPreview()` drains the attach's executor half off the main thread,
-  where the kernel compile must run.
+  where the kernel compile must run. `LoopbackRig(effects: .real)` puts the real
+  effect runtime on the host side the same way (`EffectRuntimeRepositoryImpl`
+  over `EffectRuntimeStateDataSourceImpl`, `ShaderCompilationDataSourceImpl`,
+  `GPURenderDataSourceImpl` and `BundledEffectDataSourceImpl`, over the same fake
+  GPU layer). A test then uses `captureThroughRuntime(_:at:completing:)` instead
+  of `capture`: it ticks, drains until the pass has either answered without a
+  GPU (a source that did not compile) or committed its command buffer, completes
+  the pending `FakeGPUGateway` submission (`.finished` by default, `.failed(code:)`
+  to script a failing command buffer), drains to the answer and then waits for
+  every work-runner item to finish — the `apply` answers before the compile it
+  started has logged, so the log is read only after that wait. Each of the two
+  helpers refuses a rig of the other kind (`HostSide.effectsKind`), and
+  `stopHostExpectingIdleGPU()` asserts that no pass or draw was left pending.
+  A broken effect is scripted with `FakeShaderLibraryGateway.failCompile(of:with:)`,
+  keyed by the exact assembled source (`ShaderSourceAssembly.assemble`).
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
   answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
   `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing

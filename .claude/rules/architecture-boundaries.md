@@ -13,7 +13,7 @@
 | **Support** | Cross-cutting seams (random, log, host time, app directories) | Business logic |
 | **Presenter** | `@Published` display state | AppKit / SwiftUI / MetalKit imports; business logic |
 | **Views / Router / App** | Declarative rendering, wiring, lifecycle | Business logic; direct UseCase/Gateway access |
-| **DI targets** | `liveValue` registrations | Implementation |
+| **DI targets** | `liveValue` registrations, and dev-only `DependencyValues` extensions whose members each only assign one value (no branch, no `var`; `scripts/check-live-thin.sh` checks `DevelopmentSubstitutions.swift`) | Implementation |
 | **Shells (`Apps/**`)** | `main.swift`, assets (plus generated `Info.plist` / entitlements from `project.yml`) | Any logic; hand-written plists |
 
 ## Dependency Chain — Adjacent Layers Only, No Skipping

@@ -112,6 +112,14 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
         try await connect()
     }
 
+    /// A pass-through: whether a view is attached is the preview's state (`PreviewDataSource`),
+    /// not the pipeline's, so this touches none of the executor-confined state above. Frames
+    /// presented while no view is attached are given back undrawn.
+    @MainActor
+    public func attachPreview(_ target: any PreviewTargetHandle) throws {
+        try previewSink.attach(target)
+    }
+
     public func stop() {
         // First, from the caller's context: every pass of the run this ends is abandoned
         // now — one already started, or one a tick still under way starts after this

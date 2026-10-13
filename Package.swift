@@ -149,18 +149,15 @@ let package = Package(
         .testTarget(name: "ExtensionInstallUseCaseTests", dependencies: ["ExtensionInstallUseCase"] + testDependencies),
         .target(name: "ExtensionRelayUseCase", dependencies: dependencies),
         .testTarget(name: "ExtensionRelayUseCaseTests", dependencies: ["ExtensionRelayUseCase"] + testDependencies),
-        // Host only: the lite dev harness's solid frame (#21), until #24 runs the harness on the pipeline.
-        .target(name: "SolidFrameUseCase", dependencies: dependencies),
-        .testTarget(name: "SolidFrameUseCaseTests", dependencies: ["SolidFrameUseCase"] + testDependencies),
 
         // ── Interactor ──
         .target(name: "CameraInteractor", dependencies: dependencies),
         .testTarget(name: "CameraInteractorTests", dependencies: ["CameraInteractor"] + testDependencies),
-        // Host only: the lite dev harness's launch sequence (#21).
+        // Host only: the dev harness's launch sequence (camera prompt, then the pipeline).
         .target(name: "HarnessInteractor", dependencies: dependencies),
         .testTarget(name: "HarnessInteractorTests", dependencies: ["HarnessInteractor"] + testDependencies),
 
-        // ── DependencyInjection (liveValue registrations only) ──
+        // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
         .target(
             name: "CommonDependencyInjection",
             dependencies: dependencies + [
@@ -173,7 +170,7 @@ let package = Package(
             dependencies: dependencies + [
                 "CommonDependencyInjection",
                 "CameraInteractor", "HarnessInteractor",
-                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase", "SolidFrameUseCase",
+                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase",
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
                 "EffectRuntimeRepository", "PreviewRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
@@ -201,7 +198,7 @@ let package = Package(
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
         // The development harness (host graph only). `main.swift` launches AppKit;
         // HarnessSession holds its lifecycle and wiring (DevHarnessTests); what it does
-        // is HarnessInteractor's, over SolidFrameUseCase and CameraControlUseCase.
+        // is HarnessInteractor's, over CameraControlUseCase and FramePipelineUseCase.
         // A SwiftPM executable has no bundle, so its Info.plist (bundle id, camera
         // usage string for TCC) is linked in as the __TEXT,__info_plist section —
         // the one hand-written plist, outside the xcodegen shells (docs/ARCHITECTURE.md
@@ -220,7 +217,11 @@ let package = Package(
                 ])
             ]
         ),
-        .testTarget(name: "DevHarnessTests", dependencies: ["DevHarness"] + testDependencies),
+        .testTarget(
+            name: "DevHarnessTests",
+            dependencies: ["DevHarness", "FramePipelineUseCase", "HarnessInteractor", "HostDependencyInjection", "VirtualCameraRepository"]
+                + testDependencies
+        ),
 
         // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──
         // Imports Metal and IOSurface directly: a test target, not a Gateway, so the
@@ -258,6 +259,8 @@ let package = Package(
                 "SurfacePoolDataSource", "CameraDataSource", "FrameTransportDataSource",
                 "ExtensionRelayUseCase", "FrameReceiverRepository", "StreamOutputRepository",
                 "FrameReceiverDataSource", "StreamOutputDataSource", "PreviewRepository", "PreviewDataSource",
+                "EffectRuntimeRepository", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
+                "BundledEffectDataSource",
             ]
         ),
     ]

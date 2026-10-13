@@ -21,6 +21,6 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSCameraUsageDescription</key>
-	<string>The development harness asks for camera access only to check the permission prompt. It does not capture or show camera video yet.</string>
+	<string>The development harness shows your camera video with a shader effect applied in its preview window, to check the effect on a real image. Frames stay in this window: nothing is recorded or sent to any other app.</string>
 </dict>
 </plist>

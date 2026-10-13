@@ -1,14 +1,19 @@
+import BundledEffectDataSource
 import CameraRepository
 import Clocks
 import Dependencies
 import Domain
+import EffectRuntimeRepository
+import EffectRuntimeStateDataSource
 import ExtensionRelayUseCase
 import FramePipelineUseCase
 import FrameReceiverDataSource
 import FrameReceiverRepository
 import FrameTransportDataSource
+import GPURenderDataSource
 import PreviewDataSource
 import PreviewRepository
+import ShaderCompilationDataSource
 import StreamOutputDataSource
 import StreamOutputRepository
 import SurfacePoolDataSource
@@ -30,20 +35,39 @@ enum HostPreview {
     case rendered
 }
 
-/// The host process: camera → pipeline (effect stage on a fake runtime) →
-/// transport and preview, on its own executor, scheduler, pool and clock.
+/// Which `EffectRuntimeRepository` the host's pipeline applies its effect with.
+enum HostEffects {
+    /// `HostSide.effects`, a `FakeEffectRuntimeRepository`: every `apply` waits until the
+    /// test answers it with whatever result it likes (`LoopbackRig.capture`).
+    case fake
+    /// The real runtime: `EffectRuntimeRepositoryImpl` over `EffectRuntimeStateDataSourceImpl`,
+    /// `ShaderCompilationDataSourceImpl`, `GPURenderDataSourceImpl` and
+    /// `BundledEffectDataSourceImpl`, on the host's executor, pool and work runner, over the
+    /// fake GPU layer (`HostSide.gpu`, `shaders`, `textures`). The test answers what the GPU
+    /// would: a compile it scripts (`shaders.failCompile`) and the command buffer it completes
+    /// (`LoopbackRig.captureThroughRuntime`).
+    case real
+}
+
+/// The host process: camera → pipeline (effect stage) → transport and preview, on its own
+/// executor, scheduler, pool and clock.
 struct HostSide {
     let executor = ManualFrameExecutor()
     let scheduler = ManualFrameScheduler()
     let work = RecordingWorkRunner()
     let clock = TestClock<Duration>()
     let camera = FakeCameraSource()
-    /// The effect runtime: every `apply` waits until the test answers it (`LoopbackRig.capture`).
+    /// Which runtime the pipeline applies its effect with; `LoopbackRig.capture` drives a
+    /// `.fake` host and `captureThroughRuntime` a `.real` one, and each refuses the other.
+    let effectsKind: HostEffects
+    /// The effect runtime of a `.fake` host: every `apply` waits until the test answers it
+    /// (`LoopbackRig.capture`). Unused by a `.real` one.
     let effects = FakeEffectRuntimeRepository()
     /// The preview of a `.inMemory` host.
     let preview = InMemoryPreviewSink(holding: .onceAttached)
-    /// The fake GPU layer a `.rendered` preview draws through: a draw stays pending on
-    /// `previewGateway` until the test completes it.
+    /// The fake GPU layer a `.rendered` preview and a `.real` effect runtime go through: a
+    /// draw stays pending on `previewGateway`, and an effect pass on `gpu`, until the test
+    /// completes it.
     let gpu = FakeGPUGateway()
     let shaders = FakeShaderLibraryGateway()
     let textures = FakeTextureCacheGateway()
@@ -55,7 +79,11 @@ struct HostSide {
     let previewSink: any PreviewSink
     let pipeline: FramePipelineUseCaseImpl
 
-    init(kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int, preview choice: HostPreview) {
+    init(
+        kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int, preview choice: HostPreview,
+        effects effectsChoice: HostEffects
+    ) {
+        effectsKind = effectsChoice
         let executor = executor
         let scheduler = scheduler
         let work = work
@@ -88,7 +116,6 @@ struct HostSide {
             $0.continuousClock = clock
             $0.cameraSource = camera
             $0.cameraPermission = FakeCameraPermission(status: .authorized)
-            $0.effectRuntimeRepository = effects
             $0.gpuGateway = gpu
             $0.shaderLibraryGateway = shaders
             $0.textureCacheGateway = textures
@@ -107,13 +134,40 @@ struct HostSide {
                     case .inMemory: preview
                     case .rendered: PreviewRepositoryImpl()
                     }
+                let runtime: any EffectRuntimeRepository =
+                    switch effectsChoice {
+                    case .fake: effects
+                    case .real: Self.realRuntime()
+                    }
                 return withDependencies {
                     $0.virtualCameraSink = VirtualCameraRepositoryImpl()
                     $0.previewSink = sink
+                    $0.effectRuntimeRepository = runtime
                 } operation: {
                     (sink, FramePipelineUseCaseImpl())
                 }
             }
+        }
+    }
+}
+
+extension HostSide {
+    /// The real runtime and the DataSources under it, each built in the scope that holds the
+    /// executor, the pool, the work runner, the logs and the fake GPU layer, so every
+    /// `@Dependency` captures the real neighbour. One state and one renderer: both keep their
+    /// memory (the compile cache and the session clock; the GPU context) for the whole run.
+    fileprivate static func realRuntime() -> any EffectRuntimeRepository {
+        let state = EffectRuntimeStateDataSourceImpl()
+        let compiler = ShaderCompilationDataSourceImpl()
+        let renderer = GPURenderDataSourceImpl()
+        let bundled = BundledEffectDataSourceImpl()
+        return withDependencies {
+            $0.effectRuntimeState = state
+            $0.shaderCompiler = compiler
+            $0.gpuRenderer = renderer
+            $0.bundledEffects = bundled
+        } operation: {
+            EffectRuntimeRepositoryImpl()
         }
     }
 }
@@ -184,8 +238,8 @@ struct LoopbackRig {
     let host: HostSide
     let ext: ExtensionSide
 
-    init(capacity: Int = 4, frameGap: Duration = .seconds(2), preview: HostPreview = .inMemory) {
-        host = HostSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview)
+    init(capacity: Int = 4, frameGap: Duration = .seconds(2), preview: HostPreview = .inMemory, effects: HostEffects = .fake) {
+        host = HostSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview, effects: effects)
         ext = ExtensionSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, frameGap: frameGap)
     }
 }
@@ -233,6 +287,10 @@ extension LoopbackRig {
         at nanoseconds: UInt64,
         effect: Result<Void, EffectFailure> = .failure(.internalError)
     ) async {
+        guard host.effectsKind == .fake else {
+            Issue.record("capture answers a FakeEffectRuntimeRepository; a .real host goes through captureThroughRuntime")
+            return
+        }
         host.camera.emit(handle, at: HostTimestamp(nanoseconds: nanoseconds))
         // Only an effect pass starts work inside a tick (a reconnect starts on the executor),
         // so a new work item means this tick started one, and its number is the item's.
@@ -249,6 +307,48 @@ extension LoopbackRig {
         host.effects.completeApply(request, with: effect)
         await host.work.finished.waitFor { $0 == item }
         host.executor.drain()
+    }
+
+    /// One camera frame through a `.real` host's effect runtime, the counterpart of `capture`.
+    /// The tick hands the frame to the pipeline's effect stage, whose `apply` runs the real
+    /// runtime on the host's executor: this drains it until the pass either answers without
+    /// a GPU (a source that did not compile) or has committed its command buffer, completes
+    /// that with `completion` — what the device would report — and drains until the pipeline
+    /// has taken the answer. The frame has reached the transport, and the preview, when this
+    /// returns, and so has every work item the tick started: the first frame also compiles the
+    /// bundled effect, on the work runner, off this thread, and the `apply` answers when the
+    /// selection settles, before that item has logged, so this waits for the item to finish before
+    /// the log is read. A compile that never arrives fails the test by its time limit.
+    @MainActor
+    func captureThroughRuntime(_ handle: FakeSurfaceHandle, at nanoseconds: UInt64, completing completion: GPUCompletion = .finished) async {
+        guard host.effectsKind == .real else {
+            Issue.record("captureThroughRuntime drives the real runtime; a .fake host goes through capture")
+            return
+        }
+        let answers = { host.pipeline.stats.effectsApplied + host.pipeline.stats.effectFailures.values.reduce(0, +) }
+        let (answered, submitted) = (answers(), host.gpu.submissions.count)
+        host.camera.emit(handle, at: HostTimestamp(nanoseconds: nanoseconds))
+        host.scheduler.tick()
+        let moved = await tickUntil(tick: { host.executor.drain() }, until: { answers() > answered || host.gpu.submissions.count > submitted })
+        guard moved else {
+            Issue.record("the tick started a pass but it neither answered nor committed a command buffer")
+            return
+        }
+        guard answers() == answered else { return await workSettled() }
+        guard let submission = host.gpu.pending.last else {
+            Issue.record("a command buffer was committed but is not pending")
+            return
+        }
+        host.gpu.complete(submission, with: completion)
+        let taken = await tickUntil(tick: { host.executor.drain() }, until: { answers() > answered })
+        if !taken { Issue.record("the pipeline never took the answer to the pass") }
+        await workSettled()
+    }
+
+    /// Every item the run has handed the work runner has finished: the compile an `apply` starts
+    /// itself is started before the `apply` answers, but may log after it.
+    private func workSettled() async {
+        await host.work.finished.waitForCount(host.work.started.count)
     }
 
     /// Pumps the extension until its relay has counted `count` received frames.
@@ -272,8 +372,26 @@ extension LoopbackRig {
         host.executor.drain()
     }
 
+    /// `stopHost()` for a test that drove the fake GPU layer by hand: every effect pass and
+    /// every preview draw it started was completed, so none is left pending when the host stops.
+    func stopHostExpectingIdleGPU() {
+        #expect(host.gpu.pending.isEmpty, "an effect pass was left pending on the fake GPU")
+        #expect(host.previewGateway.pending.isEmpty, "a preview draw was left pending on the fake GPU")
+        stopHost()
+    }
+
     /// The presentation times the stream has received, in arrival order.
     var streamedTimes: [UInt64] {
         ext.stream.sent.values.map(\.presentationTime.nanoseconds)
+    }
+}
+
+extension GPUCompletion {
+    /// A command buffer that ran to the end.
+    static let finished = GPUCompletion(gpuStart: 10, gpuEnd: 10.004, error: nil)
+
+    /// A command buffer that reported `code` in the command-buffer error domain (3 is a page fault).
+    static func failed(code: Int) -> GPUCompletion {
+        GPUCompletion(gpuStart: 10, gpuEnd: 12, error: RawGPUError(domain: GPUCompletionMapping.commandBufferErrorDomain, code: code))
     }
 }
