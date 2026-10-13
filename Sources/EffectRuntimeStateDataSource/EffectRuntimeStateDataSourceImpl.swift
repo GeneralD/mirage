@@ -24,7 +24,10 @@ import Domain
 /// selection stays failed and the frames after it answer at once. A compile that
 /// found no GPU context says nothing about the source, so the selection remembers the
 /// effect, and the next `admit` hands it back to be compiled again (the renderer asks
-/// for its context again on the next pass for the same reason).
+/// for its context again on the next pass for the same reason). Those retries run at
+/// the camera's pace, so each settlement says where it falls in its streak of
+/// consecutive failures and how long the streak was when it ended: the caller logs
+/// the first and the recovery, and the rest is only counted.
 public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     @Dependency(\.frameExecutor) private var executor
 
@@ -36,13 +39,19 @@ public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     /// `admit`s and `selected`s waiting for the selection to settle, resumed in arrival order.
     private var waiting: [@Sendable (Result<any LibraryHandle, EffectFailure>) -> Void] = []
     private var session: EffectSession?
+    /// Consecutive compiles of the newest effect that found no GPU context. Only a
+    /// `begin` starts it over: the retries an `admit` hands back keep counting.
+    private var contextFailures = 0
 
     public init() {}
 }
 
 extension EffectRuntimeStateDataSourceImpl: EffectRuntimeState {
     public func begin(_ effect: EffectSource) async -> EffectBegin {
-        await onExecutor { [self] in takeTicket(for: effect) }
+        await onExecutor { [self] in
+            contextFailures = 0
+            return takeTicket(for: effect)
+        }
     }
 
     public func settle(
@@ -98,16 +107,20 @@ extension EffectRuntimeStateDataSourceImpl {
         switch outcome {
         case .success(let library):
             cache[CompileKey(effect)] = library
-            if isNewest { select(.ready(library)) }
-            return .compiled(selected: isNewest)
+            guard isNewest else { return .compiled(selected: false) }
+            let failures = contextFailures
+            select(.ready(library))
+            return .compiled(selected: true, afterFailures: failures)
         case .failure(let diagnostics):
             switch diagnostics.cause {
             case .source:
                 if isNewest { select(.failed) }
                 return .failed(.compileFailed)
             case .environment:
-                if isNewest { select(.retry(effect)) }
-                return .failed(.internalError)
+                guard isNewest else { return .failed(.internalError) }
+                contextFailures += 1
+                select(.retry(effect))
+                return .failed(.internalError, attempt: contextFailures)
             }
         }
     }

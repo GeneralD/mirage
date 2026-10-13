@@ -23,6 +23,9 @@ import Dependencies
 ///   compile that found no GPU context is not (`ShaderDiagnostics.Cause`).
 /// - **Waiting.** An `admit` that finds the newest compile still running parks
 ///   until the selection settles, and is released in arrival order.
+/// - **Streaks.** A compile that found no GPU context is retried by every `admit`,
+///   so a settlement says where it falls in its streak (`EffectSettlement`): the
+///   caller logs the first failure and the recovery, and the rest is only counted.
 public protocol EffectRuntimeState: Sendable {
     /// A `prepare` begins: takes the next ticket. A cached library is selected at
     /// once (and releases the applies waiting on an overtaken compile); anything

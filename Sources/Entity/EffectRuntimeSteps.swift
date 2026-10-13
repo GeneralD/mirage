@@ -22,10 +22,16 @@ public enum EffectBegin: Sendable, Hashable {
 public enum EffectSettlement: Sendable, Hashable {
     /// The compile produced a library, which is cached whatever its ticket.
     /// `selected` is `false` when a newer `prepare` came since: the library never
-    /// becomes the effect `apply` runs.
-    case compiled(selected: Bool)
+    /// becomes the effect `apply` runs. `afterFailures` is how many compiles of this
+    /// effect in a row found no GPU context before this one: non-zero only for the
+    /// success that ends such a streak and is selected (the recovery, which is news).
+    case compiled(selected: Bool, afterFailures: Int = 0)
     /// The compile failed, and this is what its own caller is told: `.compileFailed`
     /// for a source that does not compile, `.internalError` when no GPU context
-    /// could be made (`ShaderDiagnostics.Cause`).
-    case failed(EffectFailure)
+    /// could be made (`ShaderDiagnostics.Cause`). Every `apply` retries the latter,
+    /// so `attempt` is this failure's 1-based place in its streak of consecutive
+    /// GPU-context failures of the newest effect: attempt 1 is news, the rest only
+    /// counts. It is 1 for a source that does not compile and for a compile that a
+    /// newer `prepare` overtook.
+    case failed(EffectFailure, attempt: Int = 1)
 }

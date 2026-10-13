@@ -352,6 +352,77 @@ struct EffectRuntimeStateDataSourceTests {
         #expect(identity(admission.library) == identity(superseded.library))
     }
 
+    // MARK: - Streaks of GPU-context failures
+
+    @Test("consecutive GPU-context failures of the newest effect are counted, and the success that ends the streak says how many")
+    func contextFailuresAreCountedInAStreak() async throws {
+        let fixture = StateFixture()
+        let first = try await fixture.startCompile(.first)
+        #expect(try await fixture.fail(first, cause: .environment) == .failed(.internalError, attempt: 1))
+        let second = try #require(try await fixture.answer(fixture.admit()).compile)
+        #expect(try await fixture.fail(second, cause: .environment) == .failed(.internalError, attempt: 2))
+        let third = try #require(try await fixture.answer(fixture.admit(Frame(index: 1))).compile)
+        #expect(try await fixture.fail(third, cause: .environment) == .failed(.internalError, attempt: 3))
+
+        let recovery = try #require(try await fixture.answer(fixture.admit(Frame(index: 2))).compile)
+        #expect(try await fixture.succeed(recovery).settlement == .compiled(selected: true, afterFailures: 3))
+    }
+
+    @Test("the fallback's streak is counted the same way")
+    func fallbackContextFailuresAreCounted() async throws {
+        let fixture = StateFixture()
+        let first = try #require(try await fixture.answer(fixture.admit()).compile)
+        #expect(try await fixture.fail(first, cause: .environment) == .failed(.internalError, attempt: 1))
+        let second = try #require(try await fixture.answer(fixture.admit(Frame(index: 1))).compile)
+        #expect(try await fixture.fail(second, cause: .environment) == .failed(.internalError, attempt: 2))
+
+        let recovery = try #require(try await fixture.answer(fixture.admit(Frame(index: 2))).compile)
+        #expect(try await fixture.succeed(recovery).settlement == .compiled(selected: true, afterFailures: 2))
+    }
+
+    @Test("a begin starts a new streak: the first GPU-context failure of the next effect is attempt 1 again")
+    func beginStartsANewStreak() async throws {
+        let fixture = StateFixture()
+        let first = try await fixture.startCompile(.first)
+        _ = try await fixture.fail(first, cause: .environment)
+        let retry = try #require(try await fixture.answer(fixture.admit()).compile)
+        #expect(try await fixture.fail(retry, cause: .environment) == .failed(.internalError, attempt: 2))
+
+        let second = try await fixture.startCompile(.second)
+        #expect(try await fixture.fail(second, cause: .environment) == .failed(.internalError, attempt: 1))
+        let again = try #require(try await fixture.answer(fixture.admit(Frame(index: 1))).compile)
+        #expect(again.effect == .second)
+        #expect(
+            try await fixture.fail(again, cause: .environment) == .failed(.internalError, attempt: 2), "the retries of the new effect go on counting")
+    }
+
+    @Test("a superseded compile's failure is attempt 1 and does not count in the newest effect's streak")
+    func supersededFailuresDoNotCount() async throws {
+        let fixture = StateFixture()
+        let older = try await fixture.startCompile(.first)
+        let newer = try await fixture.startCompile(.second)
+        #expect(try await fixture.fail(newer, cause: .environment) == .failed(.internalError, attempt: 1))
+        #expect(try await fixture.fail(older, cause: .environment) == .failed(.internalError, attempt: 1))
+
+        let retry = try #require(try await fixture.answer(fixture.admit()).compile)
+        #expect(retry.effect == .second)
+        #expect(try await fixture.fail(retry, cause: .environment) == .failed(.internalError, attempt: 2))
+    }
+
+    @Test("a superseded success does not report the recovery, and a source failure is attempt 1 whatever came before")
+    func supersededSuccessAndSourceFailureReportNoStreak() async throws {
+        let fixture = StateFixture()
+        let older = try await fixture.startCompile(.first)
+        let newer = try await fixture.startCompile(.second)
+        _ = try await fixture.fail(newer, cause: .environment)
+        let retry = try #require(try await fixture.answer(fixture.admit()).compile)
+        _ = try await fixture.fail(retry, cause: .environment)
+
+        #expect(try await fixture.succeed(older).settlement == .compiled(selected: false, afterFailures: 0))
+        let last = try #require(try await fixture.answer(fixture.admit(Frame(index: 1))).compile)
+        #expect(try await fixture.fail(last, cause: .source) == .failed(.compileFailed, attempt: 1))
+    }
+
     // MARK: - Uniforms and the session
 
     @Test("the uniforms: seconds since the session's first frame, the caller's frame index, the output's size, seed 0")

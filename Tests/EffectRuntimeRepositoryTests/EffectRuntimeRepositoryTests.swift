@@ -195,6 +195,47 @@ struct EffectRuntimeRepositoryTests {
         #expect(identity(late) != identity(cached))
     }
 
+    @Test("a missing GPU context is logged once while every frame retries, and the recovery says how many attempts it took")
+    func contextFailureIsLoggedOncePerStreak() async throws {
+        let fixture = RuntimeFixture()
+        let failure = "effect 'bundled' did not compile: no GPU context to compile on: noDevice"
+        for number in 1...3 {
+            let frame = fixture.apply(Frame(index: UInt32(number - 1)))
+            try await fixture.failCompileForWantOfAContext(number)
+            #expect(await fixture.answer(frame) == .failure(.internalError))
+        }
+        #expect(await fixture.compilesFinished(3))
+        #expect(fixture.log.messages(in: .effect) == [failure], "the retries of one streak are counted, not logged")
+
+        fixture.renderer.respond(with: .success(.sample))
+        let recovered = fixture.apply(Frame(index: 3))
+        _ = try await fixture.succeedCompile(4)
+        #expect(await fixture.answer(recovered) == .success)
+        #expect(await fixture.compilesFinished(4))
+        #expect(fixture.log.messages(in: .effect) == [failure, "effect 'bundled' compiled after 3 failed attempts for want of a GPU context"])
+    }
+
+    @Test("a prepare after a streak starts a new one: its first GPU-context failure is logged again")
+    func aNewPrepareLogsItsOwnFirstFailure() async throws {
+        let fixture = RuntimeFixture()
+        let first = fixture.prepare(.first)
+        try await fixture.failCompileForWantOfAContext(1)
+        #expect(await fixture.answer(first) == .failure(.internalError))
+        let retried = fixture.apply()
+        try await fixture.failCompileForWantOfAContext(2)
+        #expect(await fixture.answer(retried) == .failure(.internalError))
+
+        let second = fixture.prepare(.second)
+        try await fixture.failCompileForWantOfAContext(3)
+        #expect(await fixture.answer(second) == .failure(.internalError))
+        #expect(await fixture.compilesFinished(1))
+        #expect(
+            fixture.log.messages(in: .effect) == [
+                "effect 'first' did not compile: no GPU context to compile on: noDevice",
+                "effect 'second' did not compile: no GPU context to compile on: noDevice",
+            ])
+    }
+
     // MARK: - The bundled default
 
     @Test("with nothing prepared, the first apply compiles the bundled effect, waits for it and renders with it; later frames reuse it")

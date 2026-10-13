@@ -19,7 +19,8 @@ import Domain
 /// compile still running waits for it rather than counting a failure. A failure
 /// is one the effect's author caused (`.compileFailed`, final until a newer
 /// `prepare`) or the runtime's (`.internalError`: no GPU context, tried again by
-/// the next `apply`).
+/// the next `apply`). That retry runs at the camera's pace, so only the first failure
+/// of a streak and the recovery are logged; the state counts the rest.
 ///
 /// An `apply` that compiles an effect itself starts that compile on the `WorkRunner`
 /// and waits for the *selection*, not for its own compile: the compile settles the
@@ -80,14 +81,23 @@ extension EffectRuntimeRepositoryImpl {
     private func compile(_ effect: EffectSource, under ticket: EffectTicket) async -> Result<Void, EffectFailure> {
         let outcome = await compiler.compile(effect)
         switch await state.settle(effect, ticket: ticket, outcome: outcome) {
-        case .compiled(let selected):
-            developerLog.record(.effect, "effect '\(effect.name)' compiled\(selected ? "" : ", but a newer one was prepared since")")
+        case .compiled(let selected, let afterFailures):
+            developerLog.record(.effect, "effect '\(effect.name)' compiled\(Self.note(selected: selected, afterFailures: afterFailures))")
             return .success(())
-        case .failed(let failure):
-            if case .failure(let diagnostics) = outcome {
+        case .failed(let failure, let attempt):
+            // A missing GPU context is retried by every frame, which would log the same
+            // failure at the camera's pace: the first of a streak is news, and the
+            // recovery says how many there were. The rest is only counted.
+            if attempt == 1, case .failure(let diagnostics) = outcome {
                 errorLog.record(.effect, "effect '\(effect.name)' did not compile: \(diagnostics.message)")
             }
             return .failure(failure)
         }
+    }
+
+    private static func note(selected: Bool, afterFailures: Int) -> String {
+        guard selected else { return ", but a newer one was prepared since" }
+        guard afterFailures > 0 else { return "" }
+        return " after \(afterFailures) failed attempt\(afterFailures == 1 ? "" : "s") for want of a GPU context"
     }
 }
