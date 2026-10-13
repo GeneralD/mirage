@@ -14,7 +14,7 @@ macOS menu-bar app: webcam → real-time Metal shader effects → virtual camera
 
 ## Module Dependency Graph
 
-Solid edges are compile-time dependencies (`Package.swift`); dotted edges are `@Dependency` resolutions through `Domain`. Implementation targets depend on `Domain` only; the three DI targets are the only importers of implementation targets.
+Solid edges are compile-time dependencies (`Package.swift`); dotted edges are `@Dependency` resolutions through `Domain`. Implementation targets depend on `Domain` only; the three DI targets are the only importers of implementation targets. The four dotted edges that leave their lane are the per-key exceptions of the key-path lint (`.claude/rules/architecture-boundaries.md` → Key-Path Allow-List); every other resolution follows the lane edges.
 
 ```mermaid
 flowchart TD
@@ -122,6 +122,10 @@ flowchart TD
   L_UC -.-> L_Repo & L_Sup
   L_Repo -.-> L_DS
   L_DS -.-> L_GW & L_Sup
+  L_UC -.-> DispatchExecutorGateway
+  EffectRuntimeRepository -.-> DispatchExecutorGateway
+  GPURenderDataSource & PreviewDataSource -.-> SurfacePoolDataSource
+  ExtensionApp -.-> ExtensionRelayUseCase
 
   style L_Entry fill:#e8eaf6,stroke:#3f51b5,color:#111
   style L_DI fill:#fff3e0,stroke:#ef6c00,color:#111
@@ -225,7 +229,7 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 
 **Rename-safe naming.** The product name appears in exactly three files: `README.md`, `project.yml` (`name`, `PRODUCT_NAME`, bundle IDs) and `Sources/Entity/ProductIdentity.swift` (display name, host and extension bundle IDs, Mach service name, log subsystem, virtual device UUID — plain literals, because `project.yml` and the provisioning profiles need the same literal strings and `scripts/check-service-names.sh` compares them textually). Module, target, type, file and directory names are role names. The shells' `Info.plist` and entitlements necessarily carry bundle IDs, so they are **generated** by xcodegen from `project.yml` (`info:` / `entitlements:` properties) and gitignored — never hand-written. The one hand-written plist, the dev harness's (*Dev harness* below), carries a role-named bundle ID and no product name. Renaming = editing those three files + re-issuing the two provisioning profiles (bundle IDs and the Mach service name are baked into them — an Apple constraint, not a code one) + `gh repo rename`. `make check` fails if the product name string appears anywhere else under `Sources/`, `Tests/`, `Apps/` or `Tools/` (Swift and Metal sources, every file under `Tools/`, file and directory names).
 
-**Gateway modules for every OS boundary (lyra, not decoy).** decoy hid OS types behind inner ports inside adapters; here each boundary is its own `*Gateway` module consumed at the DataSource layer, so the import lint can draw a hard line: AVFoundation, Metal, MetalKit, IOSurface, CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit and `os` are importable only in Gateway modules and the View/Router/App lane.
+**Gateway modules for every OS boundary (lyra, not decoy).** decoy hid OS types behind inner ports inside adapters; here each boundary is its own `*Gateway` module consumed at the DataSource layer (the execution-context ports — `frameExecutor`, `frameScheduler`, `workRunner`, live in `DispatchExecutorGateway` — are the exception: the UseCases run the frame path on them, and the key-path lint names them), so the import lint can draw a hard line: AVFoundation, Metal, MetalKit, IOSurface, CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit and `os` are importable only in Gateway modules and the View/Router/App lane.
 
 **No actors on the frame path; tokens instead of surfaces.** decoy hit a Swift 6.3 crash passing `IOSurface` across an actor boundary and fell back to `Data` frames (up to four full copies per frame). Here frame callbacks run synchronously on the `FrameExecutor` port (live: one serial queue), UseCase frame state is a single-threaded state machine (no locks in UseCases), and pixel storage is referenced through `SurfaceToken` — an `(index, generation)` value issued by `SurfaceRepository` / `SurfacePoolDataSource`. The generation is what makes the token safe without a scoped wrapper: a token whose generation no longer matches the slot resolves to nothing, so a double `release` or a use after release is detected (`release` returns `false`) rather than touching the slot's next tenant. Tokens are process-local and never serialized; a surface crosses the process boundary only as a Mach port. Property test: after stop, `liveCount == 0`; any allocate/release sequence never double-frees. To be validated in the M0 spike; fallback is a single copy at the transport.
 
@@ -282,6 +286,8 @@ Every row is a Domain port with a `TestDependencyKey` whose `testValue` is `Unim
 **Coverage.** codecov as lyra (`project: auto / 1%`, `patch: 80%`). Ignored: `Domain`, the three DI targets, `Views`, `Apps/**`, and the Gateway modules whose real backend is not exercised in the coverage run — `MachGateway`, `SystemExtensionGateway`, `CMIOExtensionGateway`, `AVFoundationGateway` (no extension, camera or CMIO on a runner) and `MetalGateway`, `MetalKitPreviewGateway` (GPU suites run in their own process and never feed codecov, even though the runner has a Metal device) — fixed, never environment-conditional. GPU suites run in `make test-gpu` outside coverage. `DevHarness` is covered, like `App`: `HarnessSession` runs under `DevHarnessTests` (its behaviour is `HarnessInteractor`'s and `FramePipelineUseCase`'s, each with its own suite, and `HarnessWiringTests` runs the pair over fakes), and the AppKit glue around it (`main.swift`, `HarnessAppDelegate`) stays a few untested lines.
 
 **Decoy lessons carried as ADRs.** (1) IOSurface across actor boundaries crashes on Swift 6.3 → leases + no actors. (2) Service-name triple → lint. (3) `CMIOExtensionStream` needs `.hostTime` clock and real mach-uptime PTS. (4) `needsApproval` must be surfaced in UI with a Settings deep link; the app must sit under `/Applications` for activation. (5) Two Developer ID provisioning profiles are required; the release workflow had never run end-to-end in decoy.
+
+**The extension's entry point resolves the relay UseCase.** The Interactor, Presenter and View lanes exist for the GUI (the ADR above); the extension process has no GUI, so it has none of them, and `ExtensionDependencyInjection` registers the relay UseCase and the layers beneath it only. `ExtensionApp` therefore resolves `\.extensionRelayUseCase` directly — the one Entry → UseCase edge in the graph — and the key-path lint carries it as a named, permanent exception. A pass-through Interactor was rejected: the pass-through Repositories (`ExtensionInstallRepository`, `PreviewRepository`) keep a layer every process has, whereas an extension Interactor would add a GUI lane to a process that has no GUI.
 
 ## Open Questions (to resolve in M0)
 

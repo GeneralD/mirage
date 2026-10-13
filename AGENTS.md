@@ -65,7 +65,9 @@ Shared conventions:
   (`CommonDependencyInjection`, `HostDependencyInjection`,
   `ExtensionDependencyInjection`) are the only places that import
   implementation targets; one wiring point per process.
-- OS boundaries are `*Gateway` modules consumed at the DataSource layer.
+- OS boundaries are `*Gateway` modules consumed at the DataSource layer (the
+  execution-context ports — `frameExecutor`, `frameScheduler`, `workRunner` —
+  are the exception: UseCases run the frame path on them).
   Cross-cutting seams (`RandomSource`, `UnifiedLog`, `HostTime`,
   `AppDirectoriesProvider`) are Support modules.
 - Frames travel as `FrameRef` (dimensions, format, PTS) + `SurfaceToken`
@@ -80,6 +82,14 @@ Shared conventions:
 - No OS framework import (AVFoundation, Metal, MetalKit, IOSurface,
   CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, os) outside
   Gateway modules and the View/Router/App lane. `make check` fails otherwise.
+- No layer skipping through `@Dependency`: a module resolves only the ports of
+  the layer right below it, plus Support (`scripts/check-dependency-keypaths.sh`,
+  run by `make check`; a port's kind is its `Sources/Domain/<Kind>/` directory).
+  The exceptions are listed in `.claude/rules/architecture-boundaries.md`: the
+  frame path's execution context for UseCases, `workRunner` for Repositories,
+  `surfacePool` for `GPURenderDataSource` and `PreviewDataSource`, and
+  `extensionRelayUseCase` for `ExtensionApp`, whose process has no GUI and so
+  no Interactor lane.
 - The extension process never links Metal: `MetalGateway` and
   `MetalKitPreviewGateway` are registered in `HostDependencyInjection` only,
   and `scripts/check-extension-no-metal.sh` (in `make check`) walks the

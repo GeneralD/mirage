@@ -36,6 +36,7 @@ format:
 # documented in .claude/rules/{architecture-boundaries,physical-abstraction}.md.
 check:
 	scripts/check-imports.sh
+	scripts/check-dependency-keypaths.sh
 	scripts/check-physical-symbols.sh
 	scripts/check-live-thin.sh
 	scripts/check-shell-thin.sh
