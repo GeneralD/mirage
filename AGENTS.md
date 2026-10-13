@@ -98,17 +98,25 @@ Shared conventions:
   Both are real now: `PreviewSink` is `PreviewRepositoryImpl` over
   `PreviewDataSource` (which completes frames at once until a view is
   attached), and `EffectRuntimeRepository` is `EffectRuntimeRepositoryImpl`.
-- The effect runtime (`EffectRuntimeRepositoryImpl`) is executor-confined (no
-  lock, no actor). Its compile cache is in-process, keyed by
-  `(source hash, compile options)` and never by the effect's name; device id /
-  OS version and a cache on disk are MVP-B. The newest `prepare` decides what
+- The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
+  orchestrates (compile through `ShaderCompiler`, render through
+  `GPURenderer`) and holds no state and no executor; its memory is
+  `EffectRuntimeStateDataSource` (port `EffectRuntimeState`), confined to
+  `FrameExecutor` (no lock, no actor), whose calls hop onto the executor
+  themselves. The compile cache is in-process, keyed by
+  `(source, compile options)` and never by the effect's name; device id / OS
+  version and a cache on disk are MVP-B. The newest `prepare` decides what
   `apply` runs (newest wins, success or failure); a stale compile still answers
-  its own caller. While nothing is prepared, the first `apply` prepares
+  its own caller and fills the cache but never releases a waiting `apply`.
+  While nothing is prepared, the first `apply` prepares
   `BundledEffects.defaultEffect`, served by `BundledEffectDataSource` as an
-  MSL string constant (no `Bundle.main`). `EffectUniforms.pass` is pure:
-  `time` is seconds since the session's first frame (`EffectSession`, PTS
-  minus the session start), `resolution` the output size in pixels, `seed` 0
-  until MVP-C.
+  MSL string constant (no `Bundle.main`). A source that does not compile is
+  `.compileFailed` and final; a compile that found no GPU context is
+  `.internalError` and retried by the next `apply`
+  (`ShaderDiagnostics.cause`). `EffectUniforms.pass` is pure: `time` is seconds
+  since the session's first frame (`EffectSession`, PTS minus the session
+  start), `resolution` the output size in pixels (the grid is rounded up to
+  whole threadgroups, so a kernel bounds-checks `gid`), `seed` 0 until MVP-C.
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
   the owning UseCase module, never as a second UseCase.

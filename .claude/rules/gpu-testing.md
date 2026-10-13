@@ -83,9 +83,10 @@ SDK's `MTLCommandBufferErrorDomain` / `MTLCommandBufferError.Code`, wrapped as
 - Never write a test that provokes a real `timeout` / `pageFault` /
   `accessRevoked`: a repeated hang can revoke the test process's Metal access.
   Those scenarios are a manual VM lane (`.claude/rules/dev-verification.md`).
-- The compile cache is `EffectRuntimeRepository`'s, in-process only: MVP-A keys
-  it by `(source hash, compile options)`, and device id / OS version (a cache on
-  disk) are MVP-B. A GPU test builds its own runtime, so it never shares cache
+- The compile cache is `EffectRuntimeStateDataSource`'s (behind
+  `EffectRuntimeRepository`), in-process only: MVP-A keys it by
+  `(source, compile options)`, and device id / OS version (a cache on disk) are
+  MVP-B. A GPU test builds its own runtime and state, so it never shares cache
   state with another test.
 - **GitHub-hosted macOS runners do expose a Metal device** (measured
   2026-10-09, issue #4, on both `macos-latest` = macOS 26.6.2 / Xcode 26.6 and
