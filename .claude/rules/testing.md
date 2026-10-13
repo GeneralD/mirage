@@ -126,9 +126,14 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   over `EffectRuntimeStateDataSourceImpl`, `ShaderCompilationDataSourceImpl`,
   `GPURenderDataSourceImpl` and `BundledEffectDataSourceImpl`, over the same fake
   GPU layer). A test then uses `captureThroughRuntime(_:at:completing:)` instead
-  of `capture`: it ticks, drains until the compile has started the pass,
-  completes the pending `FakeGPUGateway` submission (`.finished` by default,
-  `.failed(code:)` to script a failing command buffer) and drains to the answer.
+  of `capture`: it ticks, drains until the pass has either answered without a
+  GPU (a source that did not compile) or committed its command buffer, completes
+  the pending `FakeGPUGateway` submission (`.finished` by default, `.failed(code:)`
+  to script a failing command buffer), drains to the answer and then waits for
+  every work-runner item to finish — the `apply` answers before the compile it
+  started has logged, so the log is read only after that wait. Each of the two
+  helpers refuses a rig of the other kind (`HostSide.effectsKind`), and
+  `stopHostExpectingIdleGPU()` asserts that no pass or draw was left pending.
   A broken effect is scripted with `FakeShaderLibraryGateway.failCompile(of:with:)`,
   keyed by the exact assembled source (`ShaderSourceAssembly.assemble`).
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`

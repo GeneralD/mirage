@@ -23,8 +23,9 @@ the corresponding kinds of changes.
   `.claude/rules/module-checklist.md`
 - Swift implementation style and immutability rules:
   `.claude/rules/swift-idioms.md`
-- Coverage-ignored modules must hold no implementation:
-  `.claude/rules/coverage-ignored-modules.md`
+- Coverage-ignored modules must hold no implementation (only protocols,
+  `liveValue` one-liners, one-assignment dev substitutions, declarative views and
+  thin-live Gateways): `.claude/rules/coverage-ignored-modules.md`
 - Verifying the virtual camera on a real machine (install, approve, Zoom):
   `.claude/rules/dev-verification.md`
 
@@ -177,7 +178,11 @@ Shared conventions:
   (dev-only, in `VirtualCameraRepository`: it accepts and drops every frame
   because the harness has no extension). The host app keeps the real sink, and
   the substitution must wrap the construction, because `@Dependency` captures
-  the scope where it is built.
+  the scope where it is built. `HarnessLiveWiringTests` is the one `.live` test
+  of that route (the live registrations are process-wide singletons: add no
+  second one), and `scripts/check-dev-substitutions.sh` (in `make check`) keeps
+  the sink's name out of everything but the harness, its DI helper and
+  `VirtualCameraRepository`.
 - Host absence: the extension detects it by frame gap (watchdog every
   `frameGap / 4`, counted from the last frame, or from `start` while no host
   has been seen yet, so a host that never launched is lost too) and by dead-name

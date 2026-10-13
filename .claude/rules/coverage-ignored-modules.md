@@ -9,8 +9,10 @@ The ignore list is `codecov.yml` → `ignore:`. Before adding code to a module,
 confirm it is not on that list. If it is, the module may contain only:
 
 - Protocol / `TestDependencyKey` definitions (`Domain`)
-- `liveValue = Foo()` one-liners, and the dev-only `DependencyValues` substitution helpers
-  that assign one value (`useDiscardingVirtualCameraSink()`) (the three DI targets)
+- In the three DI targets: `liveValue = Foo()` one-liners, and `DependencyValues`
+  extensions (dev-only substitutions) whose members each only assign one value —
+  no branch, no `var`, at most 50 lines per file, which `scripts/check-live-thin.sh`
+  checks on the listed files (today `DevelopmentSubstitutions.swift`)
 - Declarative SwiftUI bodies (`Views`)
 - `main.swift` and assets (`Apps/**`; plists and entitlements there are generated)
 - A thin-live Gateway (≤ 50 lines per file, no branches, no `var` —

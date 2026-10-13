@@ -157,7 +157,7 @@ let package = Package(
         .target(name: "HarnessInteractor", dependencies: dependencies),
         .testTarget(name: "HarnessInteractorTests", dependencies: ["HarnessInteractor"] + testDependencies),
 
-        // ── DependencyInjection (liveValue registrations only) ──
+        // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
         .target(
             name: "CommonDependencyInjection",
             dependencies: dependencies + [
