@@ -164,6 +164,37 @@ struct EffectRuntimeRepositoryTests {
         #expect(fixture.compiler.requests.count == 1)
     }
 
+    @Test("a cache-hit prepare answers an apply that is retrying a compile: that apply does not wait for the compile")
+    func cacheHitAnswersARetryingApply() async throws {
+        let fixture = RuntimeFixture()
+        let cached = try await fixture.prepared(.first)
+        let broken = fixture.prepare(.second)
+        try await fixture.failCompileForWantOfAContext(2)
+        #expect(await fixture.answer(broken) == .failure(.internalError))
+
+        let apply = fixture.apply()
+        let retry = try #require(await fixture.compileRequest(3))
+        #expect(retry.effect == .second, "the prepared effect is the one retried")
+        #expect(await fixture.stillWaiting(apply), "nothing is settled while the retry runs")
+
+        #expect(await fixture.answer(fixture.prepare(.first)) == .success, "a hit settles at once")
+        let pass = try #require(await fixture.renderRequest(1))
+        #expect(identity(pass.library) == identity(cached))
+        #expect(fixture.compiler.pendingCount == 1, "the retry has not ended")
+        #expect(fixture.renderer.complete(pass, with: .success(.sample)))
+        #expect(await fixture.answer(apply) == .success)
+
+        // The retry ends late: it fills the cache but does not take the selection back.
+        let late = try #require(fixture.compiler.succeed(retry))
+        #expect(await fixture.compilesFinished(1))
+        fixture.renderer.respond(with: .success(.sample))
+        #expect(await fixture.answer(fixture.apply(Frame(index: 1))) == .success)
+        #expect(identity(try #require(fixture.renderer.requests.last).library) == identity(cached))
+        #expect(await fixture.answer(fixture.prepare(.second)) == .success, "the late success filled the cache")
+        #expect(fixture.compiler.requests.count == 3)
+        #expect(identity(late) != identity(cached))
+    }
+
     // MARK: - The bundled default
 
     @Test("with nothing prepared, the first apply compiles the bundled effect, waits for it and renders with it; later frames reuse it")
@@ -214,7 +245,7 @@ struct EffectRuntimeRepositoryTests {
         #expect(fixture.renderer.requests.values.map { identity($0.library) } == [identity(library), identity(library)])
     }
 
-    @Test("a prepare during the bundled compile wins: the apply that started that compile runs the prepared effect")
+    @Test("a prepare during the bundled compile wins: the apply that started that compile does not wait for it and runs the prepared effect")
     func prepareOvertakesTheBundledCompile() async throws {
         let fixture = RuntimeFixture()
         let apply = fixture.apply()
@@ -223,10 +254,22 @@ struct EffectRuntimeRepositoryTests {
         let prepared = try await fixture.succeedCompile(2)
         #expect(await fixture.answer(prepare) == .success)
 
-        fixture.renderer.respond(with: .success(.sample))
-        #expect(fixture.compiler.succeed(bundledRequest) != nil)
+        // The newer effect has settled, so the apply goes on while the bundled compile still runs.
+        let pass = try #require(await fixture.renderRequest(1))
+        #expect(identity(pass.library) == identity(prepared))
+        #expect(fixture.compiler.pendingCount == 1, "the bundled compile has not ended")
+        #expect(fixture.renderer.complete(pass, with: .success(.sample)))
         #expect(await fixture.answer(apply) == .success)
-        #expect(identity(try #require(fixture.renderer.requests.values.only).library) == identity(prepared))
+
+        // It ends late: cached and logged as superseded, and nothing renders it.
+        let bundled = try #require(fixture.compiler.succeed(bundledRequest))
+        #expect(await fixture.compilesFinished(1))
+        #expect(fixture.log.contains("effect 'bundled' compiled, but a newer one was prepared since"))
+        #expect(fixture.renderer.requests.count == 1)
+        #expect(await fixture.answer(fixture.prepare(.bundled)) == .success, "the late success filled the cache")
+        fixture.renderer.respond(with: .success(.sample))
+        #expect(await fixture.answer(fixture.apply(Frame(index: 1))) == .success)
+        #expect(identity(try #require(fixture.renderer.requests.last).library) == identity(bundled))
     }
 
     // MARK: - The pass

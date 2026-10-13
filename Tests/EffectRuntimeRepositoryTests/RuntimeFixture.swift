@@ -11,7 +11,8 @@ typealias Answer = Result<Void, EffectFailure>
 /// The runtime wired to its fakes: `FakeShaderCompiler` holds every compile and
 /// `FakeGPURenderer` every pass until the test completes them, and the real
 /// `EffectRuntimeStateDataSourceImpl` (in-memory, no Gateway) runs its steps on a
-/// `RecordingFrameExecutor` only when the test drains it. The subject is given no
+/// `RecordingFrameExecutor` only when the test drains it. A compile an `apply`
+/// starts itself runs on `workRunner`, which records when that work has finished. The subject is given no
 /// executor of its own: it must reach the executor only through the state, so a
 /// Repository that resolved `frameExecutor` itself would meet the unimplemented
 /// default and fail. The objects are built inside `withDependencies`, so they
@@ -20,6 +21,7 @@ struct RuntimeFixture {
     let compiler = FakeShaderCompiler()
     let renderer = FakeGPURenderer()
     let executor = RecordingFrameExecutor()
+    let workRunner = RecordingWorkRunner()
     let log = RecordingLog()
     let subject: EffectRuntimeRepositoryImpl
 
@@ -27,6 +29,7 @@ struct RuntimeFixture {
         let compiler = compiler
         let renderer = renderer
         let executor = executor
+        let workRunner = workRunner
         let log = log
         let state = withDependencies {
             $0.frameExecutor = executor
@@ -38,6 +41,7 @@ struct RuntimeFixture {
             $0.shaderCompiler = compiler
             $0.gpuRenderer = renderer
             $0.bundledEffects = FixedBundledEffects(defaultEffect: bundled)
+            $0.workRunner = workRunner
             $0.errorLog = log
             $0.developerLog = log
         } operation: {
@@ -81,6 +85,13 @@ struct RuntimeFixture {
     @MainActor
     func stillWaiting(_ call: Call, ticks: Int = 25) async -> Bool {
         await !tickUntil(ticks, tick: { executor.drain() }, until: { call.answered.count == 1 })
+    }
+
+    /// Drains the executor until `count` compiles that an `apply` started on the work
+    /// runner have run to their end, which includes settling the state on the executor.
+    @MainActor
+    func compilesFinished(_ count: Int) async -> Bool {
+        await tickUntil(tick: { executor.drain() }, until: { workRunner.finished.count >= count })
     }
 
     /// Drains the executor until the compiler has received its `number`-th compile (1-based).

@@ -21,6 +21,14 @@ import Domain
 /// `prepare`) or the runtime's (`.internalError`: no GPU context, tried again by
 /// the next `apply`).
 ///
+/// An `apply` that compiles an effect itself starts that compile on the `WorkRunner`
+/// and waits for the *selection*, not for its own compile: the compile settles the
+/// state whenever it ends (cache, log), and the selection answers as soon as the
+/// newest effect has settled, which a newer `prepare` may do first. The frame does
+/// not wait behind a stale compile, so it does not hold the pipeline's in-flight cap
+/// for it. The compile holds no lease, so the leases still stay the caller's until
+/// `apply` returns.
+///
 /// Cancellation cuts nothing short (the port's contract): neither call observes it,
 /// nor do the state, the compiler and the renderer, so a cancelled caller still
 /// receives the real outcome.
@@ -29,6 +37,7 @@ public struct EffectRuntimeRepositoryImpl: Sendable {
     @Dependency(\.shaderCompiler) private var compiler
     @Dependency(\.gpuRenderer) private var renderer
     @Dependency(\.bundledEffects) private var bundledEffects
+    @Dependency(\.workRunner) private var workRunner
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
@@ -51,7 +60,9 @@ extension EffectRuntimeRepositoryImpl: EffectRuntimeRepository {
         case .ready(let admitted, let passUniforms):
             (library, uniforms) = (admitted, passUniforms)
         case .compile(let effect, let ticket, let passUniforms):
-            _ = await compile(effect, under: ticket)
+            // Started, not awaited, and not cancellable: the compile settles the state
+            // when it ends, and `selected()` answers when the newest effect has.
+            _ = workRunner.run { [self] in _ = await compile(effect, under: ticket) }
             (library, uniforms) = (await state.selected(), passUniforms)
         }
         switch library {

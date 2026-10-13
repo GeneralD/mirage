@@ -39,7 +39,7 @@ public protocol EffectRuntimeState: Sendable {
     func admit(_ context: FrameContext, output: SurfaceDescriptor, fallback: @escaping @Sendable () -> EffectSource) async -> EffectAdmission
 
     /// The selection once it has settled: at once, or when the newest compile does.
-    /// For the `apply` that compiled an effect itself (`EffectAdmission.compile`).
+    /// For the `apply` that started a compile itself (`EffectAdmission.compile`).
     func selected() async -> Result<any LibraryHandle, EffectFailure>
 }
 
@@ -51,7 +51,9 @@ public enum EffectAdmission: Sendable {
     case ready(Result<any LibraryHandle, EffectFailure>, EffectUniforms)
     /// Nothing is ready, but there is an effect to compile: the `fallback` while
     /// nothing was prepared, or the one whose compile found no GPU context. The
-    /// caller compiles it under `ticket`, settles it, then reads `selected()`.
+    /// caller starts that compile, settles it under `ticket` when it ends, and reads
+    /// `selected()` without waiting for the compile: the selection settles when the
+    /// newest effect does, which a newer `begin` may make happen first.
     case compile(EffectSource, EffectTicket, EffectUniforms)
 }
 

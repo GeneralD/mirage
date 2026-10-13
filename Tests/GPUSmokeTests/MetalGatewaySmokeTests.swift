@@ -306,8 +306,11 @@ struct MetalGatewaySmokeTests {
         } operation: {
             EffectRuntimeStateDataSourceImpl()
         }
+        // The compile the first `apply` starts runs here; the test waits for it to end before it reads the log.
+        let runtimeWork = RecordingWorkRunner()
         let runtime = withDependencies {
             $0.effectRuntimeState = state
+            $0.workRunner = runtimeWork
             $0.shaderCompiler = compiler
             $0.gpuRenderer = renderer
             $0.bundledEffects = BundledEffectDataSourceImpl()
@@ -336,6 +339,7 @@ struct MetalGatewaySmokeTests {
             #expect(answered.values == [nil], "frame \(index)")
             try Self.expectBundledEffect(in: output, uniforms: Self.effectUniforms(time: index == 0 ? 0 : 0.75, frameIndex: index, seed: 0))
         }
+        #expect(await tickUntil(tick: { executor.drain() }, until: { runtimeWork.finished.count == 1 }), "the one compile ended")
         #expect(log.entries.values.map(\.message) == ["effect 'Chromatic Grain' compiled"])
         #expect(pool.release(input) && pool.release(target), "the leases stayed the caller's")
     }
