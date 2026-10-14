@@ -69,7 +69,7 @@ Shared conventions:
   execution-context ports — `frameExecutor`, `frameScheduler`, `workRunner` —
   are the exception: UseCases run the frame path on them).
   Cross-cutting seams (`RandomSource`, `UnifiedLog`, `HostTime`,
-  `AppDirectoriesProvider`) are Support modules.
+  `AppDirectories`, the live `AppDirectoriesProvider`) are Support modules.
 - Frames travel as `FrameRef` (dimensions, format, PTS) + `SurfaceToken`
   (a generation-tagged index into the surface pool; a stale token resolves
   to nothing) — never as `Data` copies and never as raw `IOSurface` across
@@ -116,10 +116,12 @@ Shared conventions:
   `BundledOnlyCatalog`, which `EffectPackageRepositoryImpl` has replaced) that
   list the bundled effect alone, and the later issues replace each in place.
   Their streams stay open until the consumer lets go.
-  The OS-boundary ports of the catalog (`FileSystemGateway`, `FileWatchGateway`,
-  `WorkspaceGateway`, `AppDirectoriesProvider`, `KeyValueStoreGateway`) get their
-  live with the issue that wraps the OS API (#44, #51); no pass-through resolves
-  them, so nothing reaches them before then.
+  The OS-boundary ports of the catalog get their live with the issue that wraps
+  the OS API: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and
+  `AppDirectoriesProvider` (module `AppDirectories`) are registered in
+  `HostDependencyInjection` (#44), `KeyValueStoreGateway` follows in #51. No
+  pass-through resolves them, so nothing reaches them before the DataSource that
+  replaces it.
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
   `GPURenderer`) and holds no state and no executor; its memory is

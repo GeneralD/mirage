@@ -1,4 +1,5 @@
 import AVFoundationGateway
+import AppDirectories
 import BundledEffectDataSource
 import CameraControlUseCase
 import CameraDataSource
@@ -18,6 +19,8 @@ import EffectWatchDataSource
 import ExtensionInstallDataSource
 import ExtensionInstallRepository
 import ExtensionInstallUseCase
+import FileSystemGateway
+import FileWatchGateway
 import FramePipelineUseCase
 import FrameTransportDataSource
 import GPURenderDataSource
@@ -31,6 +34,7 @@ import SettingsRepository
 import ShaderCompilationDataSource
 import SystemExtensionGateway
 import VirtualCameraRepository
+import WorkspaceGateway
 
 // Live values of the host process, on top of CommonDependencyInjection.
 
@@ -164,4 +168,20 @@ extension TextureCacheGatewayKey: DependencyKey {
 
 extension PreviewGatewayKey: DependencyKey {
     public static let liveValue: any PreviewGateway = MetalKitPreviewGatewayImpl()
+}
+
+extension FileSystemGatewayKey: DependencyKey {
+    public static let liveValue: any FileSystemGateway = FileSystemGatewayImpl()
+}
+
+extension FileWatchGatewayKey: DependencyKey {
+    public static let liveValue: any FileWatchGateway = FileWatchGatewayImpl()
+}
+
+extension WorkspaceGatewayKey: DependencyKey {
+    public static let liveValue: any WorkspaceGateway = WorkspaceGatewayImpl()
+}
+
+extension AppDirectoriesProviderKey: DependencyKey {
+    public static let liveValue: any AppDirectoriesProvider = AppDirectoriesProviderImpl()
 }
