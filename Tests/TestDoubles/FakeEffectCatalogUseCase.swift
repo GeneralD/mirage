@@ -15,9 +15,10 @@ import TestSupport
 /// and a subject that starts the next run must wait for it. `holdCancelledRuns()` makes
 /// a cancelled `run()` model that: it records the cancel and then stays in `run()`,
 /// ignoring the cancellation as the other manual-completion fakes do, until
-/// `releaseCancelledRuns()`. `runEvents` records when each run began and returned, in one
-/// order, so a test can tell "the next run began after the old one returned" from "while it was
-/// still returning".
+/// `releaseCancelledRuns()`. `heldRunCount` is how many are held right now; the cancel and
+/// the hold are recorded in one step, so a test that has seen the cancel finds the run held.
+/// `runEvents` records when each run began and returned, in one order, so a test can tell
+/// "the next run began after the old one returned" from "while it was still returning".
 public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     /// When a `run()` call began or returned, counting the calls from 1.
     public enum RunEvent: Equatable, Sendable {
@@ -78,12 +79,12 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
             runs.append(())
             return locked.runCount
         }
-        if await suspendUntilCancelled() {
-            runCancellations.append(())
-            await holdIfAsked()
-        }
+        if await suspendUntilCancelled() { await recordCancelAndHoldIfAsked() }
         runEvents.append(.ended(number))
     }
+
+    /// The runs that are cancelled and held right now.
+    public var heldRunCount: Int { state.current.heldRuns.count }
 
     /// From now on a `run()` that is cancelled stays in `run()`, after recording the cancel,
     /// until `releaseCancelledRuns()`.
@@ -125,11 +126,13 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
         folderOpens.append(())
     }
 
-    /// Waits for `releaseCancelledRuns()` when the holding is on. Registered or skipped in one
-    /// critical section, so a release cannot slip between the check and the wait.
-    private func holdIfAsked() async {
+    /// Records the cancel, then waits for `releaseCancelledRuns()` when the holding is on. The
+    /// record and the registration are one critical section, so a release cannot slip between the
+    /// check and the wait, and a test that has seen the cancel finds the run held.
+    private func recordCancelAndHoldIfAsked() async {
         await withCheckedContinuation { (continuation: Held) in
             let held = state.withLock { locked -> Bool in
+                runCancellations.append(())
                 guard locked.holdsCancelledRuns else { return false }
                 locked.heldRuns.append(continuation)
                 return true
