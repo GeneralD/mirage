@@ -16,8 +16,10 @@ public protocol EffectPackageRepository: Sendable {
     func catalog() -> AsyncStream<[EffectCatalogEntry]>
 
     /// The source to compile for `id`, read afresh: the bundled effect's, or the
-    /// package's `effect.metal`. A package that has become unusable, or an id the catalog
-    /// no longer has, answers with the reason (`.sourceMissing` for an id nothing has).
+    /// package's `effect.metal`. A package that has become unusable answers with its
+    /// problem, and an id the catalog no longer has with the reason: `.sourceMissing`
+    /// for a bundled id the app does not ship, `.manifestMissing` for a package the
+    /// folder no longer has (the first thing a package lacks).
     func source(of id: EffectID) async -> Result<EffectSource, EffectPackageProblem>
 
     /// Shows the effects folder to the user.

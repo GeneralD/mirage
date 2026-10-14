@@ -83,7 +83,7 @@ extension PreviewSinkKey: DependencyKey {
 }
 
 extension EffectPackageRepositoryKey: DependencyKey {
-    public static let liveValue: any EffectPackageRepository = BundledOnlyCatalog()
+    public static let liveValue: any EffectPackageRepository = EffectPackageRepositoryImpl()
 }
 
 extension SettingsRepositoryKey: DependencyKey {
