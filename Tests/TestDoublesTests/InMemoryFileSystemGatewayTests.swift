@@ -32,6 +32,44 @@ struct InMemoryFileSystemGatewayTests {
         #expect(try fileSystem.contentsOfDirectory("/effects/a.lens") == ["effect.metal"])
     }
 
+    @Test("write over a directory is a mistake in the test: it is reported and the tree is left as it was")
+    func writeOverADirectory() throws {
+        fileSystem.write("/effects/a.lens/manifest.json", "{}")
+
+        withKnownIssue("a directory cannot be written as a file") { fileSystem.write("/effects/a.lens", "x") }
+
+        #expect(fileSystem.isDirectory("/effects/a.lens"), "still a directory")
+        #expect(try fileSystem.contentsOfDirectory("/effects/a.lens") == ["manifest.json"])
+        let readDirectory = #expect(throws: CocoaError.self) { try fileSystem.readString("/effects/a.lens") }
+        #expect(readDirectory?.code == .fileReadUnknown, "and not a file as well")
+    }
+
+    @Test("write or makeDirectory below a file is reported and leaves the tree as it was: a path is never both a file and a directory")
+    func nothingBelowAFile() throws {
+        fileSystem.write("/a/file", "x")
+
+        withKnownIssue("a file has nothing under it") { fileSystem.write("/a/file/child", "y") }
+        withKnownIssue("a file has nothing under it") { fileSystem.makeDirectory("/a/file/sub/deeper") }
+
+        #expect(!fileSystem.isDirectory("/a/file"), "the file did not become a directory")
+        #expect(try fileSystem.readString("/a/file") == "x")
+        #expect(try fileSystem.contentsOfDirectory("/a") == ["file"])
+        #expect(throws: CocoaError.self) { try fileSystem.contentsOfDirectory("/a/file") }
+        #expect(!fileSystem.isDirectory("/a/file/sub"))
+    }
+
+    @Test("makeDirectory over a file is reported and leaves the file; over a directory it is a no-op")
+    func makeDirectoryOverAFile() throws {
+        fileSystem.write("/a/file", "x")
+        fileSystem.makeDirectory("/a")
+        #expect(try fileSystem.contentsOfDirectory("/a") == ["file"], "a directory that is there stays, with what is in it")
+
+        withKnownIssue("a file cannot be made a directory") { fileSystem.makeDirectory("/a/file") }
+
+        #expect(!fileSystem.isDirectory("/a/file"))
+        #expect(try fileSystem.readString("/a/file") == "x")
+    }
+
     @Test("remove takes away a file, or a directory with everything under it, and nothing there is not an error")
     func removeFileOrTree() throws {
         fileSystem.write("/effects/a.lens/manifest.json", "{}")
@@ -106,7 +144,9 @@ struct InMemoryFileSystemGatewayTests {
         #expect(throws: Denied.self) { try fileSystem.readString("/effects/gone.lens/effect.metal") }
     }
 
-    @Test("createDirectory makes the directory and its parents, may be repeated, and refuses a file in the way")
+    @Test(
+        "createDirectory makes the directory and its parents, may be repeated, and refuses a file in the way, on the path or above it, as FileManager does"
+    )
     func createDirectory() throws {
         try fileSystem.createDirectory("/support/app/Effects")
         try fileSystem.createDirectory("/support/app/Effects")
@@ -115,6 +155,11 @@ struct InMemoryFileSystemGatewayTests {
         fileSystem.write("/support/file", "x")
         let inTheWay = #expect(throws: CocoaError.self) { try fileSystem.createDirectory("/support/file") }
         #expect(inTheWay?.code == .fileWriteFileExists)
+
+        let aboveIt = #expect(throws: CocoaError.self) { try fileSystem.createDirectory("/support/file/sub") }
+        #expect(aboveIt?.code == .fileWriteUnknown, "a file above the path is in the way as well, with FileManager's code for it")
+        #expect(!fileSystem.isDirectory("/support/file"), "and the tree is as it was")
+        #expect(!fileSystem.isDirectory("/support/file/sub"))
     }
 
     @Test("failCreateDirectory scripts the error of making a directory until it is cleared")

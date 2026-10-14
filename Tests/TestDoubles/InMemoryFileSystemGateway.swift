@@ -10,6 +10,13 @@ import TestSupport
 /// matched as written, trailing slashes aside; nothing resolves `.` or `..`. The root
 /// `/` always exists.
 ///
+/// A path is a file or a directory, never both, and a file has nothing under it. The hooks
+/// refuse what would break that (`write` over a directory, `write` or `makeDirectory`
+/// below a file, `makeDirectory` over a file) as a mistake in the test: the issue is
+/// reported and the tree is left as it was. `createDirectory` refuses a file in the way
+/// as `FileManager` does: `CocoaError(.fileWriteFileExists)` for a file at the path,
+/// `CocoaError(.fileWriteUnknown)` for a file above it.
+///
 /// Missing paths fail the way `FileManager` does, with a `CocoaError`
 /// (`fileReadNoSuchFile`), so a subject that tells "missing" from "unreadable" by the
 /// error type is exercised against the real shapes; a scripted error replaces that.
@@ -39,17 +46,18 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
     // MARK: Hooks
 
     /// Writes `content` to the file at `path`, making the directories above it, and
-    /// replacing what was there: an in-place save. A directory at `path` is a mistake in
-    /// the test and is reported.
+    /// replacing what was there: an in-place save. A directory at `path`, or a file above
+    /// it, is a mistake in the test: it is reported and the tree is left as it was.
     public func write(_ path: String, _ content: String) {
         let path = Self.normalized(path)
-        let isDirectory = tree.withLock { tree -> Bool in
-            guard !tree.directories.contains(path) else { return true }
+        let mistake = tree.withLock { tree -> String? in
+            if tree.directories.contains(path) { return "\(path) is a directory" }
+            if let file = Self.fileAbove(path, in: tree) { return "\(file) is a file, so \(path) cannot be under it" }
             Self.insertDirectories(above: path, into: &tree)
             tree.files[path] = content
-            return false
+            return nil
         }
-        if isDirectory { reportIssue("InMemoryFileSystemGateway.write: \(path) is a directory") }
+        if let mistake { reportIssue("InMemoryFileSystemGateway.write: \(mistake)") }
     }
 
     /// Removes the file at `path`, or the directory and everything under it. Nothing
@@ -63,13 +71,19 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
         }
     }
 
-    /// Makes the directory at `path` and the ones above it.
+    /// Makes the directory at `path` and the ones above it; one that is there already
+    /// stays. A file at `path`, or above it, is a mistake in the test: it is reported and
+    /// the tree is left as it was.
     public func makeDirectory(_ path: String) {
         let path = Self.normalized(path)
-        tree.withLock { tree in
+        let mistake = tree.withLock { tree -> String? in
+            if tree.files[path] != nil { return "\(path) is a file" }
+            if let file = Self.fileAbove(path, in: tree) { return "\(file) is a file, so \(path) cannot be under it" }
             Self.insertDirectories(above: path, into: &tree)
             tree.directories.insert(path)
+            return nil
         }
+        if let mistake { reportIssue("InMemoryFileSystemGateway.makeDirectory: \(mistake)") }
     }
 
     /// Makes listing the directory at `path`, or reading the file at `path`, throw `error`
@@ -123,6 +137,7 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
         try tree.withLock { tree in
             if let failure = tree.createFailures[path] { throw failure }
             guard tree.files[path] == nil else { throw CocoaError(.fileWriteFileExists) }
+            guard Self.fileAbove(path, in: tree) == nil else { throw CocoaError(.fileWriteUnknown) }
             Self.insertDirectories(above: path, into: &tree)
             tree.directories.insert(path)
         }
@@ -141,6 +156,11 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
 
     private static func name(of path: String) -> String {
         path.lastIndex(of: "/").map { String(path[path.index(after: $0)...]) } ?? path
+    }
+
+    /// The nearest file among the ancestors of `path`, if there is one.
+    private static func fileAbove(_ path: String, in tree: Tree) -> String? {
+        parent(of: path).flatMap { tree.files[$0] != nil ? $0 : fileAbove($0, in: tree) }
     }
 
     private static func insertDirectories(above path: String, into tree: inout Tree) {

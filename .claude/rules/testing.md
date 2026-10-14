@@ -180,7 +180,9 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   under contract test in `Tests/TestDoublesTests`. `InMemoryFileSystemGateway` is a
   mutable tree: `write(_:_:)` / `remove(_:)` / `makeDirectory(_:)` change it between
   two reads, `failRead(of:with:)` / `failCreateDirectory(of:with:)` script an error per
-  path, listings come back sorted, a missing path throws `CocoaError`, and
+  path, listings come back sorted, a missing path throws `CocoaError`, a hook that would
+  make a path both a file and a directory (`write` over a directory, `write` or
+  `makeDirectory` below a file) is reported and leaves the tree as it was, and
   `listings` / `reads` / `createdDirectories` are `Collector`s. `FakeFileWatchGateway.fire(path)`
   runs the `onChange` of every live watch on that path and returns how many ran;
   `isBalanced` is every watch stopped exactly once (`doubleStopCount` counts the
