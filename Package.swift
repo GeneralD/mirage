@@ -216,6 +216,7 @@ let package = Package(
                 "BundledEffectDataSource", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
                 "PreviewDataSource", "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
+                "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
             ]
         ),
         .testTarget(
@@ -223,6 +224,7 @@ let package = Package(
             dependencies: [
                 "HostDependencyInjection", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
                 "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
+                "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
             ] + testDependencies
         ),
         .target(
