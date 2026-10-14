@@ -40,8 +40,6 @@ $X.randomElement()|.randomElement() (use RandomSource)
 $X.shuffled()|.shuffled() (use RandomSource)
 SystemRandomNumberGenerator()|SystemRandomNumberGenerator (use RandomSource)
 FileManager.default|FileManager.default (use FileSystemGateway)
-UserDefaults.standard|UserDefaults.standard (use KeyValueStoreGateway)
-UserDefaults($$$)|UserDefaults (use KeyValueStoreGateway)
 ProcessInfo.processInfo|ProcessInfo.processInfo (inject what you need)
 Bundle.main|Bundle.main (use BundleInfoProvider)
 NotificationCenter.default|NotificationCenter.default (expose events through a Gateway)
@@ -58,6 +56,15 @@ OSAllocatedUnfairLock($$$)|OSAllocatedUnfairLock (no locks above the Gateway)
 NSLock()|NSLock (no locks above the Gateway)
 '
 
+# Names no code outside the live modules may spell, in any form: a call, `.init`, a static member,
+# a type annotation, a type argument, a module-qualified name. One "<identifier>|<label>" per line.
+# Matched by the token, not by a call shape: `let d: UserDefaults = .standard` holds the user's
+# defaults and spells neither `UserDefaults.standard` nor `UserDefaults(...)`. Comments and string
+# literals are not code and never match.
+FORBIDDEN_IDENTIFIERS='
+UserDefaults|UserDefaults (use KeyValueStoreGateway)
+'
+
 is_live_module() {
     case " $LIVE_MODULES " in *" $1 "*) return 0 ;; esac
     return 1
@@ -69,19 +76,48 @@ match_lines() {
         | jq -r '.[].range.start.line + 1' | sort -un
 }
 
+# report <file> <line> <label> — one violation; a line that carries an allow-physical comment
+# gets the message for a comment in the wrong place.
+report() {
+    local file="$1" line_no="$2" label="$3"
+    if sed -n "${line_no}p" "$file" | grep -qE '//[[:space:]]*allow-physical:[[:space:]]*[A-Za-z]+'; then
+        fail "$file:$line_no" "allow-physical is valid only inside the live module that implements the port"
+    else
+        fail "$file:$line_no" "physical symbol $label"
+    fi
+}
+
 check_file() {
     local file="$1" module="$2"
     while IFS='|' read -r pattern label; do
         [ -n "$pattern" ] || continue
         while IFS= read -r line_no; do
             [ -n "$line_no" ] || continue
-            if sed -n "${line_no}p" "$file" | grep -qE '//[[:space:]]*allow-physical:[[:space:]]*[A-Za-z]+'; then
-                fail "$file:$line_no" "allow-physical is valid only inside the live module that implements the port"
-            else
-                fail "$file:$line_no" "physical symbol $label"
-            fi
+            report "$file" "$line_no" "$label"
         done < <(match_lines "$pattern" "$file")
     done <<< "$PATTERNS"
+}
+
+# check_identifier <identifier> <label> — every code occurrence of the identifier under Sources,
+# outside the live modules: a type name or an expression name (`type_identifier` /
+# `simple_identifier`), whole-token match, so `UserDefaultsGateway` is not `UserDefaults`. One scan
+# over all of Sources, collected in the main shell: a failing `sg` ends the run instead of passing
+# as green, because a rule that silently matches nothing is no check at all. A scan with matches
+# still exits 0 (the rule carries no severity), so any nonzero status is a failure.
+check_identifier() {
+    local identifier="$1" label="$2" rule matches status file line_no
+    rule=$(jq -nc --arg id "$identifier" \
+        '{id: "forbidden-identifier", language: "swift", rule: {any: [{kind: "type_identifier"}, {kind: "simple_identifier"}], regex: ("^" + $id + "$")}}')
+    matches=$(sg scan --inline-rules "$rule" --json=compact Sources 2>/dev/null) && status=0 || status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "check-physical-symbols: ast-grep failed with status $status while scanning for $identifier" >&2
+        exit 1
+    fi
+    while IFS=$'\t' read -r file line_no; do
+        [ -n "$file" ] || continue
+        is_live_module "$(module_name "$file")" && continue
+        report "$file" "$line_no" "$label"
+    done < <(jq -r '[.[] | [.file, (.range.start.line + 1)]] | unique | sort_by(.[0], .[1])[] | @tsv' <<< "$matches")
 }
 
 while IFS= read -r file; do
@@ -90,5 +126,10 @@ while IFS= read -r file; do
     is_live_module "$module" && continue
     check_file "$file" "$module"
 done < <(swift_files Sources)
+
+while IFS='|' read -r identifier label; do
+    [ -n "$identifier" ] || continue
+    check_identifier "$identifier" "$label"
+done <<< "$FORBIDDEN_IDENTIFIERS"
 
 finish "check-physical-symbols"

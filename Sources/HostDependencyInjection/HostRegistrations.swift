@@ -33,6 +33,7 @@ import PreviewRepository
 import SettingsRepository
 import ShaderCompilationDataSource
 import SystemExtensionGateway
+import UserDefaultsGateway
 import VirtualCameraRepository
 import WorkspaceGateway
 
@@ -91,7 +92,7 @@ extension EffectPackageRepositoryKey: DependencyKey {
 }
 
 extension SettingsRepositoryKey: DependencyKey {
-    public static let liveValue: any SettingsRepository = EmptySettings()
+    public static let liveValue: any SettingsRepository = SettingsRepositoryImpl()
 }
 
 extension CameraSourceKey: DependencyKey {
@@ -139,7 +140,7 @@ extension EffectWatchKey: DependencyKey {
 }
 
 extension PreferencesKey: DependencyKey {
-    public static let liveValue: any Preferences = EmptyPreferences()
+    public static let liveValue: any Preferences = PreferencesDataStoreImpl()
 }
 
 extension CaptureSessionGatewayKey: DependencyKey {
@@ -184,4 +185,8 @@ extension WorkspaceGatewayKey: DependencyKey {
 
 extension AppDirectoriesProviderKey: DependencyKey {
     public static let liveValue: any AppDirectoriesProvider = AppDirectoriesProviderImpl()
+}
+
+extension KeyValueStoreGatewayKey: DependencyKey {
+    public static let liveValue: any KeyValueStoreGateway = KeyValueStoreGatewayImpl()
 }

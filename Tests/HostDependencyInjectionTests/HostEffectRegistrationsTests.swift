@@ -10,9 +10,12 @@ import PreferencesDataStore
 import SettingsRepository
 import TestSupport
 import Testing
+import UserDefaultsGateway
 
 /// The host registers a live value for every port of the effect catalog (epic #42, D10):
 /// the pass-through default of its module, until the later issue puts the real one there.
+/// The OS-boundary ports register no pass-through: their live is the Gateway itself, which
+/// the registration only type-checks here and never calls (it would read the user's defaults).
 ///
 /// Every resolution here happens inside `withDependencies { $0.context = .live }`. The live
 /// values in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its
@@ -36,14 +39,16 @@ struct HostEffectRegistrationsTests {
             @Dependency(\.effectPackages) var effectPackages
             @Dependency(\.effectWatch) var effectWatch
             @Dependency(\.preferences) var preferences
+            @Dependency(\.keyValueStoreGateway) var keyValueStoreGateway
 
             #expect(effectInteractor is StaticEffectInteractor)
             #expect(effectCatalogUseCase is BundledOnlyEffectCatalog)
             #expect(effectPackageRepository is EffectPackageRepositoryImpl)
-            #expect(settingsRepository is EmptySettings)
+            #expect(settingsRepository is SettingsRepositoryImpl)
             #expect(effectPackages is NoPackages)
             #expect(effectWatch is NeverChangingWatch)
-            #expect(preferences is EmptyPreferences)
+            #expect(preferences is PreferencesDataStoreImpl)
+            #expect(keyValueStoreGateway is KeyValueStoreGatewayImpl)
         }
     }
 

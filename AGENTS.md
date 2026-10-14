@@ -116,12 +116,18 @@ Shared conventions:
   `BundledOnlyCatalog`, which `EffectPackageRepositoryImpl` has replaced) that
   list the bundled effect alone, and the later issues replace each in place.
   Their streams stay open until the consumer lets go.
+  `EmptyPreferences` and `EmptySettings` are already replaced (#51):
+  `PreferencesDataStoreImpl` keeps the chosen effect as one `<origin>:<key>` string
+  (`StoredEffectID`) in the user's defaults through `KeyValueStoreGateway`, ignoring
+  and logging a stored string that does not decode, and `SettingsRepositoryImpl`
+  passes it through; there is no `SettingsUseCase` until a settings UI exists.
   The OS-boundary ports of the catalog get their live with the issue that wraps
   the OS API: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and
   `AppDirectoriesProvider` (module `AppDirectories`) are registered in
-  `HostDependencyInjection` (#44), `KeyValueStoreGateway` follows in #51. No
-  pass-through resolves them, so nothing reaches them before the DataSource that
-  replaces it.
+  `HostDependencyInjection` (#44), and `KeyValueStoreGateway` as
+  `UserDefaultsGateway` (#51), which `PreferencesDataStoreImpl` resolves. No other
+  pass-through resolves a Gateway, so nothing reaches one before the DataSource
+  that replaces it.
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
   `GPURenderer`) and holds no state and no executor; its memory is
