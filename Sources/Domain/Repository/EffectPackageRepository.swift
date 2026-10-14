@@ -8,8 +8,10 @@ import Dependencies
 public protocol EffectPackageRepository: Sendable {
     /// The catalog now, then again after every change, until the stream ends.
     ///
-    /// - The first element comes at once (the folder is listed when this is iterated),
-    ///   so a consumer never waits for a change to see the catalog.
+    /// - The first element comes at once: the folder is listed as soon as this is called,
+    ///   whether or not anyone iterates, so a consumer never waits for a change to see
+    ///   the catalog. Dropping the stream, iterated or not, stops the work and lets go of
+    ///   any watch it armed.
     /// - The bundled effect is always first; packages follow by name, a broken one as
     ///   an entry with `.broken`, never left out.
     /// - Ending the stream ends the watch under it.
