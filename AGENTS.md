@@ -109,6 +109,11 @@ Shared conventions:
   Both are real now: `PreviewSink` is `PreviewRepositoryImpl` over
   `PreviewDataSource` (which completes frames at once until a view is
   attached), and `EffectRuntimeRepository` is `EffectRuntimeRepositoryImpl`.
+  The MVP-B effect catalog (epic #42) follows the same rule: its seven modules
+  start as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
+  `EmptySettings`, `BundledOnlyCatalog`, `BundledOnlyEffectCatalog`,
+  `StaticEffectInteractor`) that list the bundled effect alone, and the later
+  issues replace each in place. Their streams stay open until the consumer lets go.
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
   `GPURenderer`) and holds no state and no executor; its memory is
@@ -266,6 +271,15 @@ Shared conventions:
   table, queue cap, presence ports, dead-name, `killHost()`); client counts on
   `FakeStreamOutput.connectClient/disconnectClient`; wider seed sets via
   `Seeds.range(0..<N)`.
+- The catalog fakes are driven by the test: `InMemoryFileSystemGateway`
+  (`write` / `remove` between reads, `failRead(of:with:)`), `FakeFileWatchGateway.fire(path)`
+  (`isBalanced` is the watch/stop invariant), `FakeEffectWatch.fire(request:)`,
+  `FakeEffectPackages.script(_:)`, `FakeEffectPackageRepository.publish(_:)` /
+  `script(_:for:)`, `FakeEffectCatalogUseCase.publish(_:)` and
+  `FakeEffectInteractor.publish(_:)`. A stream a fake hands out is registered
+  before the call returns and its `terminations` collector counts the consumer
+  letting go; keep the stream alive for the test (`withExtendedLifetime`), since
+  dropping its iterator cancels it.
 - Never `setenv`; inject paths through `AppDirectoriesProvider`.
 - Never `withMainSerialExecutor` / `uncheckedUseMainSerialExecutor`.
 - Build `@Dependency`-holding objects inside `withDependencies { } operation: { }`,
