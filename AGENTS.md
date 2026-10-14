@@ -104,8 +104,9 @@ Shared conventions:
   `// allow-physical: <PortName>` only inside the port's live module.
 - No layer skipping. An Interactor never holds a Gateway; a UseCase never
   holds a DataSource. Thread pass-through contracts through adjacent layers.
-- Every host port has a live value from the day its contract exists, so a PR
-  merged out of order never leaves the pipeline without a runtime or a sink.
+- Every host port above the OS boundary has a live value from the day its
+  contract exists, so a PR merged out of order never leaves the pipeline
+  without a runtime or a sink.
   Both are real now: `PreviewSink` is `PreviewRepositoryImpl` over
   `PreviewDataSource` (which completes frames at once until a view is
   attached), and `EffectRuntimeRepository` is `EffectRuntimeRepositoryImpl`.
@@ -114,6 +115,10 @@ Shared conventions:
   `EmptySettings`, `BundledOnlyCatalog`, `BundledOnlyEffectCatalog`,
   `StaticEffectInteractor`) that list the bundled effect alone, and the later
   issues replace each in place. Their streams stay open until the consumer lets go.
+  The OS-boundary ports of the catalog (`FileSystemGateway`, `FileWatchGateway`,
+  `WorkspaceGateway`, `AppDirectoriesProvider`, `KeyValueStoreGateway`) get their
+  live with the issue that wraps the OS API (#44, #51); no pass-through resolves
+  them, so nothing reaches them before then.
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
   `GPURenderer`) and holds no state and no executor; its memory is
