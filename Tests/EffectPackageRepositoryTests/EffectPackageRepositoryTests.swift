@@ -28,22 +28,26 @@ struct EffectPackageRepositoryTests {
     private struct Rig {
         let packages: FakeEffectPackages
         let watch: FakeEffectWatch
-        let log: RecordingLog
+        /// The two sinks are separate recorders, so a line is proven to have gone to the one it belongs to.
+        let errors: RecordingLog
+        let developer: RecordingLog
         let subject: EffectPackageRepositoryImpl
 
         init(inventory: EffectPackageInventory = .empty, effectWatch: (any EffectWatch)? = nil) {
             let packages = FakeEffectPackages(inventory: inventory)
             let watch = FakeEffectWatch()
-            let log = RecordingLog()
+            let errors = RecordingLog()
+            let developer = RecordingLog()
             self.packages = packages
             self.watch = watch
-            self.log = log
+            self.errors = errors
+            self.developer = developer
             subject = withDependencies {
                 $0.effectPackages = packages
                 $0.effectWatch = effectWatch ?? watch
                 $0.bundledEffects = StubBundledEffects(defaultEffect: EffectPackageRepositoryTests.bundledEffect)
-                $0.errorLog = log
-                $0.developerLog = log
+                $0.errorLog = errors
+                $0.developerLog = developer
             } operation: {
                 EffectPackageRepositoryImpl()
             }
@@ -207,7 +211,7 @@ struct EffectPackageRepositoryTests {
             ])
     }
 
-    @Test("each listing is logged with its size and how many packages are broken")
+    @Test("each listing is logged for the developer with its size and how many packages are broken, and none is an error")
     func listingsAreLogged() async {
         let rig = Rig(inventory: Self.inventory([Self.ready("glow"), .broken(.package("mist"), .manifestMissing)]))
         let seen = Collector<[EffectCatalogEntry]>()
@@ -218,7 +222,8 @@ struct EffectPackageRepositoryTests {
         await seen.waitForCount(2)
         await end(consumer)
 
-        #expect(rig.log.messages(in: .effect) == ["catalog listed: 3 entries, 1 broken", "catalog listed: 3 entries, 0 broken"])
+        #expect(rig.developer.messages(in: .effect) == ["catalog listed: 3 entries, 1 broken", "catalog listed: 3 entries, 0 broken"])
+        #expect(rig.errors.entries.count == 0, "a listing is not an error")
     }
 
     // MARK: - Listing again
@@ -332,7 +337,8 @@ struct EffectPackageRepositoryTests {
 
         #expect(shown == [[Self.bundledEntry, .fixture(.package("glow"))]], "the catalog it did list is still delivered")
         #expect(rig.packages.listingCalls.count == 1)
-        #expect(rig.log.messages(in: .effect).contains { $0.contains("watch ended on its own") })
+        #expect(rig.errors.messages(in: .effect).contains { $0.contains("watch ended on its own") }, "the lost watch is an error")
+        #expect(!rig.developer.contains("watch ended on its own"), "and only the error log has it")
     }
 
     // MARK: - source(of:)
