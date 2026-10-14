@@ -121,16 +121,24 @@ Shared conventions:
   attached), and `EffectRuntimeRepository` is `EffectRuntimeRepositoryImpl`.
   The MVP-B effect catalog (epic #42) follows the same rule: its seven modules
   start as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
-  `EmptySettings`, `BundledOnlyCatalog`, `BundledOnlyEffectCatalog`,
-  `StaticEffectInteractor`) that list the bundled effect alone, and the later
-  issues replace each in place (`NoPackages` is now `EffectPackageDataSourceImpl`,
-  #45). Their streams stay open until the consumer lets go.
+  `EmptySettings`, `BundledOnlyEffectCatalog`, `StaticEffectInteractor`, and
+  `BundledOnlyCatalog`, which `EffectPackageRepositoryImpl` has replaced) that
+  list the bundled effect alone, and the later issues replace each in place.
+  Their streams stay open until the consumer lets go.
+  `EmptyPreferences` and `EmptySettings` are already replaced (#51):
+  `PreferencesDataStoreImpl` keeps the chosen effect as one `<origin>:<key>` string
+  (`StoredEffectID`) in the user's defaults through `KeyValueStoreGateway`, ignoring
+  and logging a stored string that does not decode, and `SettingsRepositoryImpl`
+  passes it through; there is no `SettingsUseCase` until a settings UI exists.
+  `NoPackages` is replaced as well (#45): `EffectPackageDataSourceImpl` lists the effects
+  folder's `.lens` packages through the file ports.
   The OS-boundary ports of the catalog get their live with the issue that wraps
   the OS API: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and
   `AppDirectoriesProvider` (module `AppDirectories`) are registered in
-  `HostDependencyInjection` (#44), `KeyValueStoreGateway` follows in #51. No
-  pass-through resolves them, so nothing reaches them before the DataSource that
-  replaces it.
+  `HostDependencyInjection` (#44), and `KeyValueStoreGateway` as
+  `UserDefaultsGateway` (#51), which `PreferencesDataStoreImpl` resolves. No other
+  pass-through resolves a Gateway, so nothing reaches one before the DataSource
+  that replaces it.
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
   `GPURenderer`) and holds no state and no executor; its memory is
@@ -155,6 +163,23 @@ Shared conventions:
   since the session's first frame (`EffectSession`, PTS minus the session
   start), `resolution` the output size in pixels (the grid is rounded up to
   whole threadgroups, so a kernel bounds-checks `gid`), `seed` 0 until MVP-C.
+- The effect catalog is assembled in `EffectPackageRepositoryImpl` (epic #42,
+  D3), which resolves `effectPackages`, `effectWatch` and `bundledEffects`.
+  `catalog()` is an eager `AsyncStream`: making it lists the folder, arms the
+  watch for that listing, shows the catalog (armed first, so the first change
+  after a catalog is heard), and on every watch element lists again and arms the
+  *new* inventory's `EffectWatchSet`, the old watch having been let go first: an
+  edit that lands inside a re-listing is heard only with the next change. Every
+  listing is shown, even one equal to the last: the watch folds bursts, and a
+  same-looking listing can be an edited `effect.metal`. The bundled effect is
+  first, packages follow by display name (case-insensitive, numeric runs, folder
+  name as the tie-break, no locale), a broken one is `.broken` under its folder
+  name. `source(of:)` reads afresh and caches nothing: the bundled id is
+  `defaultEffect` (another bundled id `.sourceMissing`), a package is its source
+  when `.ready`, its problem when `.broken`, `.manifestMissing` when gone. The
+  loop is a `Task` off the frame path, cancelled when the stream ends; a watch
+  that ends by itself ends the catalog and logs an error, and the task logs its
+  end (whichever side it came from) to the developer log.
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
   the owning UseCase module, never as a second UseCase.

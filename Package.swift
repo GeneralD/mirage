@@ -83,6 +83,9 @@ let package = Package(
         .target(name: "AVFoundationGateway", dependencies: dependencies),
         .target(name: "IOSurfaceGateway", dependencies: dependencies),
         .testTarget(name: "IOSurfaceGatewayTests", dependencies: ["IOSurfaceGateway"] + testDependencies),
+        // Host only: the user's defaults as strings by key (`KeyValueStoreGatewayImpl`). Smoke runs on a UUID suite.
+        .target(name: "UserDefaultsGateway", dependencies: dependencies),
+        .testTarget(name: "UserDefaultsGatewayTests", dependencies: ["UserDefaultsGateway"] + testDependencies),
         // Host only: never a dependency of ExtensionDependencyInjection / ExtensionApp
         // (scripts/check-extension-no-metal.sh). Exercised by GPUSmokeTests, not here.
         .target(name: "MetalGateway", dependencies: dependencies),
@@ -143,7 +146,7 @@ let package = Package(
         .testTarget(name: "EffectWatchDataSourceTests", dependencies: ["EffectWatchDataSource"] + testDependencies),
 
         // ── DataStore ──
-        // Host only: the chosen effect, kept between launches. Holds `EmptyPreferences` for now.
+        // Host only: the chosen effect, kept between launches in the user's defaults (`KeyValueStoreGateway`).
         .target(name: "PreferencesDataStore", dependencies: dependencies),
         .testTarget(name: "PreferencesDataStoreTests", dependencies: ["PreferencesDataStore"] + testDependencies),
 
@@ -166,12 +169,12 @@ let package = Package(
             name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository", "EffectRuntimeStateDataSource"] + testDependencies),
         .target(name: "PreviewRepository", dependencies: dependencies),
         .testTarget(name: "PreviewRepositoryTests", dependencies: ["PreviewRepository"] + testDependencies),
-        // Host only: the bundled effects and the packages as one catalog. Holds `BundledOnlyCatalog` for now.
+        // Host only: the bundled effects and the packages as one catalog, listed again after every change.
         .target(name: "EffectPackageRepository", dependencies: dependencies),
         .testTarget(name: "EffectPackageRepositoryTests", dependencies: ["EffectPackageRepository"] + testDependencies),
-        // Host only: the chosen effect as the UseCases see it. Holds `EmptySettings` for now.
+        // Host only: the chosen effect as the UseCases see it, a pass-through to `PreferencesDataStore`.
         .target(name: "SettingsRepository", dependencies: dependencies),
-        .testTarget(name: "SettingsRepositoryTests", dependencies: ["SettingsRepository"] + testDependencies),
+        .testTarget(name: "SettingsRepositoryTests", dependencies: ["SettingsRepository", "PreferencesDataStore"] + testDependencies),
 
         // ── UseCase ──
         .target(name: "FramePipelineUseCase", dependencies: dependencies),
@@ -217,13 +220,14 @@ let package = Package(
                 "PreviewDataSource", "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
                 "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
+                "UserDefaultsGateway",
             ]
         ),
         .testTarget(
             name: "HostDependencyInjectionTests",
             dependencies: [
                 "HostDependencyInjection", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
-                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore", "UserDefaultsGateway",
                 "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
             ] + testDependencies
         ),
