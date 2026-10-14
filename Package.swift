@@ -75,6 +75,9 @@ let package = Package(
         .testTarget(name: "HostTimeTests", dependencies: ["HostTime"] + testDependencies),
         .target(name: "UnifiedLog", dependencies: dependencies),
         .testTarget(name: "UnifiedLogTests", dependencies: ["UnifiedLog"] + testDependencies),
+        // Host only: the effects folder's path under Application Support. Builds a path, reads no environment variable.
+        .target(name: "AppDirectories", dependencies: dependencies),
+        .testTarget(name: "AppDirectoriesTests", dependencies: ["AppDirectories"] + testDependencies),
 
         // ── Gateway (OS boundary) ──
         .target(name: "AVFoundationGateway", dependencies: dependencies),

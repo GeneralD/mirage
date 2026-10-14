@@ -17,7 +17,7 @@ for tool in sg jq; do
 done
 
 # Modules allowed to touch the physical world directly.
-LIVE_MODULES="AVFoundationGateway MetalGateway MetalKitPreviewGateway IOSurfaceGateway MachGateway SystemExtensionGateway CMIOExtensionGateway FileSystemGateway FileWatchGateway UserDefaultsGateway WorkspaceGateway DispatchExecutorGateway UnifiedLog HostTime RandomSource AppDirectoriesProvider"
+LIVE_MODULES="AVFoundationGateway MetalGateway MetalKitPreviewGateway IOSurfaceGateway MachGateway SystemExtensionGateway CMIOExtensionGateway FileSystemGateway FileWatchGateway UserDefaultsGateway WorkspaceGateway DispatchExecutorGateway UnifiedLog HostTime RandomSource AppDirectories"
 
 # ast-grep patterns (Swift). One per line: <pattern>|<label>
 # shellcheck disable=SC2016

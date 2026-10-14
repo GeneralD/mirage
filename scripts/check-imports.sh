@@ -29,7 +29,7 @@ gateway_allow() {
         UnifiedLog)               echo "os" ;;
         HostTime)                 echo "Darwin" ;;
         RandomSource)             echo "" ;;
-        AppDirectoriesProvider)   echo "" ;;
+        AppDirectories)           echo "" ;;
         *)                        return 1 ;;
     esac
 }
