@@ -25,6 +25,39 @@ struct EffectPackageRepositoryTests {
         }
     }
 
+    /// The folder as the Repository sees it, writing each listing it is asked for to the developer log
+    /// with how many watches are still armed at that moment: a sequence the test can read back.
+    private struct SequencedPackages: EffectPackages {
+        let base: FakeEffectPackages
+        let watch: FakeEffectWatch
+        let log: RecordingLog
+
+        func packages() async -> EffectPackageInventory {
+            log.record(.effect, "listing the folder, \(watch.activeCount) armed")
+            return await base.packages()
+        }
+
+        func package(_ id: EffectID) async -> EffectPackageListing? {
+            await base.package(id)
+        }
+
+        func openFolder() {
+            base.openFolder()
+        }
+    }
+
+    /// The watch as the Repository sees it, writing each arming to the same log, the same way. The stream is
+    /// the fake's own, so nothing about when it ends or yields changes.
+    private struct SequencedWatch: EffectWatch {
+        let base: FakeEffectWatch
+        let log: RecordingLog
+
+        func changes(of watchSet: EffectWatchSet) -> AsyncStream<Void> {
+            log.record(.effect, "arming a watch, \(base.activeCount) armed")
+            return base.changes(of: watchSet)
+        }
+    }
+
     private struct Rig {
         let packages: FakeEffectPackages
         let watch: FakeEffectWatch
@@ -33,7 +66,9 @@ struct EffectPackageRepositoryTests {
         let developer: RecordingLog
         let subject: EffectPackageRepositoryImpl
 
-        init(inventory: EffectPackageInventory = .empty, effectWatch: (any EffectWatch)? = nil) {
+        /// With `sequenced`, the developer log also carries the Repository's calls on the folder and on the
+        /// watch, in the order it made them, between the "catalog listed" lines it writes itself.
+        init(inventory: EffectPackageInventory = .empty, effectWatch: (any EffectWatch)? = nil, sequenced: Bool = false) {
             let packages = FakeEffectPackages(inventory: inventory)
             let watch = FakeEffectWatch()
             let errors = RecordingLog()
@@ -43,8 +78,8 @@ struct EffectPackageRepositoryTests {
             self.errors = errors
             self.developer = developer
             subject = withDependencies {
-                $0.effectPackages = packages
-                $0.effectWatch = effectWatch ?? watch
+                $0.effectPackages = sequenced ? SequencedPackages(base: packages, watch: watch, log: developer) : packages
+                $0.effectWatch = effectWatch ?? (sequenced ? SequencedWatch(base: watch, log: developer) : watch)
                 $0.bundledEffects = StubBundledEffects(defaultEffect: EffectPackageRepositoryTests.bundledEffect)
                 $0.errorLog = errors
                 $0.developerLog = developer
@@ -136,11 +171,15 @@ struct EffectPackageRepositoryTests {
 
     @Test("the watch for the listing is armed before the catalog is shown, so the first change after a catalog is heard")
     func armedBeforeShown() async {
-        let rig = Rig(inventory: Self.inventory([Self.ready("glow")]))
+        let rig = Rig(inventory: Self.inventory([Self.ready("glow")]), sequenced: true)
         let seen = Collector<[EffectCatalogEntry]>()
         let consumer = listen(to: rig.subject.catalog(), into: seen)
         await seen.waitForCount(1)
 
+        // "catalog listed" is written right before the catalog is shown, so a watch armed after it was armed after the show.
+        #expect(
+            rig.developer.messages(in: .effect) == ["listing the folder, 0 armed", "arming a watch, 0 armed", "catalog listed: 2 entries, 0 broken"],
+            "the folder is listed, the watch armed, and only then is the catalog shown")
         #expect(rig.watch.requests.values == [Self.glowSet], "armed with the set the inventory asked for")
         #expect(rig.watch.fire(), "a change right after the first catalog is heard")
         await seen.waitForCount(2)
@@ -251,9 +290,30 @@ struct EffectPackageRepositoryTests {
         #expect(seen.values.last == [Self.bundledEntry, .fixture(.package("glow")), .fixture(.package("mist"))])
         #expect(rig.packages.listingCalls.count == 2)
         #expect(rig.watch.requests.values == [Self.glowSet, Self.bothSet], "the second round is watched by the second inventory's set")
-        #expect(rig.watch.terminations.values == [0], "the first watch ended before the second was armed")
+        #expect(rig.watch.terminations.values == [0], "the first watch is the one that ended")
         #expect(rig.watch.activeCount == 1)
         await end(consumer)
+    }
+
+    @Test("the old watch is let go before the folder is listed again, so no watch is armed while the folder is read")
+    func oldWatchIsLetGoBeforeTheNextListing() async {
+        let rig = Rig(inventory: Self.inventory([Self.ready("glow")]), sequenced: true)
+        let seen = Collector<[EffectCatalogEntry]>()
+        let consumer = listen(to: rig.subject.catalog(), into: seen)
+        await seen.waitForCount(1)
+
+        rig.packages.script(Self.inventory([Self.ready("glow"), Self.ready("mist")], watching: Self.bothSet))
+        #expect(rig.watch.fire())
+        await seen.waitForCount(2)
+        let sequence = rig.developer.messages(in: .effect)
+        await end(consumer)
+
+        #expect(
+            sequence == [
+                "listing the folder, 0 armed", "arming a watch, 0 armed", "catalog listed: 2 entries, 0 broken",
+                "listing the folder, 0 armed", "arming a watch, 0 armed", "catalog listed: 3 entries, 0 broken",
+            ],
+            "each round starts with no watch armed: the second one lists, then arms, with the first already let go")
     }
 
     @Test("a package that goes away leaves the catalog, and the watch it had is replaced")
