@@ -15,7 +15,11 @@ struct BundledOnlyCatalogTests {
     private let effect = EffectSource(name: "Chromatic Grain", source: "kernel void effect() {}")
 
     private func makeSubject() -> BundledOnlyCatalog {
-        withDependencies { $0.bundledEffects = StubBundledEffects(defaultEffect: effect) } operation: { BundledOnlyCatalog() }
+        withDependencies {
+            $0.bundledEffects = StubBundledEffects(defaultEffect: effect)
+        } operation: {
+            BundledOnlyCatalog()
+        }
     }
 
     @Test("the catalog is the bundled default alone, ready, keyed by its name")

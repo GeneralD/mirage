@@ -85,7 +85,8 @@ struct EffectPackageListingTests {
     @Test("a listing is known by the id of its package, ready or broken")
     func listingId() {
         let package = EffectPackage(
-            id: id, manifest: EffectManifest(formatVersion: 1, name: "Glitch"), source: EffectSource(name: "Glitch", source: "kernel void effect() {}"))
+            id: id, manifest: EffectManifest(formatVersion: 1, name: "Glitch"),
+            source: EffectSource(name: "Glitch", source: "kernel void effect() {}"))
         #expect(EffectPackageListing.ready(package).id == id)
         #expect(EffectPackageListing.broken(id, .sourceMissing).id == id)
     }

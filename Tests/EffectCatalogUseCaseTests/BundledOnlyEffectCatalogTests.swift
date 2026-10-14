@@ -12,7 +12,11 @@ struct BundledOnlyEffectCatalogTests {
     private let glitch = EffectCatalogEntry.fixture(.package("glitch"))
 
     private func makeSubject(over repository: FakeEffectPackageRepository) -> BundledOnlyEffectCatalog {
-        withDependencies { $0.effectPackageRepository = repository } operation: { BundledOnlyEffectCatalog() }
+        withDependencies {
+            $0.effectPackageRepository = repository
+        } operation: {
+            BundledOnlyEffectCatalog()
+        }
     }
 
     @Test("observe reports the catalog the Repository lists with its first entry selected, and no outcome yet")

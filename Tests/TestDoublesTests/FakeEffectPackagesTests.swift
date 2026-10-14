@@ -22,7 +22,8 @@ struct FakeEffectPackagesTests {
 
     @Test("package(id) finds the listing in the inventory, and nil for an id nothing lists")
     func packageFallsBackToTheInventory() async {
-        let packages = FakeEffectPackages(inventory: EffectPackageInventory(listings: [.ready(glitch), .broken(.package("old"), .sourceMissing)], watchSet: .empty))
+        let packages = FakeEffectPackages(
+            inventory: EffectPackageInventory(listings: [.ready(glitch), .broken(.package("old"), .sourceMissing)], watchSet: .empty))
         #expect(await packages.package(.package("glitch")) == .ready(glitch))
         #expect(await packages.package(.package("old")) == .broken(.package("old"), .sourceMissing))
         #expect(await packages.package(.package("nobody")) == nil)
