@@ -1,0 +1,155 @@
+import Foundation
+import TestSupport
+import Testing
+
+@testable import FileWatchGateway
+
+/// Smoke of the live gateway against real kernel file events, under a UUID-named temporary
+/// directory that each test removes. The OS coalesces events, so every assertion is "at least
+/// one"; it never counts how many arrived (coalescing is `EffectWatchDataSource`'s, under a
+/// `TestClock`). Waits are on the callback itself (`Collector`), bounded by the suite's limit; the one
+/// exception is the descriptor check, which has no callback and polls the process's descriptor table.
+@Suite("FileWatchGatewayImpl", .timeLimit(.minutes(1)))
+struct FileWatchGatewayImplTests {
+    private let gateway = FileWatchGatewayImpl()
+
+    @Test("an atomic write into a watched directory is reported")
+    func directoryReportsAtomicWrite() async throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let fired = Collector<Void>()
+        let handle = try gateway.watch(directory: scratch.path) { fired.append(()) }
+        defer { handle.stop() }
+
+        try "hello".write(toFile: scratch.appending("effect.metal"), atomically: true, encoding: .utf8)
+
+        await fired.waitForCount(1)
+        #expect(fired.count >= 1)
+    }
+
+    @Test("an in-place overwrite of a watched file is reported")
+    func fileReportsInPlaceWrite() async throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let file = scratch.appending("effect.metal")
+        try "hello".write(toFile: file, atomically: true, encoding: .utf8)
+        let fired = Collector<Void>()
+        let handle = try gateway.watch(file: file) { fired.append(()) }
+        defer { handle.stop() }
+
+        // No rename here, so a directory watch would never see it: the editor-save style the file watch is for.
+        try append(" world", to: file)
+
+        await fired.waitForCount(1)
+        #expect(fired.count >= 1)
+    }
+
+    @Test("a truncate that only shrinks a watched file (an attribute event, no write) is reported")
+    func fileReportsShrinkingTruncate() async throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let file = scratch.appending("effect.metal")
+        try "hello world".write(toFile: file, atomically: true, encoding: .utf8)
+        let fired = Collector<Void>()
+        let handle = try gateway.watch(file: file) { fired.append(()) }
+        defer { handle.stop() }
+
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: file))
+        defer { try? writer.close() }
+        try writer.truncate(atOffset: 5)
+
+        await fired.waitForCount(1)
+        #expect(fired.count >= 1)
+    }
+
+    @Test("a directory watch stays silent for an in-place write to a file inside it; the file watch hears it")
+    func directoryDoesNotHearInPlaceWrites() async throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let file = scratch.appending("effect.metal")
+        try "hello".write(toFile: file, atomically: true, encoding: .utf8)
+        let directoryEvents = Collector<Void>()
+        let fileEvents = Collector<Void>()
+        let directoryWatch = try gateway.watch(directory: scratch.path) { directoryEvents.append(()) }
+        defer { directoryWatch.stop() }
+        let fileWatch = try gateway.watch(file: file) { fileEvents.append(()) }
+        defer { fileWatch.stop() }
+
+        // The file watch is the sentinel. The two sources call back on concurrent queues, so after one write the
+        // sentinel's callback can be recorded before a directory callback that is still on its way: a single round
+        // would let a directory watch that does hear the write pass. Each round waits for the sentinel to report
+        // one more event, and the directory watch has to stay silent through all of them.
+        for _ in 0..<5 {
+            let before = fileEvents.count
+            try append(" world", to: file)
+            await fileEvents.settle { $0.count > before }
+        }
+
+        #expect(directoryEvents.count == 0)
+    }
+
+    @Test("after stop() a watch reports nothing: only the watch that is still armed does")
+    func stopSilencesTheWatch() async throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let stoppedEvents = Collector<Void>()
+        let sentinelEvents = Collector<Void>()
+        let stopped = try gateway.watch(directory: scratch.path) { stoppedEvents.append(()) }
+        let sentinel = try gateway.watch(directory: scratch.path) { sentinelEvents.append(()) }
+        defer { sentinel.stop() }
+
+        stopped.stop()
+        try await provokeEvent(into: sentinelEvents, in: scratch, as: "one")
+        try await provokeEvent(into: sentinelEvents, in: scratch, as: "two")
+
+        #expect(stoppedEvents.count == 0)
+    }
+
+    @Test("stop() closes the descriptor a watch opened, for a directory watch and for a file watch")
+    func stopClosesTheDescriptors() async throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let file = scratch.appending("effect.metal")
+        try "hello".write(toFile: file, atomically: true, encoding: .utf8)
+        let directoryWatch = try gateway.watch(directory: scratch.path) {}
+        let fileWatch = try gateway.watch(file: file) {}
+        // The probe has to see each descriptor while it is open, or "none left" below would prove nothing.
+        #expect(openDescriptorCount(at: scratch.path) == 1)
+        #expect(openDescriptorCount(at: file) == 1)
+
+        directoryWatch.stop()
+        fileWatch.stop()
+
+        // The cancel handler closes the descriptor on the source's queue, after stop() has returned, and the
+        // descriptor table is readable-only external state: poll it, with room for a loaded machine.
+        let closed = await pollUntil(timeout: .seconds(10)) {
+            openDescriptorCount(at: scratch.path) == 0 && openDescriptorCount(at: file) == 0
+        }
+        #expect(closed)
+    }
+
+    @Test("a path that does not exist cannot be watched, as a directory or as a file")
+    func missingPathThrows() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+
+        #expect(throws: (any Error).self) { try gateway.watch(directory: scratch.appending("missing")) {} }
+        #expect(throws: (any Error).self) { try gateway.watch(file: scratch.appending("missing")) {} }
+    }
+
+    // MARK: helpers
+
+    private func append(_ text: String, to path: String) throws {
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer { try? writer.close() }
+        try writer.seekToEnd()
+        try writer.write(contentsOf: Data(text.utf8))
+    }
+
+    /// Writes a new file into `scratch` and waits until `events` has reported one more event than it had.
+    private func provokeEvent(into events: Collector<Void>, in scratch: ScratchDirectory, as name: String) async throws {
+        let before = events.count
+        try "hello".write(toFile: scratch.appending(name), atomically: true, encoding: .utf8)
+        await events.settle { $0.count > before }
+    }
+}
