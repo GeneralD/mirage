@@ -76,6 +76,15 @@ Shared conventions:
   layers.
 - Product name appears only in `README.md`, `project.yml` and
   `Sources/Entity/ProductIdentity.swift`. Everything else is role-named.
+- A `.lens` package is a directory `<id>.lens/` in the effects folder
+  (`~/Library/Application Support/<host bundle id>/Effects`, the path comes from
+  `AppDirectoriesProvider`) holding `manifest.json` (`formatVersion` 1 and
+  `name`; optional `author` / `description`; unknown keys, `parameters`
+  included, ignored) and `effect.metal` (entry point `effect`, compiled behind
+  the prelude). The id is the directory name without the suffix.
+  `EffectPackageDataSource` reads it through `FileSystemGateway` and lists a
+  package it cannot use as `.broken` with the reason instead of leaving it out
+  (epic #42, D1 / D3); `Examples/Ripple.lens` is a complete one.
 
 ## Non-Negotiable Rules
 
