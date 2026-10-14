@@ -8,8 +8,13 @@ import CameraRepository
 import CommonDependencyInjection
 import Dependencies
 import Domain
+import EffectCatalogUseCase
+import EffectInteractor
+import EffectPackageDataSource
+import EffectPackageRepository
 import EffectRuntimeRepository
 import EffectRuntimeStateDataSource
+import EffectWatchDataSource
 import ExtensionInstallDataSource
 import ExtensionInstallRepository
 import ExtensionInstallUseCase
@@ -19,8 +24,10 @@ import GPURenderDataSource
 import HarnessInteractor
 import MetalGateway
 import MetalKitPreviewGateway
+import PreferencesDataStore
 import PreviewDataSource
 import PreviewRepository
+import SettingsRepository
 import ShaderCompilationDataSource
 import SystemExtensionGateway
 import VirtualCameraRepository
@@ -35,6 +42,10 @@ extension HarnessInteractorKey: DependencyKey {
     public static let liveValue: any HarnessInteractor = HarnessInteractorImpl()
 }
 
+extension EffectInteractorKey: DependencyKey {
+    public static let liveValue: any EffectInteractor = StaticEffectInteractor()
+}
+
 extension FramePipelineUseCaseKey: DependencyKey {
     public static let liveValue: any FramePipelineUseCase = FramePipelineUseCaseImpl()
 }
@@ -45,6 +56,10 @@ extension CameraControlUseCaseKey: DependencyKey {
 
 extension ExtensionInstallUseCaseKey: DependencyKey {
     public static let liveValue: any ExtensionInstallUseCase = ExtensionInstallUseCaseImpl()
+}
+
+extension EffectCatalogUseCaseKey: DependencyKey {
+    public static let liveValue: any EffectCatalogUseCase = BundledOnlyEffectCatalog()
 }
 
 extension CameraRepositoryKey: DependencyKey {
@@ -65,6 +80,14 @@ extension EffectRuntimeRepositoryKey: DependencyKey {
 
 extension PreviewSinkKey: DependencyKey {
     public static let liveValue: any PreviewSink = PreviewRepositoryImpl()
+}
+
+extension EffectPackageRepositoryKey: DependencyKey {
+    public static let liveValue: any EffectPackageRepository = BundledOnlyCatalog()
+}
+
+extension SettingsRepositoryKey: DependencyKey {
+    public static let liveValue: any SettingsRepository = EmptySettings()
 }
 
 extension CameraSourceKey: DependencyKey {
@@ -101,6 +124,18 @@ extension ShaderCompilerKey: DependencyKey {
 
 extension GPURendererKey: DependencyKey {
     public static let liveValue: any GPURenderer = GPURenderDataSourceImpl()
+}
+
+extension EffectPackagesKey: DependencyKey {
+    public static let liveValue: any EffectPackages = NoPackages()
+}
+
+extension EffectWatchKey: DependencyKey {
+    public static let liveValue: any EffectWatch = NeverChangingWatch()
+}
+
+extension PreferencesKey: DependencyKey {
+    public static let liveValue: any Preferences = EmptyPreferences()
 }
 
 extension CaptureSessionGatewayKey: DependencyKey {

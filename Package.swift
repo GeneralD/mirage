@@ -9,7 +9,10 @@ import PackageDescription
 //
 // M0 built the pass-through frame path host → Camera Extension, the
 // installer and the three DI targets; MVP-A added the effect runtime, the
-// preview and the dev harness. The menu-bar UI lane arrives with MVP-B.
+// preview and the dev harness. MVP-B adds the `.lens` catalog: its seven modules
+// (EffectPackageDataSource … EffectInteractor) start as pass-through defaults that
+// the later MVP-B issues replace in place; the menu-bar UI lane (AppRouter, the
+// Presenters) arrives with them.
 
 let dependencies: [Target.Dependency] = [
     "Domain",
@@ -119,6 +122,18 @@ let package = Package(
         // Host only: the preview kernel and the draw order (scripts/check-extension-no-metal.sh).
         .target(name: "PreviewDataSource", dependencies: dependencies),
         .testTarget(name: "PreviewDataSourceTests", dependencies: ["PreviewDataSource"] + testDependencies),
+        // Host only: the effects folder's `.lens` packages. Holds the pass-through `NoPackages` until
+        // the real DataSource lands in this module (epic #42, D10).
+        .target(name: "EffectPackageDataSource", dependencies: dependencies),
+        .testTarget(name: "EffectPackageDataSourceTests", dependencies: ["EffectPackageDataSource"] + testDependencies),
+        // Host only: file events folded into one change per burst. Holds `NeverChangingWatch` for now.
+        .target(name: "EffectWatchDataSource", dependencies: dependencies),
+        .testTarget(name: "EffectWatchDataSourceTests", dependencies: ["EffectWatchDataSource"] + testDependencies),
+
+        // ── DataStore ──
+        // Host only: the chosen effect, kept between launches. Holds `EmptyPreferences` for now.
+        .target(name: "PreferencesDataStore", dependencies: dependencies),
+        .testTarget(name: "PreferencesDataStoreTests", dependencies: ["PreferencesDataStore"] + testDependencies),
 
         // ── Repository ──
         .target(name: "CameraRepository", dependencies: dependencies),
@@ -139,6 +154,12 @@ let package = Package(
             name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository", "EffectRuntimeStateDataSource"] + testDependencies),
         .target(name: "PreviewRepository", dependencies: dependencies),
         .testTarget(name: "PreviewRepositoryTests", dependencies: ["PreviewRepository"] + testDependencies),
+        // Host only: the bundled effects and the packages as one catalog. Holds `BundledOnlyCatalog` for now.
+        .target(name: "EffectPackageRepository", dependencies: dependencies),
+        .testTarget(name: "EffectPackageRepositoryTests", dependencies: ["EffectPackageRepository"] + testDependencies),
+        // Host only: the chosen effect as the UseCases see it. Holds `EmptySettings` for now.
+        .target(name: "SettingsRepository", dependencies: dependencies),
+        .testTarget(name: "SettingsRepositoryTests", dependencies: ["SettingsRepository"] + testDependencies),
 
         // ── UseCase ──
         .target(name: "FramePipelineUseCase", dependencies: dependencies),
@@ -149,6 +170,9 @@ let package = Package(
         .testTarget(name: "ExtensionInstallUseCaseTests", dependencies: ["ExtensionInstallUseCase"] + testDependencies),
         .target(name: "ExtensionRelayUseCase", dependencies: dependencies),
         .testTarget(name: "ExtensionRelayUseCaseTests", dependencies: ["ExtensionRelayUseCase"] + testDependencies),
+        // Host only: the effects menu's policy (selection, hot reload, fallback). Holds `BundledOnlyEffectCatalog` for now.
+        .target(name: "EffectCatalogUseCase", dependencies: dependencies),
+        .testTarget(name: "EffectCatalogUseCaseTests", dependencies: ["EffectCatalogUseCase"] + testDependencies),
 
         // ── Interactor ──
         .target(name: "CameraInteractor", dependencies: dependencies),
@@ -156,6 +180,9 @@ let package = Package(
         // Host only: the dev harness's launch sequence (camera prompt, then the pipeline).
         .target(name: "HarnessInteractor", dependencies: dependencies),
         .testTarget(name: "HarnessInteractorTests", dependencies: ["HarnessInteractor"] + testDependencies),
+        // Host only: the effects menu's Combine pipeline. Holds `StaticEffectInteractor` for now.
+        .target(name: "EffectInteractor", dependencies: dependencies),
+        .testTarget(name: "EffectInteractorTests", dependencies: ["EffectInteractor"] + testDependencies),
 
         // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
         .target(
@@ -169,15 +196,22 @@ let package = Package(
             name: "HostDependencyInjection",
             dependencies: dependencies + [
                 "CommonDependencyInjection",
-                "CameraInteractor", "HarnessInteractor",
-                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase",
+                "CameraInteractor", "HarnessInteractor", "EffectInteractor",
+                "FramePipelineUseCase", "CameraControlUseCase", "ExtensionInstallUseCase", "EffectCatalogUseCase",
                 "CameraRepository", "VirtualCameraRepository", "ExtensionInstallRepository",
-                "EffectRuntimeRepository", "PreviewRepository",
+                "EffectRuntimeRepository", "PreviewRepository", "EffectPackageRepository", "SettingsRepository",
                 "CameraDataSource", "CameraPermissionDataSource", "FrameTransportDataSource", "ExtensionInstallDataSource",
                 "BundledEffectDataSource", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
-                "PreviewDataSource",
+                "PreviewDataSource", "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
             ]
+        ),
+        .testTarget(
+            name: "HostDependencyInjectionTests",
+            dependencies: [
+                "HostDependencyInjection", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
+            ] + testDependencies
         ),
         .target(
             name: "ExtensionDependencyInjection",
