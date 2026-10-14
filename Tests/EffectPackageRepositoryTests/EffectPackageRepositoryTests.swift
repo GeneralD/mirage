@@ -208,6 +208,24 @@ struct EffectPackageRepositoryTests {
         #expect(entries?.map(\.id.key) == ["Chromatic Grain", "z-1", "m-3", "a-2", "c-5", "b-4"])
     }
 
+    @Test(
+        "the order does not consult the locale: names compare by their characters, so an accented one follows z on every machine",
+        arguments: [false, true])
+    func orderIgnoresTheLocale(reversed: Bool) async {
+        // Most locales collate "ä" with "a" and "Émile" with "e", ahead of "z"; the characters alone put them after it.
+        let listings: [EffectPackageListing] = [
+            Self.ready("e", named: "Émile"),
+            Self.ready("zed", named: "Zed"),
+            Self.ready("a", named: "ä"),
+            Self.ready("z", named: "z"),
+        ]
+        let rig = Rig(inventory: Self.inventory(reversed ? listings.reversed() : listings))
+
+        let entries = await firstCatalog(of: rig.subject)
+
+        #expect(entries?.dropFirst().map(\.displayName) == ["z", "Zed", "ä", "Émile"])
+    }
+
     @Test("the bundled effect stays first when a package sorts before it, even one that shares its name")
     func bundledStaysFirst() async {
         let rig = Rig(inventory: Self.inventory([Self.ready("chromatic", named: "Chromatic Grain"), Self.ready("aardvark", named: "Aardvark")]))
