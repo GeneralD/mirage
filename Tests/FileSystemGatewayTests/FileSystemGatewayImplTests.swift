@@ -6,6 +6,10 @@ import Testing
 /// Smoke of the live gateway against the real file system, under a UUID-named
 /// temporary directory that each test removes. What a package is, and how a failure
 /// is recovered from, is `EffectPackageDataSource`'s and is proven against the fake.
+///
+/// A failure is pinned by its `CocoaError` code, not only by "it throws": `InMemoryFileSystemGateway`
+/// answers with these same codes, and a DataSource that tells a missing path from an unreadable one by
+/// the error is proven against that fake, so the live gateway must agree with it on the shapes.
 @Suite("FileSystemGatewayImpl")
 struct FileSystemGatewayImplTests {
     private let gateway = FileSystemGatewayImpl()
@@ -30,21 +34,25 @@ struct FileSystemGatewayImplTests {
         #expect(try gateway.contentsOfDirectory(scratch.path).isEmpty)
     }
 
-    @Test("listing a path that does not exist throws")
+    @Test("listing a path that does not exist throws a no-such-file error")
     func listingMissingThrows() throws {
         let scratch = try ScratchDirectory()
         defer { scratch.remove() }
 
-        #expect(throws: (any Error).self) { try gateway.contentsOfDirectory(scratch.appending("missing")) }
+        let error = #expect(throws: CocoaError.self) { try gateway.contentsOfDirectory(scratch.appending("missing")) }
+
+        #expect(error?.code == .fileReadNoSuchFile)
     }
 
-    @Test("listing a file throws")
+    @Test("listing a file throws an unknown-read error, not a missing one")
     func listingFileThrows() throws {
         let scratch = try ScratchDirectory()
         defer { scratch.remove() }
         try Data().write(to: URL(fileURLWithPath: scratch.appending("file")))
 
-        #expect(throws: (any Error).self) { try gateway.contentsOfDirectory(scratch.appending("file")) }
+        let error = #expect(throws: CocoaError.self) { try gateway.contentsOfDirectory(scratch.appending("file")) }
+
+        #expect(error?.code == .fileReadUnknown)
     }
 
     // MARK: isDirectory
@@ -99,29 +107,37 @@ struct FileSystemGatewayImplTests {
         #expect(try gateway.readString(scratch.appending("empty")).isEmpty)
     }
 
-    @Test("reading a path that does not exist throws")
+    @Test("reading a path that does not exist throws a no-such-file error")
     func readingMissingThrows() throws {
         let scratch = try ScratchDirectory()
         defer { scratch.remove() }
 
-        #expect(throws: (any Error).self) { try gateway.readString(scratch.appending("missing")) }
+        let error = #expect(throws: CocoaError.self) { try gateway.readString(scratch.appending("missing")) }
+
+        #expect(error?.code == .fileReadNoSuchFile)
     }
 
-    @Test("reading a directory throws")
+    @Test("reading a directory throws an unknown-read error, not a missing one")
     func readingDirectoryThrows() throws {
         let scratch = try ScratchDirectory()
         defer { scratch.remove() }
 
-        #expect(throws: (any Error).self) { try gateway.readString(scratch.path) }
+        let error = #expect(throws: CocoaError.self) { try gateway.readString(scratch.path) }
+
+        #expect(error?.code == .fileReadUnknown)
     }
 
-    @Test("bytes that are not UTF-8 throw instead of reading as garbled text")
+    @Test("bytes that are not UTF-8 throw a corrupt-file error instead of reading as garbled text")
     func readingInvalidUTF8Throws() throws {
         let scratch = try ScratchDirectory()
         defer { scratch.remove() }
         try Data([0xC3, 0x28]).write(to: URL(fileURLWithPath: scratch.appending("bad")))
 
-        #expect(throws: (any Error).self) { try gateway.readString(scratch.appending("bad")) }
+        // The fake holds Strings, so it cannot be given such a file (a test scripts one with `failRead`); this is what the
+        // live gateway raises for it, and it is not a missing-file error.
+        let error = #expect(throws: CocoaError.self) { try gateway.readString(scratch.appending("bad")) }
+
+        #expect(error?.code == .fileReadCorruptFile)
     }
 
     // MARK: createDirectory
@@ -148,14 +164,17 @@ struct FileSystemGatewayImplTests {
         #expect(try gateway.readString(scratch.appending("dir/file")) == "kept")
     }
 
-    @Test("a file in the way, at the path or above it, throws")
+    @Test("a file in the way throws: a file-exists error at the path, an unknown-write error above it")
     func fileInTheWayThrows() throws {
         let scratch = try ScratchDirectory()
         defer { scratch.remove() }
         try Data().write(to: URL(fileURLWithPath: scratch.appending("file")))
 
-        #expect(throws: (any Error).self) { try gateway.createDirectory(scratch.appending("file")) }
-        #expect(throws: (any Error).self) { try gateway.createDirectory(scratch.appending("file/below")) }
+        let atThePath = #expect(throws: CocoaError.self) { try gateway.createDirectory(scratch.appending("file")) }
+        let aboveIt = #expect(throws: CocoaError.self) { try gateway.createDirectory(scratch.appending("file/below")) }
+
+        #expect(atThePath?.code == .fileWriteFileExists)
+        #expect(aboveIt?.code == .fileWriteUnknown)
         #expect(!gateway.isDirectory(scratch.appending("file")))
     }
 }
