@@ -198,6 +198,29 @@ struct MenuBarPresenterTests {
         #expect(rig.interactor.inner.stops.count == 1)
     }
 
+    @Test("a state that was already on its way when stop was called is never applied")
+    func stopDropsTheStateOnItsWay() async {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+        await rig.start()
+        let shown = Collector<[EffectID]>()
+        let subscription = rig.presenter.$items.dropFirst().sink { shown.append($0.map(\.id)) }
+
+        // The test holds the main actor from the first publish to the wait below, so the task that
+        // applies states has not run: the state is on its way to the rows when stop() lands.
+        rig.interactor.publish(.fixture([chromatic, glitch]))
+        rig.presenter.stop()
+        // What the restart begins from must differ from that state: a restarted subscription
+        // replays the Interactor's current one, which would hide an application of the first.
+        rig.interactor.publish(.fixture([glitch]))
+        rig.presenter.start()
+        await settle(rig.presenter.$items) { $0.map(\.id) == [.package("glitch")] }
+
+        // The stopped observation's task was queued on the main actor ahead of the restarted
+        // one, so an application of the stale state would have been published before this one.
+        #expect(shown.values == [[.package("glitch")]], "the rows went from the state before stop straight to the restart's")
+        withExtendedLifetime(subscription) {}
+    }
+
     @Test("a Presenter can be started again after stop, and shows the Interactor's state then")
     func restartAfterStop() async {
         let rig = PresenterRig(state: .fixture([chromatic]))

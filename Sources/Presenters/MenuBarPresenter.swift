@@ -39,7 +39,8 @@ public final class MenuBarPresenter: ObservableObject {
         interactor.start()
     }
 
-    /// Ends the observation and stops the Interactor. The rows stay as they were.
+    /// Ends the observation and stops the Interactor. The rows stay as they were, even
+    /// when a state had already been sent and not yet applied.
     public func stop() {
         observation?.end()
         observation = nil
@@ -77,11 +78,17 @@ extension MenuBarPresenter {
             self.stream = continuation
             subscription = states.sink { @Sendable state in continuation.yield(state) }
             task = Task { @MainActor in
-                for await state in stream { apply(state) }
+                for await state in stream {
+                    // A state the stream already handed to this task is still delivered after `end()`:
+                    // `finish()` only stops what comes next. `end()` cancelled the task before the
+                    // delivery can run, so this is where it is dropped.
+                    guard !Task.isCancelled else { return }
+                    apply(state)
+                }
             }
         }
 
-        /// Drops the state that is waiting, too: after this nothing is applied.
+        /// Drops the state that is waiting or on its way, too: after this nothing is applied.
         func end() {
             subscription.cancel()
             task.cancel()
