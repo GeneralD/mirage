@@ -184,6 +184,95 @@ struct EffectCatalogObservationTests {
         await rig.stop(run)
     }
 
+    @Test("a listing still reading the chosen effect's source when another effect is chosen prepares nothing for the old choice")
+    func choiceOvertakesAListingsRead() async {
+        let rig = Rig(persisted: glitch.id)
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        // The listing is reading glitch's files...
+        let edited = EffectSource(name: "Glitch", source: "glitch v2")
+        rig.packages.script(.success(edited), for: glitch.id)
+        rig.packages.holdSources()
+        rig.packages.publish([bundled, glitch, other])
+        await rig.packages.heldSources.waitForCount(1)
+        // ...when the user chooses another effect, whose own read goes first.
+        let choice = Task { await rig.subject.select(other.id) }
+        await rig.packages.heldSources.waitForCount(2)
+        let reads = rig.packages.heldSources.values
+        rig.packages.completeSource(reads[1])
+        await rig.answer(2)
+        #expect(await choice.value == .prepared)
+        await watcher.states.waitForCount(2)
+        // The listing's read ends now: glitch is no longer the choice. The run takes one listing at a
+        // time, so the sentinel's state can only come after the held listing has been dealt with.
+        rig.packages.holdSources(false)
+        rig.packages.completeSource(reads[0])
+        rig.packages.publish([bundled, glitch, other, EffectCatalogEntry.fixture(.package("later"))])
+        await watcher.states.waitForCount(3)
+
+        #expect(rig.runtime.prepareRequests.values.map(\.effect) == [Rig.glitchSource, Rig.otherSource], "nothing was prepared for the old choice")
+        #expect(watcher.states.values.map(\.selection) == [glitch.id, other.id, other.id])
+        #expect(watcher.states.values.map(\.outcome) == [.prepared, .prepared, .prepared])
+        await rig.stop(run)
+    }
+
+    @Test(
+        "a choice still reading its source when a newer choice completes prepares nothing: it answers unavailable, and the newer choice owns the effect"
+    )
+    func choiceOvertakenWhileReading() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.packages.holdSources()
+        let older = Task { await rig.subject.select(glitch.id) }
+        await rig.packages.heldSources.waitForCount(1)
+        let newer = Task { await rig.subject.select(other.id) }
+        await rig.packages.heldSources.waitForCount(2)
+        let reads = rig.packages.heldSources.values
+        rig.packages.completeSource(reads[1])
+        await rig.answer(2)
+        #expect(await newer.value == .prepared)
+        await watcher.states.waitForCount(2)
+        rig.packages.completeSource(reads[0])
+
+        #expect(await older.value == .unavailable(nil), "it prepared nothing, and says so")
+        #expect(rig.runtime.prepareRequests.values.map(\.effect) == [Rig.bundledSource, Rig.otherSource])
+        #expect(rig.settings.writes.values == [glitch.id, other.id], "both were chosen, in that order; the newest is the persisted one")
+        #expect(watcher.states.values.map(\.selection) == [bundled.id, other.id])
+        await rig.stop(run)
+    }
+
+    @Test("a choice still reading its source when the catalog loses that package prepares nothing: the fallback owns the effect")
+    func choiceOvertakenByAFallback() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.packages.holdSources()
+        let choice = Task { await rig.subject.select(glitch.id) }
+        await rig.packages.heldSources.waitForCount(1)
+        rig.packages.publish([bundled, other])  // glitch went away: the listing falls back and reads the bundled effect
+        await rig.packages.heldSources.waitForCount(2)
+        let reads = rig.packages.heldSources.values
+        rig.packages.completeSource(reads[1])
+        await watcher.states.waitForCount(2)
+        rig.packages.completeSource(reads[0])
+
+        #expect(await choice.value == .unavailable(nil))
+        #expect(rig.runtime.prepareRequests.count == 1, "the bundled effect was already the one prepared, and glitch never was")
+        #expect(watcher.states.values.last == Rig.state([bundled, other], selection: bundled))
+        #expect(rig.log.messages(in: .effect) == ["effect 'Chromatic Grain' selected", "effect 'glitch' is gone; back to 'Chromatic Grain'"])
+        await rig.stop(run)
+    }
+
     @Test("a hot reload overtaken by a choice publishes nothing, and the runtime was handed the choice last")
     func reloadOvertakenByChoice() async {
         let rig = Rig(persisted: glitch.id)
