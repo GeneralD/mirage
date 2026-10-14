@@ -236,6 +236,7 @@ struct EffectInteractorTests {
         rig.subject.select(.package("b"))
         await rig.developerLog.entries.waitForCount(2)
 
+        // A set, by design: a choice is its own task and the port promises no order between two of them.
         #expect(Set(rig.catalog.selections.values) == [.package("a"), .package("b")])
         #expect(rig.catalog.runs.count == 0)
     }

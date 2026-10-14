@@ -20,7 +20,12 @@ import Domain
 ///
 /// `select(_:)` does not wait for the answer. The outcome reaches the menu through
 /// `state`; the Interactor adds one log line, to `DeveloperLog` when the effect is
-/// running and to `ErrorLog` when it is not.
+/// running and to `ErrorLog` when it is not. It is not one of the queued commands, nor does it
+/// wait for an earlier `select`: each call is its own task, because the runtime lets a newer
+/// preparation overtake a slow compile (newest wins) and a queue here would hold the newer
+/// choice back behind the older one's compile. The price is that two calls made in the same
+/// instant may reach the UseCase in either order, which a person choosing from a menu does not
+/// produce.
 public final class EffectInteractorImpl: Sendable {
     private enum Command: Sendable {
         case start

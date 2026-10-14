@@ -126,7 +126,9 @@ Shared conventions:
   `CurrentValueSubject`. `start()` / `stop()` only queue a command; one task
   started with the Interactor carries them out in call order, waiting for the run
   it ends, so there is no lock and no actor hop that could reorder them, and a
-  second `start()` restarts the catalog. `MenuBarPresenter` (`Presenters`,
+  second `start()` restarts the catalog. `select` is not queued with them nor behind another
+  `select` (a newer choice must be able to overtake a slow compile), so two near-simultaneous
+  choices are unordered, as the port says. `MenuBarPresenter` (`Presenters`,
   `@MainActor`, no AppKit / SwiftUI) maps `state` to `@Published items`
   (`EffectMenuItem`) and `status` with a `@MainActor` task over an `AsyncStream`
   that a `sink` feeds (newest state wins), never `receive(on: DispatchQueue.main)`

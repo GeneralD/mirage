@@ -11,14 +11,17 @@ public protocol EffectInteractor: Sendable {
 
     /// Starts the catalog and begins publishing `state`. Calling it again while started
     /// restarts it: the first run ends before the next begins, so exactly one is alive.
-    /// Returns at once; commands are carried out in the order they were given.
+    /// Returns at once; `start()` and `stop()` are carried out in the order they were given.
     func start()
 
     /// Ends what `start()` began. `state` publishes nothing more until the next `start()`.
     /// Returns at once.
     func stop()
 
-    /// Chooses `id`. The answer arrives in `state` as the outcome.
+    /// Chooses `id`. The answer arrives in `state` as the outcome. A choice is not queued behind
+    /// `start()`, `stop()` or another choice, so a slow preparation never holds a newer choice
+    /// back; two calls made in the same instant may therefore reach the UseCase in either order.
+    /// A caller that needs an order waits for the first outcome in `state`.
     func select(_ id: EffectID)
 
     func openEffectsFolder()
