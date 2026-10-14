@@ -112,9 +112,9 @@ Shared conventions:
   attached), and `EffectRuntimeRepository` is `EffectRuntimeRepositoryImpl`.
   The MVP-B effect catalog (epic #42) follows the same rule: its seven modules
   start as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
-  `EmptySettings`, `BundledOnlyCatalog`, `BundledOnlyEffectCatalog`,
-  `StaticEffectInteractor`) that list the bundled effect alone, and the later
-  issues replace each in place. Their streams stay open until the consumer lets go.
+  `EmptySettings`, `BundledOnlyCatalog`, `StaticEffectInteractor`; the seventh,
+  `BundledOnlyEffectCatalog`, is already `EffectCatalogUseCaseImpl`) that list the
+  bundled effect alone, and the later issues replace each in place. Their streams stay open until the consumer lets go.
   The OS-boundary ports of the catalog (`FileSystemGateway`, `FileWatchGateway`,
   `WorkspaceGateway`, `AppDirectoriesProvider`, `KeyValueStoreGateway`) get their
   live with the issue that wraps the OS API (#44, #51); no pass-through resolves
@@ -147,6 +147,21 @@ Shared conventions:
   since the session's first frame (`EffectSession`, PTS minus the session
   start), `resolution` the output size in pixels (the grid is rounded up to
   whole threadgroups, so a kernel bounds-checks `gid`), `seed` 0 until MVP-C.
+- `EffectCatalogUseCaseImpl` (epic #42, D5 / D6 / D11) is the only caller of
+  `EffectRuntimeRepository.prepare`; the pipeline never calls it. Choosing an effect
+  prepares its source, and a listing in which the chosen effect's source changed
+  prepares it again (hot reload: the Repository lists again after every change, so an
+  edit arrives as a listing). A broken edit is `.compileFailed` and passes frames
+  through until it is fixed; there is no last-good library to keep. The persisted
+  choice is restored when a run starts; a chosen package that is gone, or broken,
+  falls back to the bundled effect, and that fallback is not remembered (only `select`
+  writes the settings). The decisions live in an internal actor, `EffectCatalogSession`
+  (off the frame path); `observe()` is a `CurrentValueSubject` broadcast subscribed
+  before the call returns, so any number of observers see the same states. Newest wins
+  is mirrored there: the generation is taken in the same actor turn that calls
+  `prepare`, so an answer overtaken by a newer request reaches its caller but publishes
+  nothing, whatever order the runtime answers in. The compile failure itself is logged
+  once by the runtime; the catalog logs the selection, the reload and the fallback.
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
   the owning UseCase module, never as a second UseCase.
@@ -280,6 +295,10 @@ Shared conventions:
   table, queue cap, presence ports, dead-name, `killHost()`); client counts on
   `FakeStreamOutput.connectClient/disconnectClient`; wider seed sets via
   `Seeds.range(0..<N)`.
+- The `EffectCatalogUseCase` suites answer each `prepare` by hand
+  (`EffectCatalogRig.answer`), in the order they write down; a state that equals the
+  last one is not published, so a hot reload that works is proven by the next listing
+  (a sentinel through the same pipeline), not by a state of its own.
 - The catalog fakes are driven by the test: `InMemoryFileSystemGateway`
   (`write` / `remove` between reads, `failRead(of:with:)`), `FakeFileWatchGateway.fire(path)`
   (`isBalanced` is the watch/stop invariant), `FakeEffectWatch.fire()` / `fire(request:)`,

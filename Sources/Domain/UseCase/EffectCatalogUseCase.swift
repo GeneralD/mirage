@@ -12,12 +12,16 @@ public protocol EffectCatalogUseCase: Sendable {
     func run() async
 
     /// The state now, then after every change (a new catalog, a selection, an outcome),
-    /// until the stream ends. It starts from the current value even when `run()` has
-    /// not produced one yet.
+    /// until the stream ends. It starts from the current state when there is one, which
+    /// is not before `run()` has listed the catalog and prepared the chosen effect, so an
+    /// observer may be opened before `run()` starts. Any number of observers may be open at
+    /// once, and each gets the same states. The stream ends when `run()` does.
     func observe() -> AsyncStream<EffectCatalogState>
 
     /// Chooses `id`: prepares it, remembers the choice, and answers how that went. The
-    /// same answer reaches `observe()` as `outcome`.
+    /// same answer reaches `observe()` as `outcome`, unless a newer `prepare` overtook this
+    /// one (the newest request's outcome is the one shown). An `.unavailable` answer
+    /// changes nothing, so it is only returned.
     func select(_ id: EffectID) async -> EffectSelectionOutcome
 
     /// Shows the effects folder to the user.
