@@ -273,7 +273,7 @@ Shared conventions:
   `Seeds.range(0..<N)`.
 - The catalog fakes are driven by the test: `InMemoryFileSystemGateway`
   (`write` / `remove` between reads, `failRead(of:with:)`), `FakeFileWatchGateway.fire(path)`
-  (`isBalanced` is the watch/stop invariant), `FakeEffectWatch.fire(request:)`,
+  (`isBalanced` is the watch/stop invariant), `FakeEffectWatch.fire()` / `fire(request:)`,
   `FakeEffectPackages.script(_:)`, `FakeEffectPackageRepository.publish(_:)` /
   `script(_:for:)`, `FakeEffectCatalogUseCase.publish(_:)` and
   `FakeEffectInteractor.publish(_:)`. A stream a fake hands out is registered
