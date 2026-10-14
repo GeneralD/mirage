@@ -166,7 +166,7 @@ let package = Package(
             name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository", "EffectRuntimeStateDataSource"] + testDependencies),
         .target(name: "PreviewRepository", dependencies: dependencies),
         .testTarget(name: "PreviewRepositoryTests", dependencies: ["PreviewRepository"] + testDependencies),
-        // Host only: the bundled effects and the packages as one catalog. Holds `BundledOnlyCatalog` for now.
+        // Host only: the bundled effects and the packages as one catalog, listed again after every change.
         .target(name: "EffectPackageRepository", dependencies: dependencies),
         .testTarget(name: "EffectPackageRepositoryTests", dependencies: ["EffectPackageRepository"] + testDependencies),
         // Host only: the chosen effect as the UseCases see it. Holds `EmptySettings` for now.
