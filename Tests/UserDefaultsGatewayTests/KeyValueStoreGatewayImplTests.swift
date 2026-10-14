@@ -5,26 +5,26 @@ import Testing
 @testable import UserDefaultsGateway
 
 /// The live smoke of the defaults gateway: a real `UserDefaults` suite named by a UUID, so the
-/// user's own defaults are never read or written, and removed again after every test.
-@Suite("KeyValueStoreGatewayImpl", .timeLimit(.minutes(1)))
+/// user's own defaults are never read or written, and emptied again after every test.
+///
+/// One name serves the whole run and the suite is serialized, so that no two tests hold the
+/// domain at once. Emptying a domain leaves an empty `<name>.plist` in `~/Library/Preferences`,
+/// written by the OS when the process ends and out of the test's reach (a delete from the test
+/// comes back at exit), so a name per test would leave one file per test on every run.
+@Suite("KeyValueStoreGatewayImpl", .serialized, .timeLimit(.minutes(1)))
 struct KeyValueStoreGatewayImplTests {
-    /// Runs `body` over a gateway on a fresh suite, then removes the suite and asserts it is gone.
+    private static let suiteName = UUID().uuidString
+
+    /// Runs `body` over a gateway on the run's suite, then removes the suite's persistent domain
+    /// and asserts it is gone.
     private func withSuite(_ body: (KeyValueStoreGatewayImpl, UserDefaults) throws -> Void) throws {
-        let name = UUID().uuidString
+        let name = Self.suiteName
         let defaults = try #require(UserDefaults(suiteName: name))
         defer {
             defaults.removePersistentDomain(forName: name)
             #expect(defaults.persistentDomain(forName: name) == nil, "the suite \(name) is removed after the test")
-            removeEmptiedPlist(of: name)
         }
         try body(KeyValueStoreGatewayImpl(defaults: defaults), defaults)
-    }
-
-    /// Emptying a domain leaves its (empty) plist in the user's Preferences folder. The suite is
-    /// named by a UUID and was ours alone, so the stub goes with it instead of piling up per run.
-    private func removeEmptiedPlist(of name: String) {
-        guard let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else { return }
-        try? FileManager.default.removeItem(at: library.appending(path: "Preferences/\(name).plist"))
     }
 
     @Test("a key that was never set reads as nil")
