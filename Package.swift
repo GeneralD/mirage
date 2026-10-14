@@ -80,6 +80,9 @@ let package = Package(
         .target(name: "AVFoundationGateway", dependencies: dependencies),
         .target(name: "IOSurfaceGateway", dependencies: dependencies),
         .testTarget(name: "IOSurfaceGatewayTests", dependencies: ["IOSurfaceGateway"] + testDependencies),
+        // Host only: the user's defaults as strings by key (`KeyValueStoreGatewayImpl`). Smoke runs on a UUID suite.
+        .target(name: "UserDefaultsGateway", dependencies: dependencies),
+        .testTarget(name: "UserDefaultsGatewayTests", dependencies: ["UserDefaultsGateway"] + testDependencies),
         // Host only: never a dependency of ExtensionDependencyInjection / ExtensionApp
         // (scripts/check-extension-no-metal.sh). Exercised by GPUSmokeTests, not here.
         .target(name: "MetalGateway", dependencies: dependencies),
@@ -204,13 +207,14 @@ let package = Package(
                 "BundledEffectDataSource", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
                 "PreviewDataSource", "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
+                "UserDefaultsGateway",
             ]
         ),
         .testTarget(
             name: "HostDependencyInjectionTests",
             dependencies: [
                 "HostDependencyInjection", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
-                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore", "UserDefaultsGateway",
             ] + testDependencies
         ),
         .target(

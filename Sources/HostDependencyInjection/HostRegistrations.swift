@@ -30,6 +30,7 @@ import PreviewRepository
 import SettingsRepository
 import ShaderCompilationDataSource
 import SystemExtensionGateway
+import UserDefaultsGateway
 import VirtualCameraRepository
 
 // Live values of the host process, on top of CommonDependencyInjection.
@@ -164,4 +165,8 @@ extension TextureCacheGatewayKey: DependencyKey {
 
 extension PreviewGatewayKey: DependencyKey {
     public static let liveValue: any PreviewGateway = MetalKitPreviewGatewayImpl()
+}
+
+extension KeyValueStoreGatewayKey: DependencyKey {
+    public static let liveValue: any KeyValueStoreGateway = KeyValueStoreGatewayImpl()
 }
