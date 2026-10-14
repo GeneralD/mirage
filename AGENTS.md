@@ -114,11 +114,26 @@ Shared conventions:
   start as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
   `EmptySettings`, `BundledOnlyCatalog`, `BundledOnlyEffectCatalog`,
   `StaticEffectInteractor`) that list the bundled effect alone, and the later
-  issues replace each in place. Their streams stay open until the consumer lets go.
+  issues replace each in place (`EffectInteractorImpl` has replaced
+  `StaticEffectInteractor`, #49). Their streams stay open until the consumer lets go.
   The OS-boundary ports of the catalog (`FileSystemGateway`, `FileWatchGateway`,
   `WorkspaceGateway`, `AppDirectoriesProvider`, `KeyValueStoreGateway`) get their
   live with the issue that wraps the OS API (#44, #51); no pass-through resolves
   them, so nothing reaches them before then.
+- The effects menu lane (epic #42, D9): `EffectInteractorImpl` owns the one task
+  that runs `EffectCatalogUseCase` (`run()` and the forwarding of `observe()` are
+  its two structured children) and publishes the state through a
+  `CurrentValueSubject`. `start()` / `stop()` only queue a command; one task
+  started with the Interactor carries them out in call order, waiting for the run
+  it ends, so there is no lock and no actor hop that could reorder them, and a
+  second `start()` restarts the catalog. `MenuBarPresenter` (`Presenters`,
+  `@MainActor`, no AppKit / SwiftUI) maps `state` to `@Published items`
+  (`EffectMenuItem`) and `status` with a `@MainActor` task over an `AsyncStream`
+  that a `sink` feeds (newest state wins), never `receive(on: DispatchQueue.main)`
+  and never `publisher.values` (an `AsyncPublisher` drops states sent while it
+  is applying the last one), and owns the Interactor's `start()` / `stop()`; its
+  suite waits with `settle` only. Details: the *Key Design Decisions* entry in
+  `docs/ARCHITECTURE.md`.
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
   `GPURenderer`) and holds no state and no executor; its memory is
