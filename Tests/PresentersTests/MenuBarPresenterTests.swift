@@ -14,6 +14,13 @@ struct MenuBarPresenterTests {
     private let broken = EffectCatalogEntry.fixture(
         .package("old"), displayName: "old", availability: .broken(.manifestInvalid(message: "no name")))
 
+    /// A catalog whose order is neither the display names' nor the keys' in any collation (the
+    /// bundled effect first, then a package by lowercase name, then one by capitalised name), so a
+    /// Presenter that sorted or regrouped the rows would show a different order.
+    private let zeta = EffectCatalogEntry.fixture(.bundled("Zeta"))
+    private let alpha = EffectCatalogEntry.fixture(.package("alpha"), author: "Ada")
+    private let beta = EffectCatalogEntry.fixture(.package("Beta"), availability: .broken(.manifestInvalid(message: "no name")))
+
     // MARK: - Items
 
     @Test("nothing is shown, and nothing is asked of the Interactor, until the Presenter starts")
@@ -27,17 +34,17 @@ struct MenuBarPresenterTests {
 
     @Test("the rows follow the catalog's order, the bundled effect first, one row per entry")
     func rowsInCatalogOrder() async {
-        let rig = PresenterRig(state: .fixture([chromatic, glitch, broken]))
+        let rig = PresenterRig(state: .fixture([zeta, alpha, beta]))
 
         await rig.start()
 
-        #expect(rig.presenter.items.map(\.id) == [.bundled("Chromatic Grain"), .package("glitch"), .package("old")])
-        #expect(rig.presenter.items.map(\.title) == ["Chromatic Grain", "Glitch", "old"])
+        #expect(rig.presenter.items.map(\.id) == [.bundled("Zeta"), .package("alpha"), .package("Beta")])
+        #expect(rig.presenter.items.map(\.title) == ["Zeta", "alpha", "Beta"])
     }
 
     @Test("exactly the chosen effect is selected")
     func selectionFlag() async {
-        let state = EffectCatalogState(entries: [chromatic, glitch, broken], selection: .package("glitch"))
+        let state = EffectCatalogState(entries: [zeta, alpha, beta], selection: .package("alpha"))
         let rig = PresenterRig(state: state)
 
         await rig.start()
@@ -47,12 +54,12 @@ struct MenuBarPresenterTests {
 
     @Test("a package that failed to load is disabled and says why; a ready one is enabled")
     func brokenIsDisabledWithItsReason() async {
-        let rig = PresenterRig(state: .fixture([chromatic, glitch, broken]))
+        let rig = PresenterRig(state: .fixture([zeta, alpha, beta]))
 
         await rig.start()
 
         #expect(rig.presenter.items.map(\.isEnabled) == [true, true, false])
-        #expect(rig.presenter.items.last?.detail == "manifest.json is invalid: no name")
+        #expect(rig.presenter.items.map(\.detail) == [nil, "Ada", "manifest.json is invalid: no name"])
     }
 
     @Test("a ready package's detail is its author; without one there is no detail")
