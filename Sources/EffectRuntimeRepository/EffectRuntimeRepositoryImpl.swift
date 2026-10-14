@@ -18,8 +18,8 @@ import Domain
 /// without knowing it exists (MVP-A has no effect menu); an `apply` that meets a
 /// compile still running waits for it rather than counting a failure. A failure
 /// is one the effect's author caused (`.compileFailed`, final until a newer
-/// `prepare`) or the runtime's (`.internalError`: no GPU context, tried again by
-/// the next `apply`). That retry runs at the camera's pace, so only the first failure
+/// `prepare`) or the runtime's (`.internalError`: no GPU context or a compiler
+/// service fault, tried again by the next `apply`). That retry runs at the camera's pace, so only the first failure
 /// of a streak and the recovery are logged; the state counts the rest.
 ///
 /// An `apply` that compiles an effect itself starts that compile on the `WorkRunner`
@@ -85,7 +85,7 @@ extension EffectRuntimeRepositoryImpl {
             developerLog.record(.effect, "effect '\(effect.name)' compiled\(Self.note(selected: selected, afterFailures: afterFailures))")
             return .success(())
         case .failed(let failure, let attempt):
-            // A missing GPU context is retried by every frame, which would log the same
+            // An environment failure is retried by every frame, which would log the same
             // failure at the camera's pace: the first of a streak is news, and the
             // recovery says how many there were. The rest is only counted.
             if attempt == 1, case .failure(let diagnostics) = outcome {
@@ -98,6 +98,6 @@ extension EffectRuntimeRepositoryImpl {
     private static func note(selected: Bool, afterFailures: Int) -> String {
         guard selected else { return ", but a newer one was prepared since" }
         guard afterFailures > 0 else { return "" }
-        return " after \(afterFailures) failed attempt\(afterFailures == 1 ? "" : "s") for want of a GPU context"
+        return " after \(afterFailures) failed attempt\(afterFailures == 1 ? "" : "s") for environment reasons"
     }
 }

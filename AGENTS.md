@@ -137,8 +137,12 @@ Shared conventions:
   MSL string constant (no `Bundle.main`). A source that does not compile is
   `.compileFailed` and final; a compile that found no GPU context is
   `.internalError` and retried by the next `apply`
-  (`ShaderDiagnostics.cause`; every compile error the Gateway returns is
-  `.source`), and that streak is logged once, plus its recovery.
+  (`ShaderDiagnostics.cause`), and that streak is logged once, plus its recovery.
+  Two things make a compile `.environment`: no GPU context, and
+  `MTLLibraryError.internal` (the compiler service failing) — the pure
+  `LibraryErrorMapping` in `ShaderCompilationDataSource` classifies the raw code
+  the Gateway reports, every other code is `.source`, and `LibraryErrorCodeTests`
+  pins the number to the SDK (epic #42, D7).
   `EffectUniforms.pass` is pure: `time` is seconds
   since the session's first frame (`EffectSession`, PTS minus the session
   start), `resolution` the output size in pixels (the grid is rounded up to

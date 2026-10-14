@@ -130,6 +130,17 @@ struct ShaderCompilationDataSourceTests {
         #expect(library.calls.count == 0)
     }
 
+    @Test(
+        "a context that cannot be made stays the environment's, whatever its code would mean as a compiler error",
+        arguments: [GPUError.noDevice, .commandQueueUnavailable])
+    func contextFailureIsNotReclassified(error: GPUError) async throws {
+        gpu.failMakeContext(with: error)
+        let diagnostics = try #require(await makeSubject().compile(effect).failure)
+
+        #expect(diagnostics.code != LibraryErrorMapping.internalErrorCode, "the code alone would classify it as the source's")
+        #expect(diagnostics.cause == .environment)
+    }
+
     @Test("a source the compiler rejects is the source's fault: its diagnostics carry the source cause")
     func sourceFailureCause() async throws {
         let assembled = ShaderSourceAssembly.assemble(effect.source)
@@ -137,6 +148,27 @@ struct ShaderCompilationDataSourceTests {
         let diagnostics = try #require(await makeSubject().compile(effect).failure)
 
         #expect(diagnostics.cause == .source)
+    }
+
+    @Test("a source without the entry point (code 0) is the source's fault")
+    func missingEntryPointCause() async throws {
+        let assembled = ShaderSourceAssembly.assemble(effect.source)
+        library.failCompile(of: assembled, with: ShaderDiagnostics(message: "no kernel named 'main0'", code: 0))
+        let diagnostics = try #require(await makeSubject().compile(effect).failure)
+
+        #expect(diagnostics.cause == .source)
+    }
+
+    @Test("the compiler service failing (MTLLibraryError.internal) is the environment's: the diagnostics keep their message and code")
+    func compilerServiceFailureCause() async throws {
+        let assembled = ShaderSourceAssembly.assemble(effect.source)
+        let line = ShaderSourceAssembly.authorLineOffset + 1
+        library.failCompile(
+            of: assembled,
+            with: ShaderDiagnostics(message: "program_source:\(line):1: error: compiler service", code: LibraryErrorMapping.internalErrorCode))
+        let diagnostics = try #require(await makeSubject().compile(effect).failure)
+
+        #expect(diagnostics == ShaderDiagnostics(message: "effect:1:1: error: compiler service", code: 2, cause: .environment))
     }
 
     @Test("nothing is cached: the same effect compiled twice reaches the compiler twice")
