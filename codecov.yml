@@ -23,4 +23,5 @@ ignore:
   - "Sources/AVFoundationGateway/**"
   - "Sources/MetalGateway/**"
   - "Sources/MetalKitPreviewGateway/**"
+  - "Sources/WorkspaceGateway/**"
   - "Apps/**"

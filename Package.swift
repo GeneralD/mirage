@@ -98,6 +98,8 @@ let package = Package(
         // Host only: DispatchSource file-system object sources over event-only descriptors. Smoke under a UUID temp directory.
         .target(name: "FileWatchGateway", dependencies: dependencies),
         .testTarget(name: "FileWatchGatewayTests", dependencies: ["FileWatchGateway"] + testDependencies),
+        // Host only: Finder through NSWorkspace. Coverage-ignored and thin (scripts/check-live-thin.sh); no smoke, CI must not open Finder.
+        .target(name: "WorkspaceGateway", dependencies: dependencies),
 
         // ── DataSource ──
         .target(name: "CameraDataSource", dependencies: dependencies),
