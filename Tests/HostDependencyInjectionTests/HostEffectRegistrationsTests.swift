@@ -47,7 +47,7 @@ struct HostEffectRegistrationsTests {
             #expect(settingsRepository is EmptySettings)
             #expect(effectPackages is NoPackages)
             #expect(effectWatch is NeverChangingWatch)
-            #expect(preferences is EmptyPreferences)
+            #expect(preferences is PreferencesDataStoreImpl)
             #expect(keyValueStoreGateway is KeyValueStoreGatewayImpl)
         }
     }

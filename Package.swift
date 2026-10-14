@@ -134,7 +134,7 @@ let package = Package(
         .testTarget(name: "EffectWatchDataSourceTests", dependencies: ["EffectWatchDataSource"] + testDependencies),
 
         // ── DataStore ──
-        // Host only: the chosen effect, kept between launches. Holds `EmptyPreferences` for now.
+        // Host only: the chosen effect, kept between launches in the user's defaults (`KeyValueStoreGateway`).
         .target(name: "PreferencesDataStore", dependencies: dependencies),
         .testTarget(name: "PreferencesDataStoreTests", dependencies: ["PreferencesDataStore"] + testDependencies),
 

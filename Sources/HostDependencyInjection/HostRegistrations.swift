@@ -136,7 +136,7 @@ extension EffectWatchKey: DependencyKey {
 }
 
 extension PreferencesKey: DependencyKey {
-    public static let liveValue: any Preferences = EmptyPreferences()
+    public static let liveValue: any Preferences = PreferencesDataStoreImpl()
 }
 
 extension CaptureSessionGatewayKey: DependencyKey {

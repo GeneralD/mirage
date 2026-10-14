@@ -5,7 +5,8 @@ public enum LogSubsystem: String, Sendable, Hashable, CaseIterable {
     case pipeline
     case surfaces
     /// The host pipeline's effect stage (its per-second summary and its drops) and
-    /// the effect runtime (its compiles and their failures).
+    /// the effect runtime (its compiles and their failures), and the stored effect selection
+    /// (a stored string that does not decode).
     case effect
     /// GPU work below the effect runtime (command buffers and their completions).
     case gpu
