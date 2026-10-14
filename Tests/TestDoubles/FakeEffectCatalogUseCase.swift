@@ -40,7 +40,7 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     public func publish(_ state: EffectCatalogState) {
         self.state.withLock { locked in
             locked.current = state
-            locked.continuations.values.forEach { $0.yield(state) }
+            for continuation in locked.continuations.values { continuation.yield(state) }
         }
     }
 

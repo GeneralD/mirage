@@ -56,7 +56,7 @@ public final class FakeFileWatchGateway: FileWatchGateway, Sendable {
     @discardableResult
     public func fire(_ path: String) -> Int {
         let listeners = state.withLock { $0.armed.filter { !$0.isStopped && $0.watch.path == path }.map(\.onChange) }
-        listeners.forEach { $0() }
+        for listener in listeners { listener() }
         return listeners.count
     }
 

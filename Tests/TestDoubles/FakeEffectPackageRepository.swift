@@ -35,7 +35,7 @@ public final class FakeEffectPackageRepository: EffectPackageRepository, Sendabl
     public func publish(_ entries: [EffectCatalogEntry]) {
         state.withLock { state in
             state.latest = entries
-            state.continuations.values.forEach { $0.yield(entries) }
+            for continuation in state.continuations.values { continuation.yield(entries) }
         }
     }
 
