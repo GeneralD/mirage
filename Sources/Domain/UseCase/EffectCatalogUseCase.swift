@@ -20,8 +20,20 @@ public protocol EffectCatalogUseCase: Sendable {
 
     /// Chooses `id`: prepares it, remembers the choice, and answers how that went. The
     /// same answer reaches `observe()` as `outcome`, unless a newer `prepare` overtook this
-    /// one (the newest request's outcome is the one shown). An `.unavailable` answer
-    /// changes nothing, so it is only returned.
+    /// one (the newest request's outcome is the one shown).
+    ///
+    /// What an `.unavailable` answer means depends on why there was nothing to prepare:
+    /// - A broken package, or an id the catalog does not have, is refused up front: the
+    ///   answer is only returned, and nothing changes (no choice, nothing remembered,
+    ///   nothing published, the runtime not called).
+    /// - A ready package becomes the choice and is remembered before its source is read.
+    ///   When the source cannot be read just then, the answer is `.unavailable(problem)`
+    ///   and the choice and the remembered one stand, the runtime keeps the effect it
+    ///   has, and the problem is the outcome `observe()` shows until a listing reads the
+    ///   source again.
+    /// - A choice overtaken while its source was being read (another choice, or the
+    ///   catalog losing the package, took the effect) answers `.unavailable(nil)`: it
+    ///   prepared nothing, and the newer one owns the effect and the outcome.
     func select(_ id: EffectID) async -> EffectSelectionOutcome
 
     /// Shows the effects folder to the user.

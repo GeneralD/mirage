@@ -164,6 +164,28 @@ struct EffectCatalogUseCaseTests {
         await rig.stop(run)
     }
 
+    @Test(
+        "choosing a ready package whose files cannot be read keeps and remembers the choice, shows the problem as the outcome, and leaves the runtime alone"
+    )
+    func selectUnreadable() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+        let problem = EffectPackageProblem.unreadable(message: "busy")
+        rig.packages.script(.failure(problem), for: glitch.id)
+
+        #expect(await rig.subject.select(glitch.id) == .unavailable(problem))
+        await watcher.states.waitForCount(2)
+
+        #expect(rig.runtime.prepareRequests.values.map(\.effect) == [Rig.bundledSource], "the runtime keeps the effect it has")
+        #expect(rig.settings.writes.values == [glitch.id], "the choice was made before the files were read, and stands")
+        #expect(rig.log.contains("effect 'Glitch' cannot be read"))
+        #expect(watcher.states.values.last == Rig.state(selection: glitch, outcome: .unavailable(problem)))
+        await rig.stop(run)
+    }
+
     @Test("a choice before the run has listed anything has nothing to choose from")
     func selectBeforeTheFirstListing() async {
         let rig = Rig()

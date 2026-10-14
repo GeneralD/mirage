@@ -30,7 +30,9 @@ public enum EffectSelectionOutcome: Sendable, Hashable {
     /// The runtime could not compile it. The pipeline passes frames through
     /// (epic #42, D5); fixing the source selects it again by itself.
     case failed(EffectFailure)
-    /// There was nothing to prepare: the package is broken (its problem), or no longer there (`nil`).
+    /// There was nothing to prepare: the package is broken, or its files could not be read just now
+    /// (its problem); or the effect is not there to be chosen, or another choice took it over before
+    /// this one could prepare anything (`nil`).
     case unavailable(EffectPackageProblem?)
 }
 
