@@ -5,7 +5,8 @@ import TestSupport
 /// `EffectPackageRepository` the test pushes catalogs into: `publish(entries)` is the
 /// folder changing under the subject. Like the live port, a `catalog()` stream starts
 /// at once with the catalog as it stands (the last one published, or the one the fake
-/// was made with), then yields every publish; a fake that
+/// was made with), then yields every publish, an identical catalog included (the live
+/// port lists again after every change, and a shader edit changes no row); a fake that
 /// was given nothing yields nothing until the first publish. `source(of:)` answers what
 /// `script(_:for:)` set, and an id nobody scripted is a reported issue answering
 /// `.sourceMissing`.

@@ -85,6 +85,21 @@ struct FakeEffectPackageRepositoryTests {
         #expect(repository.folderOpens.count == 1)
     }
 
+    @Test("a catalog published again with the same entries is yielded again: a shader edit changes no row, and the listing is how it arrives")
+    func identicalPublishIsYieldedAgain() async {
+        let repository = FakeEffectPackageRepository(entries: [chromatic, glitch])
+        let seen = Collector<[EffectCatalogEntry]>()
+        let consumer = Task { for await entries in repository.catalog() { seen.append(entries) } }
+        await seen.waitForCount(1)
+
+        repository.publish([chromatic, glitch])
+        repository.publish([chromatic, glitch])
+        await seen.waitForCount(3)
+        consumer.cancel()
+        await consumer.value
+        #expect(seen.values == [[chromatic, glitch], [chromatic, glitch], [chromatic, glitch]])
+    }
+
     @Test("held, source(of:) is recorded at the call and parked until the test completes it, in any order, each exactly once")
     func heldSourcesAreManual() async throws {
         let repository = FakeEffectPackageRepository()

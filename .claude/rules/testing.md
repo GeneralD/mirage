@@ -191,7 +191,8 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   returns, so `fire(request:)` / `publish(_:)` right after the call cannot be lost, and
   their `terminations` collector fires when the consumer lets go. A test keeps such a
   stream alive with `withExtendedLifetime` (a dropped iterator cancels it).
-  An unscripted `FakeEffectPackageRepository.source(of:)` reports an issue and
+  `FakeEffectPackageRepository.publish(_:)` yields an equal catalog again, as the live port
+  does after an edit that changes no row. An unscripted `source(of:)` reports an issue and
   answers `.sourceMissing`; `holdSources()` parks every read until `completeSource(_:with:)`
   (any order, exactly once, the answer being what was scripted when the read began, requests
   tagged with their issuing instance like the other manual-completion fakes, `heldSources`

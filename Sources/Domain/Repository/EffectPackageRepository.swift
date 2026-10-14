@@ -12,6 +12,10 @@ public protocol EffectPackageRepository: Sendable {
     ///   so a consumer never waits for a change to see the catalog.
     /// - The bundled effect is always first; packages follow by name, a broken one as
     ///   an entry with `.broken`, never left out.
+    /// - Every change is listed, even when the catalog it leaves is equal to the last one:
+    ///   a shader edit changes no row, and the listing is the only way the effect catalog
+    ///   learns that the chosen effect's source did (hot reload). A consumer reads
+    ///   `source(of:)` after each element and so must not be spared the repeat.
     /// - Ending the stream ends the watch under it.
     func catalog() -> AsyncStream<[EffectCatalogEntry]>
 
