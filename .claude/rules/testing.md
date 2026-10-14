@@ -190,8 +190,13 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `FakeEffectPackageRepository` register a stream before `changes(of:)` / `catalog()`
   returns, so `fire(request:)` / `publish(_:)` right after the call cannot be lost, and
   their `terminations` collector fires when the consumer lets go. A test keeps such a
-  stream alive with `withExtendedLifetime` (a dropped iterator cancels it). An unscripted
-  `FakeEffectPackageRepository.source(of:)` reports an issue and answers `.sourceMissing`;
+  stream alive with `withExtendedLifetime` (a dropped iterator cancels it).
+  An unscripted `FakeEffectPackageRepository.source(of:)` reports an issue and
+  answers `.sourceMissing`; `holdSources()` parks every read until `completeSource(_:with:)`
+  (any order, exactly once, the answer being what was scripted when the read began, requests
+  tagged with their issuing instance like the other manual-completion fakes, `heldSources`
+  and `pendingSourceCount` to see them), so "a select arrives while a listing waits for a
+  source" is a sequence a test writes down;
   `FakeEffectCatalogUseCase.run()` parks on `suspendUntilCancelled` and counts
   `runCancellations`; `FakeEffectInteractor.publish(_:)` pushes into its
   `CurrentValueSubject`.

@@ -84,4 +84,80 @@ struct FakeEffectPackageRepositoryTests {
         repository.openEffectsFolder()
         #expect(repository.folderOpens.count == 1)
     }
+
+    @Test("held, source(of:) is recorded at the call and parked until the test completes it, in any order, each exactly once")
+    func heldSourcesAreManual() async throws {
+        let repository = FakeEffectPackageRepository()
+        let v1 = EffectSource(name: "Glitch", source: "glitch v1")
+        let other = EffectSource(name: "Other", source: "other v1")
+        repository.script(.success(v1), for: .package("glitch"))
+        repository.script(.success(other), for: .package("other"))
+        repository.holdSources()
+
+        let first = Task { await repository.source(of: .package("glitch")) }
+        await repository.heldSources.waitForCount(1)
+        let second = Task { await repository.source(of: .package("other")) }
+        await repository.heldSources.waitForCount(2)
+        let requests = repository.heldSources.values
+        #expect(requests.map(\.effect) == [.package("glitch"), .package("other")])
+        #expect(repository.sourceRequests.values == [.package("glitch"), .package("other")])
+        #expect(repository.pendingSourceCount == 2)
+
+        #expect(repository.completeSource(requests[1]))
+        #expect(await second.value == .success(other))
+        #expect(repository.pendingSourceCount == 1, "the other read is still parked")
+        #expect(repository.completeSource(requests[0]))
+        #expect(await first.value == .success(v1))
+        #expect(!repository.completeSource(requests[0]), "a second completion has nothing to resume")
+        #expect(repository.pendingSourceCount == 0)
+    }
+
+    @Test("a held read answers what was scripted when it began, unless the test completes it with something else")
+    func heldSourceAnswersWhatItSaw() async throws {
+        let repository = FakeEffectPackageRepository()
+        let v1 = EffectSource(name: "Glitch", source: "glitch v1")
+        repository.script(.failure(.unreadable(message: "mid-save")), for: .package("glitch"))
+        repository.holdSources()
+
+        let early = Task { await repository.source(of: .package("glitch")) }
+        await repository.heldSources.waitForCount(1)
+        repository.script(.success(v1), for: .package("glitch"))
+        let late = Task { await repository.source(of: .package("glitch")) }
+        await repository.heldSources.waitForCount(2)
+        let requests = repository.heldSources.values
+        repository.completeSource(requests[0])
+        repository.completeSource(requests[1], with: .failure(.manifestMissing))
+
+        #expect(await early.value == .failure(.unreadable(message: "mid-save")), "the files as they were when this read began")
+        #expect(await late.value == .failure(.manifestMissing), "the test's own answer wins")
+    }
+
+    @Test("reads made before the hold, and after it is lifted, answer at once; a request from another repository resumes nothing")
+    func holdIsOptIn() async throws {
+        let repository = FakeEffectPackageRepository()
+        let stranger = FakeEffectPackageRepository()
+        let v1 = EffectSource(name: "Glitch", source: "glitch v1")
+        repository.script(.success(v1), for: .package("glitch"))
+        stranger.script(.success(v1), for: .package("glitch"))
+
+        #expect(await repository.source(of: .package("glitch")) == .success(v1), "not held by default")
+        repository.holdSources()
+        let parked = Task { await repository.source(of: .package("glitch")) }
+        await repository.heldSources.waitForCount(1)
+        repository.holdSources(false)
+        #expect(await repository.source(of: .package("glitch")) == .success(v1), "the hold was lifted")
+        #expect(repository.heldSources.count == 1)
+
+        stranger.holdSources()
+        let foreign = Task { await stranger.source(of: .package("glitch")) }
+        await stranger.heldSources.waitForCount(1)
+        let request = try #require(repository.heldSources.last)
+        #expect(!stranger.completeSource(request), "ids restart at 1 per instance: the origin tells a stranger's request")
+        #expect(stranger.pendingSourceCount == 1)
+        #expect(repository.pendingSourceCount == 1, "and the other repository's parked read is untouched")
+
+        repository.completeSource(request)
+        stranger.completeSource(try #require(stranger.heldSources.last))
+        _ = await (parked.value, foreign.value)
+    }
 }
