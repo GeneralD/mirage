@@ -419,6 +419,19 @@ struct EffectPackageRepositoryTests {
         #expect(rig.errors.entries.count == 0, "taking one catalog and stopping is not a watch lost")
     }
 
+    @Test("a catalog made and dropped without ever being iterated stops the work and leaves no watch armed")
+    func droppedWithoutIterating() async {
+        let rig = Rig(inventory: Self.inventory([Self.ready("glow")]))
+
+        _ = rig.subject.catalog()
+        await rig.waitForEnd()
+
+        // Eager: the task may have been cancelled before or after it armed a watch, so the count is not fixed.
+        #expect(rig.watch.activeCount == 0, "no watch is left armed")
+        #expect(rig.watch.requests.count == rig.watch.terminations.count, "every watch it armed was let go")
+        #expect(rig.errors.entries.count == 0, "dropping the stream is not a watch lost")
+    }
+
     @Test("a watch that ends by itself ends the catalog with a logged error, and the folder is not listed in a loop")
     func watchEndingByItself() async {
         let rig = Rig(inventory: Self.inventory([Self.ready("glow")]), effectWatch: EndedWatch())
