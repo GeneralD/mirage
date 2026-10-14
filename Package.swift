@@ -91,6 +91,10 @@ let package = Package(
         .target(name: "CMIOExtensionGateway", dependencies: dependencies),
         .target(name: "DispatchExecutorGateway", dependencies: dependencies),
         .testTarget(name: "DispatchExecutorGatewayTests", dependencies: ["DispatchExecutorGateway"] + testDependencies),
+        // Host only (with FileWatchGateway, WorkspaceGateway and AppDirectories): the effects folder's
+        // file system. Smoke under a UUID temp directory; nothing above resolves it until EffectPackageDataSource.
+        .target(name: "FileSystemGateway", dependencies: dependencies),
+        .testTarget(name: "FileSystemGatewayTests", dependencies: ["FileSystemGateway"] + testDependencies),
 
         // ── DataSource ──
         .target(name: "CameraDataSource", dependencies: dependencies),
