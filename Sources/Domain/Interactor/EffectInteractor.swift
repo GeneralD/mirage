@@ -9,10 +9,13 @@ public protocol EffectInteractor: Sendable {
     /// The catalog's state, the current one first once `start()` has run.
     var state: AnyPublisher<EffectCatalogState, Never> { get }
 
-    /// Starts the catalog and begins publishing `state`. Calling it again while started does nothing.
+    /// Starts the catalog and begins publishing `state`. Calling it again while started
+    /// restarts it: the first run ends before the next begins, so exactly one is alive.
+    /// Returns at once; commands are carried out in the order they were given.
     func start()
 
     /// Ends what `start()` began. `state` publishes nothing more until the next `start()`.
+    /// Returns at once.
     func stop()
 
     /// Chooses `id`. The answer arrives in `state` as the outcome.
