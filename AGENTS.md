@@ -159,7 +159,8 @@ Shared conventions:
   `defaultEffect` (another bundled id `.sourceMissing`), a package is its source
   when `.ready`, its problem when `.broken`, `.manifestMissing` when gone. The
   loop is a `Task` off the frame path, cancelled when the stream ends; a watch
-  that ends by itself ends the catalog and logs an error.
+  that ends by itself ends the catalog and logs an error, and the task logs its
+  end (whichever side it came from) to the developer log.
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
   the owning UseCase module, never as a second UseCase.

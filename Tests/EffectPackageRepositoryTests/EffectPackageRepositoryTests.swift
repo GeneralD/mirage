@@ -52,6 +52,12 @@ struct EffectPackageRepositoryTests {
                 EffectPackageRepositoryImpl()
             }
         }
+
+        /// Suspends until the catalog's task has done all its work, which it ends by recording that
+        /// the catalog ended. What it logged or armed before that is there to be read, without a race.
+        func waitForEnd() async {
+            await developer.entries.waitFor { $0.message == "catalog ended" }
+        }
     }
 
     private static let bundledEffect = EffectSource(name: "Chromatic Grain", source: "kernel void effect() {}")
@@ -221,8 +227,10 @@ struct EffectPackageRepositoryTests {
         #expect(rig.watch.fire())
         await seen.waitForCount(2)
         await end(consumer)
+        await rig.waitForEnd()
 
-        #expect(rig.developer.messages(in: .effect) == ["catalog listed: 3 entries, 1 broken", "catalog listed: 3 entries, 0 broken"])
+        #expect(
+            rig.developer.messages(in: .effect) == ["catalog listed: 3 entries, 1 broken", "catalog listed: 3 entries, 0 broken", "catalog ended"])
         #expect(rig.errors.entries.count == 0, "a listing is not an error")
     }
 
@@ -294,12 +302,13 @@ struct EffectPackageRepositoryTests {
         await seen.waitForCount(1)
 
         await end(consumer)
-        await rig.watch.terminations.waitForCount(1)
+        await rig.waitForEnd()
 
         #expect(rig.watch.terminations.values == [0])
         #expect(rig.watch.activeCount == 0)
         #expect(!rig.watch.fire(), "no stream is left to hear a change")
         #expect(rig.packages.listingCalls.count == 1)
+        #expect(rig.errors.entries.count == 0, "the consumer letting go is not a watch lost")
     }
 
     @Test("the watch that ends is the current one, however many times the catalog was listed before")
@@ -312,10 +321,11 @@ struct EffectPackageRepositoryTests {
         await seen.waitForCount(2)
 
         await end(consumer)
-        await rig.watch.terminations.waitForCount(2)
+        await rig.waitForEnd()
 
         #expect(rig.watch.terminations.values.sorted() == [0, 1], "each watch ended exactly once")
         #expect(rig.watch.activeCount == 0)
+        #expect(rig.errors.entries.count == 0, "the consumer letting go is not a watch lost")
     }
 
     @Test("a consumer that takes the first catalog and stops leaves no watch behind")
@@ -323,10 +333,12 @@ struct EffectPackageRepositoryTests {
         let rig = Rig(inventory: Self.inventory([Self.ready("glow")]))
 
         #expect(await firstCatalog(of: rig.subject) != nil)
-        await rig.watch.terminations.waitForCount(1)
+        await rig.waitForEnd()
 
         #expect(rig.watch.requests.count == 1)
+        #expect(rig.watch.terminations.values == [0])
         #expect(rig.watch.activeCount == 0)
+        #expect(rig.errors.entries.count == 0, "taking one catalog and stopping is not a watch lost")
     }
 
     @Test("a watch that ends by itself ends the catalog with a logged error, and the folder is not listed in a loop")
@@ -339,6 +351,7 @@ struct EffectPackageRepositoryTests {
         #expect(rig.packages.listingCalls.count == 1)
         #expect(rig.errors.messages(in: .effect).contains { $0.contains("watch ended on its own") }, "the lost watch is an error")
         #expect(!rig.developer.contains("watch ended on its own"), "and only the error log has it")
+        #expect(rig.developer.messages(in: .effect).last == "catalog ended", "the catalog says it is over, whichever side ended it")
     }
 
     // MARK: - source(of:)

@@ -21,7 +21,8 @@ import Foundation
 /// folds events on the injected clock), and a listing that looks the same may still be
 /// a package whose `effect.metal` changed, which is what the UseCase re-reads to find
 /// out. Ending the stream (the consumer lets go) cancels the task, which lets go of
-/// the watch it armed.
+/// the watch it armed. When its work is over the task records that the catalog ended,
+/// on whichever side the end came from: the consumer, or the watch.
 ///
 /// **The order** is decided here, not by the DataSource, which promises none: the
 /// bundled effect first, then the packages by display name — case-insensitive, numeric
@@ -51,6 +52,7 @@ extension EffectPackageRepositoryImpl: EffectPackageRepository {
         let (stream, continuation) = AsyncStream<[EffectCatalogEntry]>.makeStream()
         let keepingCurrent = Task { [self] in
             while await listAndWatch(into: continuation) {}
+            developerLog.record(.effect, "catalog ended")
             continuation.finish()
         }
         continuation.onTermination = { _ in keepingCurrent.cancel() }
