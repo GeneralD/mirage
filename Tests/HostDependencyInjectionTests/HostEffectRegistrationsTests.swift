@@ -20,8 +20,8 @@ import UserDefaultsGateway
 /// Every resolution here happens inside `withDependencies { $0.context = .live }`. The live
 /// values in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its
 /// first resolution and keeps it for the life of the process (the test bundle is one
-/// process), and a pass-through that resolves a port of its own (`BundledOnlyCatalog`
-/// resolves `bundledEffects`) captures the scope it is built in. These keys are resolved
+/// process), and a live value that resolves a port of its own (`EffectPackageRepositoryImpl`
+/// resolves `effectPackages`, `effectWatch` and `bundledEffects`) captures the scope it is built in. These keys are resolved
 /// by no other suite, and none of them is overridden here, so what each one captures is
 /// the live context whichever test builds it first. Add no override in this suite and no
 /// test that resolves one of these keys in another.
@@ -43,7 +43,7 @@ struct HostEffectRegistrationsTests {
 
             #expect(effectInteractor is StaticEffectInteractor)
             #expect(effectCatalogUseCase is BundledOnlyEffectCatalog)
-            #expect(effectPackageRepository is BundledOnlyCatalog)
+            #expect(effectPackageRepository is EffectPackageRepositoryImpl)
             #expect(settingsRepository is SettingsRepositoryImpl)
             #expect(effectPackages is NoPackages)
             #expect(effectWatch is NeverChangingWatch)

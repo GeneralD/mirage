@@ -12,6 +12,9 @@ public protocol EffectWatch: Sendable {
     ///   after the call is not lost, and a path that cannot be watched is skipped
     ///   (the next listing arms again).
     /// - A burst is one element, however many events it was made of.
+    /// - The stream never ends on its own, even when nothing could be armed: only the
+    ///   consumer ends it. `EffectPackageRepository` takes an end it did not cause as
+    ///   the watch being gone, and ends the catalog it keeps current.
     /// - Ending the stream (the consumer's task is cancelled or it stops iterating)
     ///   stops every watch it armed, exactly once each.
     func changes(of watchSet: EffectWatchSet) -> AsyncStream<Void>
