@@ -7,7 +7,8 @@ import Testing
 /// Smoke of the live gateway against real kernel file events, under a UUID-named temporary
 /// directory that each test removes. The OS coalesces events, so every assertion is "at least
 /// one"; it never counts how many arrived (coalescing is `EffectWatchDataSource`'s, under a
-/// `TestClock`). Waits are on the callback itself (`Collector`), bounded by the suite's limit.
+/// `TestClock`). Waits are on the callback itself (`Collector`), bounded by the suite's limit; the one
+/// exception is the descriptor check, which has no callback and polls the process's descriptor table.
 @Suite("FileWatchGatewayImpl", .timeLimit(.minutes(1)))
 struct FileWatchGatewayImplTests {
     private let gateway = FileWatchGatewayImpl()
@@ -102,6 +103,29 @@ struct FileWatchGatewayImplTests {
         try await provokeEvent(into: sentinelEvents, in: scratch, as: "two")
 
         #expect(stoppedEvents.count == 0)
+    }
+
+    @Test("stop() closes the descriptor a watch opened, for a directory watch and for a file watch")
+    func stopClosesTheDescriptors() async throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let file = scratch.appending("effect.metal")
+        try "hello".write(toFile: file, atomically: true, encoding: .utf8)
+        let directoryWatch = try gateway.watch(directory: scratch.path) {}
+        let fileWatch = try gateway.watch(file: file) {}
+        // The probe has to see each descriptor while it is open, or "none left" below would prove nothing.
+        #expect(openDescriptorCount(at: scratch.path) == 1)
+        #expect(openDescriptorCount(at: file) == 1)
+
+        directoryWatch.stop()
+        fileWatch.stop()
+
+        // The cancel handler closes the descriptor on the source's queue, after stop() has returned, and the
+        // descriptor table is readable-only external state: poll it, with room for a loaded machine.
+        let closed = await pollUntil(timeout: .seconds(10)) {
+            openDescriptorCount(at: scratch.path) == 0 && openDescriptorCount(at: file) == 0
+        }
+        #expect(closed)
     }
 
     @Test("a path that does not exist cannot be watched, as a directory or as a file")
