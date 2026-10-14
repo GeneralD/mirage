@@ -43,6 +43,31 @@ struct EffectInteractorTests {
         await rig.catalog.runCancellations.waitForCount(2)
     }
 
+    @Test("a second start waits for the run it ends to return before it begins the next: the two never overlap")
+    func restartWaitsForTheRunItEnds() async {
+        // Whether a new run overtakes one that is still returning depends on how the pool
+        // schedules the two tasks, and a test cannot wait for something that must not happen.
+        // An Interactor that does not wait for the old run therefore fails some rounds and not
+        // others (about 19 in 20 with the wait removed), so the rounds are many enough that it
+        // fails one. One that waits fails none: the order below is the only one it can produce.
+        for _ in 0..<20 {
+            let rig = InteractorRig()
+            rig.catalog.holdCancelledRuns()
+
+            rig.subject.start()
+            await rig.catalog.runs.waitForCount(1)
+            rig.subject.start()
+            await rig.catalog.runCancellations.waitForCount(1)
+            rig.catalog.releaseCancelledRuns()
+            await rig.catalog.runs.waitForCount(2)
+
+            #expect(rig.catalog.runEvents.values == [.started(1), .ended(1), .started(2)])
+
+            rig.subject.stop()
+            await rig.catalog.runCancellations.waitForCount(2)
+        }
+    }
+
     @Test("stop before any start runs nothing, and a start after it still runs the catalog once")
     func stopBeforeStart() async {
         let rig = InteractorRig()

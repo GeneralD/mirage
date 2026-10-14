@@ -193,8 +193,11 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   stream alive with `withExtendedLifetime` (a dropped iterator cancels it). An unscripted
   `FakeEffectPackageRepository.source(of:)` reports an issue and answers `.sourceMissing`;
   `FakeEffectCatalogUseCase.run()` parks on `suspendUntilCancelled` and counts
-  `runCancellations`; `FakeEffectInteractor.publish(_:)` pushes into its
-  `CurrentValueSubject`.
+  `runCancellations`, and `runEvents` orders when each run began and returned;
+  `holdCancelledRuns()` keeps a cancelled run in `run()` (ignoring the cancel, like the
+  other manual-completion fakes) until `releaseCancelledRuns()`, which is how a subject
+  that must wait for the run it ends is proven; `FakeEffectInteractor.publish(_:)`
+  pushes into its `CurrentValueSubject`.
 
 ## Property tests
 

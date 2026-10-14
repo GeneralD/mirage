@@ -10,17 +10,39 @@ import TestSupport
 /// `run()` records its start and then does what the live one does: it runs until the
 /// caller's task is cancelled (`suspendUntilCancelled`) and records that cancel, so a
 /// test that stops the Interactor proves the task it owned was cancelled.
+///
+/// The live `run()` has teardown to finish once it is cancelled (it stops its file watch),
+/// and a subject that starts the next run must wait for it. `holdCancelledRuns()` makes
+/// a cancelled `run()` model that: it records the cancel and then stays in `run()`,
+/// ignoring the cancellation as the other manual-completion fakes do, until
+/// `releaseCancelledRuns()`. `runEvents` records when each run began and returned, in one
+/// order, so a test can tell "the next run began after the old one returned" from "while it was
+/// still returning".
 public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
+    /// When a `run()` call began or returned, counting the calls from 1.
+    public enum RunEvent: Equatable, Sendable {
+        case started(Int)
+        case ended(Int)
+    }
+
+    private typealias Held = CheckedContinuation<Void, Never>
+
     private struct State {
         var current: EffectCatalogState?
         var continuations: [Int: AsyncStream<EffectCatalogState>.Continuation] = [:]
         var nextStream = 0
         var selectOutcome: EffectSelectionOutcome
+        var runCount = 0
+        var holdsCancelledRuns = false
+        var heldRuns: [Held] = []
     }
 
     private let state: Locked<State>
     /// One entry per `run()` call that has started.
     public let runs = Collector<Void>()
+    /// The start and the return of every `run()`, in the order they happened. A start is
+    /// recorded before `runs` counts it.
+    public let runEvents = Collector<RunEvent>()
     /// One entry per `run()` that ended because its task was cancelled.
     public let runCancellations = Collector<Void>()
     /// One entry per `observe()` call.
@@ -50,8 +72,34 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     }
 
     public func run() async {
-        runs.append(())
-        if await suspendUntilCancelled() { runCancellations.append(()) }
+        let number = state.withLock { locked -> Int in
+            locked.runCount += 1
+            runEvents.append(.started(locked.runCount))
+            runs.append(())
+            return locked.runCount
+        }
+        if await suspendUntilCancelled() {
+            runCancellations.append(())
+            await holdIfAsked()
+        }
+        runEvents.append(.ended(number))
+    }
+
+    /// From now on a `run()` that is cancelled stays in `run()`, after recording the cancel,
+    /// until `releaseCancelledRuns()`.
+    public func holdCancelledRuns() {
+        state.withLock { $0.holdsCancelledRuns = true }
+    }
+
+    /// Lets every held run return and ends the holding: a run cancelled afterwards returns at once.
+    public func releaseCancelledRuns() {
+        let held = state.withLock { locked -> [Held] in
+            locked.holdsCancelledRuns = false
+            let held = locked.heldRuns
+            locked.heldRuns = []
+            return held
+        }
+        for run in held { run.resume() }
     }
 
     public func observe() -> AsyncStream<EffectCatalogState> {
@@ -75,6 +123,19 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
 
     public func openEffectsFolder() {
         folderOpens.append(())
+    }
+
+    /// Waits for `releaseCancelledRuns()` when the holding is on. Registered or skipped in one
+    /// critical section, so a release cannot slip between the check and the wait.
+    private func holdIfAsked() async {
+        await withCheckedContinuation { (continuation: Held) in
+            let held = state.withLock { locked -> Bool in
+                guard locked.holdsCancelledRuns else { return false }
+                locked.heldRuns.append(continuation)
+                return true
+            }
+            if !held { continuation.resume() }
+        }
     }
 
     private func end(_ id: Int) {
