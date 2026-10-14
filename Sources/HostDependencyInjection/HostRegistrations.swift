@@ -131,7 +131,7 @@ extension GPURendererKey: DependencyKey {
 }
 
 extension EffectPackagesKey: DependencyKey {
-    public static let liveValue: any EffectPackages = NoPackages()
+    public static let liveValue: any EffectPackages = EffectPackageDataSourceImpl()
 }
 
 extension EffectWatchKey: DependencyKey {

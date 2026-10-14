@@ -41,7 +41,7 @@ struct HostEffectRegistrationsTests {
             #expect(effectCatalogUseCase is BundledOnlyEffectCatalog)
             #expect(effectPackageRepository is BundledOnlyCatalog)
             #expect(settingsRepository is EmptySettings)
-            #expect(effectPackages is NoPackages)
+            #expect(effectPackages is EffectPackageDataSourceImpl)
             #expect(effectWatch is NeverChangingWatch)
             #expect(preferences is EmptyPreferences)
         }

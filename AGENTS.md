@@ -114,7 +114,8 @@ Shared conventions:
   start as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
   `EmptySettings`, `BundledOnlyCatalog`, `BundledOnlyEffectCatalog`,
   `StaticEffectInteractor`) that list the bundled effect alone, and the later
-  issues replace each in place. Their streams stay open until the consumer lets go.
+  issues replace each in place (`NoPackages` is now `EffectPackageDataSourceImpl`,
+  #45). Their streams stay open until the consumer lets go.
   The OS-boundary ports of the catalog get their live with the issue that wraps
   the OS API: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and
   `AppDirectoriesProvider` (module `AppDirectories`) are registered in
