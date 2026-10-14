@@ -160,9 +160,9 @@ let package = Package(
         // Host only: the bundled effects and the packages as one catalog. Holds `BundledOnlyCatalog` for now.
         .target(name: "EffectPackageRepository", dependencies: dependencies),
         .testTarget(name: "EffectPackageRepositoryTests", dependencies: ["EffectPackageRepository"] + testDependencies),
-        // Host only: the chosen effect as the UseCases see it. Holds `EmptySettings` for now.
+        // Host only: the chosen effect as the UseCases see it, a pass-through to `PreferencesDataStore`.
         .target(name: "SettingsRepository", dependencies: dependencies),
-        .testTarget(name: "SettingsRepositoryTests", dependencies: ["SettingsRepository"] + testDependencies),
+        .testTarget(name: "SettingsRepositoryTests", dependencies: ["SettingsRepository", "PreferencesDataStore"] + testDependencies),
 
         // ── UseCase ──
         .target(name: "FramePipelineUseCase", dependencies: dependencies),

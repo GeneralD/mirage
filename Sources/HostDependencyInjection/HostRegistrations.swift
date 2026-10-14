@@ -88,7 +88,7 @@ extension EffectPackageRepositoryKey: DependencyKey {
 }
 
 extension SettingsRepositoryKey: DependencyKey {
-    public static let liveValue: any SettingsRepository = EmptySettings()
+    public static let liveValue: any SettingsRepository = SettingsRepositoryImpl()
 }
 
 extension CameraSourceKey: DependencyKey {
