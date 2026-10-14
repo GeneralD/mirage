@@ -62,6 +62,47 @@ is compiled against.
   counted from the first line of `effect.metal`; a note about a prelude declaration reads
   `prelude:<line>:`.
 
+### Packaging
+
+An effect is a **folder named `<id>.lens`** holding two files. The folder name without `.lens` is
+the effect's id, so it stays the same however you edit the files:
+
+```text
+Ripple.lens/
+├── manifest.json
+└── effect.metal
+```
+
+```json
+{
+  "formatVersion": 1,
+  "name": "Ripple",
+  "author": "Example Author",
+  "description": "Bands of the frame sway sideways like heat haze, drifting with time."
+}
+```
+
+- `formatVersion` (required): the integer `1`. Any other version is reported as unsupported.
+- `name` (required): what the menu shows. Surrounding whitespace is trimmed; it cannot be empty.
+- `author`, `description` (optional).
+- Keys this version doesn't know are ignored, so a package can carry more than an older build
+  reads. A `parameters` list is read past for now; the parameter UI is MVP-C.
+- `effect.metal` is the kernel described above, entry point `effect`, and nothing else: no
+  `Uniforms`, `hash` or `noise` of your own. It is compiled with the default options.
+
+The effects folder is `~/Library/Application Support/com.generald.mirage/Effects` (the host's
+bundle identifier). The app makes it the first time it looks, and **Open Effects Folder…** in the
+menu shows it in Finder. Only a directory whose name ends in `.lens` counts; any other file or
+folder in there is ignored.
+
+A package that can't be used is not left out. The menu lists it as a disabled item with the
+reason, so a mistake shows up where you made it: no `manifest.json`, a manifest that isn't valid
+JSON or lacks a required key, an unsupported `formatVersion`, no `effect.metal`, or a file the
+app can't read (permissions, or text that isn't UTF-8). Fix the file and the item comes back to
+life. A shader that doesn't compile is a different failure, reported when the effect is chosen.
+
+[`Examples/Ripple.lens`](Examples/Ripple.lens) is a complete package to start from.
+
 ## Requirements
 
 - macOS 14 or later, Apple silicon
