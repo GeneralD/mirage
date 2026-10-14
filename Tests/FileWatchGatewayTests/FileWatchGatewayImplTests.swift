@@ -74,10 +74,16 @@ struct FileWatchGatewayImplTests {
         let fileWatch = try gateway.watch(file: file) { fileEvents.append(()) }
         defer { fileWatch.stop() }
 
-        try append(" world", to: file)
+        // The file watch is the sentinel. The two sources call back on concurrent queues, so after one write the
+        // sentinel's callback can be recorded before a directory callback that is still on its way: a single round
+        // would let a directory watch that does hear the write pass. Each round waits for the sentinel to report
+        // one more event, and the directory watch has to stay silent through all of them.
+        for _ in 0..<5 {
+            let before = fileEvents.count
+            try append(" world", to: file)
+            await fileEvents.settle { $0.count > before }
+        }
 
-        // The file watch is the sentinel: once it has reported the write, the directory watch had every chance to.
-        await fileEvents.waitForCount(1)
         #expect(directoryEvents.count == 0)
     }
 
