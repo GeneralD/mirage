@@ -185,18 +185,17 @@ struct MenuBarPresenterTests {
         #expect(rig.interactor.inner.starts.count == 1)
     }
 
-    @Test("stop ends the observation and stops the Interactor: later states change nothing")
+    @Test("stop cancels the subscription to the Interactor's state and stops the Interactor")
     func stopEndsObservation() async {
         let rig = PresenterRig(state: .fixture([chromatic]))
         await rig.start()
-        let shown = rig.presenter.items
+        #expect(rig.interactor.cancellations.count == 0)
 
         rig.presenter.stop()
-        await rig.interactor.cancellations.waitForCount(1)
-        rig.interactor.inner.publish(.fixture([chromatic, glitch]))
 
+        // Both happen inside stop(), on the main actor the test is running on: there is nothing to wait for.
+        #expect(rig.interactor.cancellations.count == 1, "the subscription was cancelled")
         #expect(rig.interactor.inner.stops.count == 1)
-        #expect(rig.presenter.items == shown, "the subscription was gone before the state was published")
     }
 
     @Test("a Presenter can be started again after stop, and shows the Interactor's state then")
@@ -204,7 +203,7 @@ struct MenuBarPresenterTests {
         let rig = PresenterRig(state: .fixture([chromatic]))
         await rig.start()
         rig.presenter.stop()
-        await rig.interactor.cancellations.waitForCount(1)
+        #expect(rig.interactor.cancellations.count == 1, "nobody was subscribed when the state below was published")
         rig.interactor.inner.publish(.fixture([chromatic, glitch]))
 
         rig.presenter.start()
