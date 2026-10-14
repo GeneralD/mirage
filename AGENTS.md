@@ -133,8 +133,9 @@ Shared conventions:
   (`EffectMenuItem`) and `status` with a `@MainActor` task over an `AsyncStream`
   that a `sink` feeds (newest state wins), never `receive(on: DispatchQueue.main)`
   and never `publisher.values` (an `AsyncPublisher` drops states sent while it
-  is applying the last one), and owns the Interactor's `start()` / `stop()`; its
-  suite waits with `settle` only. Details: the *Key Design Decisions* entry in
+  is applying the last one), and owns the Interactor's `start()` / `stop()` (whoever wires the Presenter calls
+  only its `start()` / `stop()`, never `effectInteractor.start()`: a second
+  `start()` is a restart); its suite waits with `settle` only. Details: the *Key Design Decisions* entry in
   `docs/ARCHITECTURE.md`.
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
