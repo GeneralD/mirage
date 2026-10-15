@@ -22,14 +22,14 @@ gateway_allow() {
         SystemExtensionGateway)   echo "SystemExtensions" ;;
         CMIOExtensionGateway)     echo "CoreMediaIO CoreMedia CoreVideo IOSurface" ;;
         FileSystemGateway)        echo "" ;;
-        FileWatchGateway)         echo "Dispatch Darwin" ;;
+        FileWatchGateway)         echo "Dispatch System" ;;
         UserDefaultsGateway)      echo "" ;;
         WorkspaceGateway)         echo "AppKit" ;;
         DispatchExecutorGateway)  echo "Dispatch CoreVideo QuartzCore" ;;
         UnifiedLog)               echo "os" ;;
         HostTime)                 echo "Darwin" ;;
         RandomSource)             echo "" ;;
-        AppDirectoriesProvider)   echo "" ;;
+        AppDirectories)           echo "" ;;
         *)                        return 1 ;;
     esac
 }

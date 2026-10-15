@@ -1,4 +1,5 @@
 import AVFoundationGateway
+import AppDirectories
 import BundledEffectDataSource
 import CameraControlUseCase
 import CameraDataSource
@@ -18,6 +19,8 @@ import EffectWatchDataSource
 import ExtensionInstallDataSource
 import ExtensionInstallRepository
 import ExtensionInstallUseCase
+import FileSystemGateway
+import FileWatchGateway
 import FramePipelineUseCase
 import FrameTransportDataSource
 import GPURenderDataSource
@@ -30,7 +33,9 @@ import PreviewRepository
 import SettingsRepository
 import ShaderCompilationDataSource
 import SystemExtensionGateway
+import UserDefaultsGateway
 import VirtualCameraRepository
+import WorkspaceGateway
 
 // Live values of the host process, on top of CommonDependencyInjection.
 
@@ -83,11 +88,11 @@ extension PreviewSinkKey: DependencyKey {
 }
 
 extension EffectPackageRepositoryKey: DependencyKey {
-    public static let liveValue: any EffectPackageRepository = BundledOnlyCatalog()
+    public static let liveValue: any EffectPackageRepository = EffectPackageRepositoryImpl()
 }
 
 extension SettingsRepositoryKey: DependencyKey {
-    public static let liveValue: any SettingsRepository = EmptySettings()
+    public static let liveValue: any SettingsRepository = SettingsRepositoryImpl()
 }
 
 extension CameraSourceKey: DependencyKey {
@@ -135,7 +140,7 @@ extension EffectWatchKey: DependencyKey {
 }
 
 extension PreferencesKey: DependencyKey {
-    public static let liveValue: any Preferences = EmptyPreferences()
+    public static let liveValue: any Preferences = PreferencesDataStoreImpl()
 }
 
 extension CaptureSessionGatewayKey: DependencyKey {
@@ -164,4 +169,24 @@ extension TextureCacheGatewayKey: DependencyKey {
 
 extension PreviewGatewayKey: DependencyKey {
     public static let liveValue: any PreviewGateway = MetalKitPreviewGatewayImpl()
+}
+
+extension FileSystemGatewayKey: DependencyKey {
+    public static let liveValue: any FileSystemGateway = FileSystemGatewayImpl()
+}
+
+extension FileWatchGatewayKey: DependencyKey {
+    public static let liveValue: any FileWatchGateway = FileWatchGatewayImpl()
+}
+
+extension WorkspaceGatewayKey: DependencyKey {
+    public static let liveValue: any WorkspaceGateway = WorkspaceGatewayImpl()
+}
+
+extension AppDirectoriesProviderKey: DependencyKey {
+    public static let liveValue: any AppDirectoriesProvider = AppDirectoriesProviderImpl()
+}
+
+extension KeyValueStoreGatewayKey: DependencyKey {
+    public static let liveValue: any KeyValueStoreGateway = KeyValueStoreGatewayImpl()
 }
