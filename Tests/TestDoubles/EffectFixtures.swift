@@ -24,11 +24,13 @@ extension EffectCatalogState {
 }
 
 extension EffectPackage {
-    /// A package whose manifest is valid and whose source is `source`.
-    public static func fixture(_ id: EffectID, name: String? = nil, source: String = "kernel void effect() {}") -> EffectPackage {
+    /// A package whose manifest is valid, names `author` if one is given, and whose source is `source`.
+    public static func fixture(
+        _ id: EffectID, name: String? = nil, author: String? = nil, source: String = "kernel void effect() {}"
+    ) -> EffectPackage {
         EffectPackage(
             id: id,
-            manifest: EffectManifest(formatVersion: 1, name: name ?? id.key),
+            manifest: EffectManifest(formatVersion: 1, name: name ?? id.key, author: author),
             source: EffectSource(name: name ?? id.key, source: source))
     }
 }

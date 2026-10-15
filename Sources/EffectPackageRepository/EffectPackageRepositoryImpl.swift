@@ -108,12 +108,14 @@ extension EffectPackageRepositoryImpl {
         EffectCatalogEntry(id: id(of: effect), displayName: effect.name, origin: .bundled, availability: .ready)
     }
 
-    /// A package shows its manifest's `name`; one whose manifest cannot be read has
-    /// none, so it shows its folder name.
+    /// A package shows its manifest's `name` and `author`; one whose manifest cannot be
+    /// read has neither, so it shows its folder name and no author.
     private static func entry(of listing: EffectPackageListing) -> EffectCatalogEntry {
         switch listing {
         case .ready(let package):
-            EffectCatalogEntry(id: package.id, displayName: package.manifest.name, origin: package.id.origin, availability: .ready)
+            EffectCatalogEntry(
+                id: package.id, displayName: package.manifest.name, origin: package.id.origin, availability: .ready,
+                author: package.manifest.author)
         case .broken(let id, let problem):
             EffectCatalogEntry(id: id, displayName: id.key, origin: id.origin, availability: .broken(problem))
         }
