@@ -9,7 +9,10 @@ import TestSupport
 ///
 /// `run()` records its start and then does what the live one does: it runs until the
 /// caller's task is cancelled (`suspendUntilCancelled`) and records that cancel, so a
-/// test that stops the Interactor proves the task it owned was cancelled.
+/// test that stops the Interactor proves the task it owned was cancelled. Like the live
+/// one, a run that ends this way ends every stream open at that moment and leaves nothing
+/// current, so an Interactor that subscribed once and not again at each start is caught
+/// here: the stream it holds is finished, and a stream opened after waits for the next publish.
 public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     private struct State {
         var current: EffectCatalogState?
@@ -51,7 +54,10 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
 
     public func run() async {
         runs.append(())
-        if await suspendUntilCancelled() { runCancellations.append(()) }
+        if await suspendUntilCancelled() {
+            runCancellations.append(())
+            endObservations()
+        }
     }
 
     public func observe() -> AsyncStream<EffectCatalogState> {
@@ -75,6 +81,18 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
 
     public func openEffectsFolder() {
         folderOpens.append(())
+    }
+
+    /// The run is over: every open stream finishes (outside the lock: finishing one runs its
+    /// termination handler, which takes it) and nothing is current any more.
+    private func endObservations() {
+        let open = state.withLock { locked -> [AsyncStream<EffectCatalogState>.Continuation] in
+            locked.current = nil
+            let open = Array(locked.continuations.values)
+            locked.continuations.removeAll()
+            return open
+        }
+        for continuation in open { continuation.finish() }
     }
 
     private func end(_ id: Int) {
