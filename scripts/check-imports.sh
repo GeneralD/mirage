@@ -44,6 +44,7 @@ allowed_for() {
         App)                          echo "$COMMON $UI_FRAMEWORKS HostDependencyInjection" ;;
         DevHarness)                   echo "$COMMON AppKit SwiftUI Views HostDependencyInjection" ;;
         ExtensionApp)                 echo "$COMMON $UI_FRAMEWORKS ExtensionDependencyInjection" ;;
+        Presenters)                   echo "$COMMON" ;;  # display state: no AppKit / SwiftUI / MetalKit
         *)
             if gw=$(gateway_allow "$module"); then
                 echo "$COMMON $gw"

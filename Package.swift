@@ -195,9 +195,13 @@ let package = Package(
         // Host only: the dev harness's launch sequence (camera prompt, then the pipeline).
         .target(name: "HarnessInteractor", dependencies: dependencies),
         .testTarget(name: "HarnessInteractorTests", dependencies: ["HarnessInteractor"] + testDependencies),
-        // Host only: the effects menu's Combine pipeline. Holds `StaticEffectInteractor` for now.
+        // Host only: the effects menu's Combine pipeline; owns the task that runs the catalog.
         .target(name: "EffectInteractor", dependencies: dependencies),
         .testTarget(name: "EffectInteractorTests", dependencies: ["EffectInteractor"] + testDependencies),
+
+        // ── Presenter (@Published display state; no AppKit / SwiftUI; host only) ──
+        .target(name: "Presenters", dependencies: dependencies),
+        .testTarget(name: "PresentersTests", dependencies: ["Presenters"] + testDependencies),
 
         // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
         .target(

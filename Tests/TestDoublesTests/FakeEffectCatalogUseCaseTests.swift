@@ -28,6 +28,60 @@ struct FakeEffectCatalogUseCaseTests {
         #expect(useCase.runCancellations.count == 1)
     }
 
+    @Test("runEvents record when each run began and returned, in one order")
+    func runEventsAreInOrder() async {
+        let useCase = FakeEffectCatalogUseCase()
+
+        let first = Task { await useCase.run() }
+        await useCase.runs.waitForCount(1)
+        first.cancel()
+        await first.value
+        let second = Task { await useCase.run() }
+        await useCase.runs.waitForCount(2)
+        second.cancel()
+        await second.value
+
+        #expect(useCase.runEvents.values == [.started(1), .ended(1), .started(2), .ended(2)])
+    }
+
+    @Test("a held run records its cancel and then stays in run() until the test releases it")
+    func heldRunWaitsForTheRelease() async {
+        let useCase = FakeEffectCatalogUseCase()
+        useCase.holdCancelledRuns()
+        let returned = Collector<Void>()
+        let task = Task {
+            await useCase.run()
+            returned.append(())
+        }
+        await useCase.runs.waitForCount(1)
+
+        task.cancel()
+        await useCase.runCancellations.waitForCount(1)
+        #expect(useCase.heldRunCount == 1, "the cancel arrived, and the run is held anyway")
+        #expect(useCase.runEvents.values == [.started(1)])
+
+        useCase.releaseCancelledRuns()
+        await returned.waitForCount(1)
+        #expect(useCase.heldRunCount == 0)
+        #expect(useCase.runEvents.values == [.started(1), .ended(1)])
+    }
+
+    @Test("a release ends the holding: a run cancelled after it returns at once, and releasing with nothing held does nothing")
+    func releaseEndsTheHolding() async {
+        let useCase = FakeEffectCatalogUseCase()
+        useCase.holdCancelledRuns()
+        useCase.releaseCancelledRuns()
+        useCase.releaseCancelledRuns()
+
+        let task = Task { await useCase.run() }
+        await useCase.runs.waitForCount(1)
+        task.cancel()
+        await task.value
+
+        #expect(useCase.runEvents.values == [.started(1), .ended(1)])
+        #expect(useCase.runCancellations.count == 1)
+    }
+
     @Test("observe starts from the state published before it, then yields each publish")
     func observeStartsFromTheCurrentValue() async {
         let useCase = FakeEffectCatalogUseCase()

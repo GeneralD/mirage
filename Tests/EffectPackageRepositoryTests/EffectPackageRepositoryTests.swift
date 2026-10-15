@@ -110,8 +110,10 @@ struct EffectPackageRepositoryTests {
             "/effects/mist.lens/manifest.json", "/effects/mist.lens/effect.metal",
         ])
 
-    private static func ready(_ key: String, named name: String? = nil, source: String = "kernel void effect() {}") -> EffectPackageListing {
-        .ready(.fixture(.package(key), name: name, source: source))
+    private static func ready(
+        _ key: String, named name: String? = nil, by author: String? = nil, source: String = "kernel void effect() {}"
+    ) -> EffectPackageListing {
+        .ready(.fixture(.package(key), name: name, author: author, source: source))
     }
 
     private static func inventory(_ listings: [EffectPackageListing], watching set: EffectWatchSet = glowSet) -> EffectPackageInventory {
@@ -146,6 +148,18 @@ struct EffectPackageRepositoryTests {
 
         #expect(seen.values == [[Self.bundledEntry, .fixture(.package("glow"), displayName: "Glow")]])
         #expect(rig.packages.listingCalls.count == 1)
+    }
+
+    @Test("a package shows its manifest's author; one whose manifest names none shows no author")
+    func authorComesFromTheManifest() async {
+        let rig = Rig(inventory: Self.inventory([Self.ready("glow", named: "Glow", by: "Ada"), Self.ready("mist", named: "Mist")]))
+
+        #expect(
+            await firstCatalog(of: rig.subject) == [
+                Self.bundledEntry,
+                .fixture(.package("glow"), displayName: "Glow", author: "Ada"),
+                .fixture(.package("mist"), displayName: "Mist"),
+            ])
     }
 
     @Test("an empty folder is the bundled effect alone")

@@ -48,7 +48,7 @@ extension HarnessInteractorKey: DependencyKey {
 }
 
 extension EffectInteractorKey: DependencyKey {
-    public static let liveValue: any EffectInteractor = StaticEffectInteractor()
+    public static let liveValue: any EffectInteractor = EffectInteractorImpl()
 }
 
 extension FramePipelineUseCaseKey: DependencyKey {

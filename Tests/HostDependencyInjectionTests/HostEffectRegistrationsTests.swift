@@ -41,7 +41,7 @@ struct HostEffectRegistrationsTests {
             @Dependency(\.preferences) var preferences
             @Dependency(\.keyValueStoreGateway) var keyValueStoreGateway
 
-            #expect(effectInteractor is StaticEffectInteractor)
+            #expect(effectInteractor is EffectInteractorImpl)  // the real one (#49), not a pass-through: it runs nothing until `start()`
             #expect(effectCatalogUseCase is BundledOnlyEffectCatalog)
             #expect(effectPackageRepository is EffectPackageRepositoryImpl)
             #expect(settingsRepository is SettingsRepositoryImpl)
