@@ -160,7 +160,9 @@ Shared conventions:
   before the call returns, so any number of observers see the same states. Newest wins
   is mirrored there: the generation is taken in the same actor turn that calls
   `prepare`, so an answer overtaken by a newer request reaches its caller but publishes
-  nothing, whatever order the runtime answers in. The compile failure itself is logged
+  nothing, whatever order the runtime answers in; a run number and a read number stop
+  a flow that waited across a run boundary, or behind a newer read of a source, from
+  acting on its answer. The compile failure itself is logged
   once by the runtime; the catalog logs the selection, the reload and the fallback.
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside

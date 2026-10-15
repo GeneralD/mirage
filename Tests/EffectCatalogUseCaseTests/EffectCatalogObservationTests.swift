@@ -129,6 +129,97 @@ struct EffectCatalogObservationTests {
         await rig.stop(again)
     }
 
+    // MARK: - A run that starts while the one before it is still finishing
+
+    // The runtime never cancels a `prepare`, so a run whose task was cancelled can still be waiting for one when the
+    // Interactor has started the next. The tests below park the old run in exactly that wait.
+
+    @Test("a run that starts while the one before it still waits for the runtime is not cut short when that run ends")
+    func restartWhileTheLastRunFinishes() async {
+        let rig = Rig(persisted: glitch.id)
+        let run = rig.start()
+        await rig.answer(1)
+        let edited = EffectSource(name: "Glitch", source: "glitch v2")
+        rig.packages.script(.success(edited), for: glitch.id)
+        rig.packages.publish([bundled, glitch, other])
+        await rig.runtime.prepareRequests.waitForCount(2)  // the reload is out
+        run.cancel()
+
+        let again = rig.start()
+        await rig.runtime.prepareRequests.waitForCount(3)  // the new run restored the choice and prepared it for itself
+        // Opened once the new run has begun, as the Interactor does: what the old run left current is gone by now.
+        let watcher = rig.watch()
+        await rig.answer(2)
+        await run.value
+        await rig.answer(3, with: .failure(.compileFailed))
+        await watcher.states.waitForCount(1)
+
+        #expect(
+            watcher.states.values == [Rig.state(selection: glitch, outcome: .failed(.compileFailed))],
+            "the old run's state was not replayed, and the old run's end did not drop the new run's answer")
+        #expect(watcher.ended.count == 0, "the old run's end did not close the stream of an observer that opened after it was cancelled")
+        #expect(
+            rig.runtime.prepareRequests.values.map(\.effect) == [Rig.glitchSource, edited, edited],
+            "the new run did not trust what the old run had prepared")
+        #expect(rig.settings.reads.count == 2)
+        await rig.stop(again)
+        await watcher.ended.waitForCount(1)
+    }
+
+    @Test("an answer that comes back from the run before while the new run is still reading its first source publishes nothing")
+    func lateAnswerWhileTheNewRunReads() async {
+        let rig = Rig(persisted: glitch.id)
+        let run = rig.start()
+        await rig.answer(1)
+        rig.packages.script(.success(EffectSource(name: "Glitch", source: "glitch v2")), for: glitch.id)
+        rig.packages.publish([bundled, glitch, other])
+        await rig.runtime.prepareRequests.waitForCount(2)
+        run.cancel()
+
+        rig.packages.holdSources()
+        let again = rig.start()
+        await rig.packages.heldSources.waitForCount(1)  // the new run knows the choice and the rows, and has issued no prepare yet
+        let watcher = rig.watch()
+        // A failure, unlike the new run's own success: if it were published, the state below would not be the only one.
+        await rig.answer(2, with: .failure(.compileFailed))
+        await run.value
+        rig.packages.holdSources(false)
+        rig.packages.completeSource(rig.packages.heldSources.values[0])
+        await rig.answer(3)
+        await watcher.states.waitForCount(1)
+
+        #expect(watcher.states.values == [Rig.state(selection: glitch)], "the first state of the new run is its own, not the old run's answer")
+        await rig.stop(again)
+    }
+
+    @Test("a source read of the run before that ends once the new run has started prepares nothing")
+    func oldRunsReadEndsInTheNewRun() async {
+        let rig = Rig(persisted: glitch.id)
+        let run = rig.start()
+        await rig.answer(1)
+        let edited = EffectSource(name: "Glitch", source: "glitch v2")
+        rig.packages.script(.success(edited), for: glitch.id)
+        rig.packages.holdSources()
+        rig.packages.publish([bundled, glitch, other])
+        await rig.packages.heldSources.waitForCount(1)  // the old run is reading the edited files
+        run.cancel()
+
+        let again = rig.start()
+        await rig.packages.heldSources.waitForCount(2)  // and so is the new run
+        let watcher = rig.watch()
+        let reads = rig.packages.heldSources.values
+        rig.packages.holdSources(false)
+        rig.packages.completeSource(reads[0])
+        await run.value
+        rig.packages.completeSource(reads[1])
+        await rig.answer(2)
+        await watcher.states.waitForCount(1)
+
+        #expect(rig.runtime.prepareRequests.values.map(\.effect) == [Rig.glitchSource, edited], "one prepare for the edit: the new run's")
+        #expect(watcher.states.values == [Rig.state(selection: glitch)])
+        await rig.stop(again)
+    }
+
     // MARK: - Newest wins
 
     @Test("two choices answered newest first: the state shows the newest, and the older answer, failing later, publishes nothing")
@@ -299,5 +390,91 @@ struct EffectCatalogObservationTests {
         #expect(watcher.states.values.map(\.selection) == [glitch.id, other.id, other.id])
         #expect(watcher.states.values.map(\.outcome) == [.prepared, .prepared, .prepared], "the reload's failure never became the outcome")
         await rig.stop(run)
+    }
+
+    @Test("a choice still reading an effect's files when a listing reads newer files of the same effect prepares nothing for the old files")
+    func listingOvertakesAChoicesReadOfTheSameEffect() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.packages.holdSources()
+        let choice = Task { await rig.subject.select(glitch.id) }  // reads glitch's files as they are
+        await rig.packages.heldSources.waitForCount(1)
+        let edited = EffectSource(name: "Glitch", source: "glitch v2")
+        rig.packages.script(.success(edited), for: glitch.id)  // a read that begins from now on finds the edit
+        rig.packages.publish([bundled, glitch, other])  // and the listing reads the chosen effect again
+        await rig.packages.heldSources.waitForCount(2)
+        let reads = rig.packages.heldSources.values
+        rig.packages.holdSources(false)
+        rig.packages.completeSource(reads[1])
+        await rig.answer(2)
+        await watcher.states.waitForCount(2)
+        rig.packages.completeSource(reads[0])
+
+        #expect(await choice.value == .unavailable(nil), "it prepared nothing, and says so")
+        #expect(rig.runtime.prepareRequests.values.map(\.effect) == [Rig.bundledSource, edited], "the old files never reached the runtime")
+        #expect(watcher.states.values.map(\.selection) == [bundled.id, glitch.id])
+        await rig.stop(run)
+    }
+
+    @Test("a source read of the run before that ends in a run that has nothing to read yet prepares nothing")
+    func oldReadEndsInARunWithNothingToRead() async {
+        let rig = Rig(persisted: glitch.id)
+        let run = rig.start()
+        await rig.answer(1)
+        let edited = EffectSource(name: "Glitch", source: "glitch v2")
+        rig.packages.script(.success(edited), for: glitch.id)
+        rig.packages.holdSources()
+        rig.packages.publish([bundled, glitch, other])
+        await rig.packages.heldSources.waitForCount(1)  // the old run is reading the edited files
+        run.cancel()
+        rig.packages.publish([])  // the next run lists nothing, so the old read is still the newest one
+        let again = rig.start()
+        await rig.packages.catalogRequests.waitForCount(2)  // the new run has restored the choice and listens
+        let newest = EffectSource(name: "Glitch", source: "glitch v3")
+        rig.packages.script(.success(newest), for: glitch.id)  // what the new run's own read will find, unlike what the old read holds
+        let read = rig.packages.heldSources.values[0]
+        rig.packages.holdSources(false)
+        rig.packages.completeSource(read)
+        await run.value  // the old run took the empty listing it had queued and ended: it prepared nothing
+        let watcher = rig.watch()
+        rig.packages.publish([bundled, glitch, other])  // a listing the new run can act on
+        await rig.answer(2)
+        await watcher.states.waitForCount(1)
+
+        #expect(
+            rig.runtime.prepareRequests.values.map(\.effect) == [Rig.glitchSource, newest],
+            "one prepare for the edit: the new run's, from its own read")
+        await rig.stop(again)
+    }
+
+    @Test("a choice still reading its source when its run ends and the next one starts prepares nothing")
+    func choiceReadingAcrossARestart() async {
+        let rig = Rig()
+        let run = rig.start()
+        await rig.answer(1)
+        rig.packages.holdSources()
+        let choice = Task { await rig.subject.select(glitch.id) }
+        await rig.packages.heldSources.waitForCount(1)
+        await rig.stop(run)
+        rig.packages.publish([])  // the next run lists nothing, so the choice's read is still the newest one
+        let again = rig.start()
+        await rig.settings.reads.waitForCount(2)  // the new run has restored the choice the old one remembered
+        let read = rig.packages.heldSources.values[0]
+        rig.packages.holdSources(false)
+        rig.packages.completeSource(read)
+        let watcher = rig.watch()
+        rig.packages.publish([bundled, glitch, other])
+        await rig.answer(2)
+        await watcher.states.waitForCount(1)
+
+        #expect(await choice.value == .unavailable(nil), "the choice belongs to the run before, which is over")
+        #expect(
+            rig.runtime.prepareRequests.values.map(\.effect) == [Rig.bundledSource, Rig.glitchSource],
+            "the new run's own prepare is the only one after the first")
+        await rig.stop(again)
     }
 }

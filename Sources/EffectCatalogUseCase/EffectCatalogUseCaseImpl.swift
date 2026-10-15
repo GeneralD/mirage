@@ -31,7 +31,7 @@ extension EffectCatalogUseCaseImpl: EffectCatalogUseCase {
         await session.run()
     }
 
-    /// The state now (none until the run has settled its first one), then every change; any
+    /// The state now (none before the run has published its first one), then every change; any
     /// number of observers each get the same states. The stream ends when the run does.
     public func observe() -> AsyncStream<EffectCatalogState> {
         broadcast.observe()

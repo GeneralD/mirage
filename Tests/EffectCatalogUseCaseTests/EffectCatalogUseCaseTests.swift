@@ -346,6 +346,104 @@ struct EffectCatalogUseCaseTests {
         await rig.stop(run)
     }
 
+    @Test("a source that could not be read once and reads again as the one the runtime has brings back how the runtime took it: prepared")
+    func unreadableOnceThenSameSourcePrepared() async {
+        let rig = Rig(persisted: glitch.id)
+        let problem = EffectPackageProblem.unreadable(message: "mid-save")
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.packages.script(.failure(problem), for: glitch.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(2)
+        rig.packages.script(.success(Rig.glitchSource), for: glitch.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(3)
+
+        #expect(watcher.states.values.map(\.outcome) == [.prepared, .unavailable(problem), .prepared])
+        #expect(rig.runtime.prepareRequests.count == 1, "the runtime never lost the effect, so it is not handed it again")
+        await rig.stop(run)
+    }
+
+    @Test("... and when the runtime had refused that source, it is the refusal that comes back, not a success")
+    func unreadableOnceThenSameSourceFailed() async {
+        let rig = Rig(persisted: glitch.id)
+        let problem = EffectPackageProblem.unreadable(message: "mid-save")
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1, with: .failure(.compileFailed))
+        await watcher.states.waitForCount(1)
+
+        rig.packages.script(.failure(problem), for: glitch.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(2)
+        rig.packages.script(.success(Rig.glitchSource), for: glitch.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(3)
+
+        #expect(watcher.states.values.map(\.outcome) == [.failed(.compileFailed), .unavailable(problem), .failed(.compileFailed)])
+        #expect(rig.runtime.prepareRequests.count == 1)
+        await rig.stop(run)
+    }
+
+    @Test("a prepare still out when the source cannot be read goes on: its answer waits behind the problem, and returns with the source")
+    func unreadableWhileAPrepareIsOut() async {
+        let rig = Rig(persisted: glitch.id)
+        let problem = EffectPackageProblem.unreadable(message: "mid-save")
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        let choice = Task { await rig.subject.select(other.id) }
+        await rig.runtime.prepareRequests.waitForCount(2)
+        rig.packages.script(.failure(problem), for: other.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(2)
+        await rig.answer(2, with: .failure(.compileFailed))
+        #expect(await choice.value == .failed(.compileFailed), "the caller hears the runtime")
+        // A sentinel through the same pipeline: a state for the next listing, which still cannot read the file.
+        rig.packages.publish([bundled, glitch, other, EffectCatalogEntry.fixture(.package("later"))])
+        await watcher.states.waitFor { $0.entries.count == 4 }
+        rig.packages.script(.success(Rig.otherSource), for: other.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(4)
+
+        #expect(
+            watcher.states.values.map(\.outcome) == [.prepared, .unavailable(problem), .unavailable(problem), .failed(.compileFailed)],
+            "the answer was not shown over the problem, and came back once the source read again")
+        #expect(rig.runtime.prepareRequests.count == 2)
+        await rig.stop(run)
+    }
+
+    @Test("a source that reads again while its prepare is still out shows no outcome yet, and the answer lands when it comes")
+    func recoveryWhileAPrepareIsOut() async {
+        let rig = Rig(persisted: glitch.id)
+        let problem = EffectPackageProblem.unreadable(message: "mid-save")
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        let choice = Task { await rig.subject.select(other.id) }
+        await rig.runtime.prepareRequests.waitForCount(2)
+        rig.packages.script(.failure(problem), for: other.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(2)
+        rig.packages.script(.success(Rig.otherSource), for: other.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(3)
+        await rig.answer(2)
+        #expect(await choice.value == .prepared)
+        await watcher.states.waitForCount(4)
+
+        #expect(watcher.states.values.map(\.outcome) == [.prepared, .unavailable(problem), nil, .prepared])
+        #expect(rig.runtime.prepareRequests.count == 2, "the recovery listing handed the runtime nothing it already has")
+        await rig.stop(run)
+    }
+
     // MARK: - Small things
 
     @Test("opening the effects folder is the Repository's")

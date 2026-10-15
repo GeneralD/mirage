@@ -7,9 +7,12 @@ import Domain
 /// per click), so an actor is the right tool here (`.claude/rules/swift-idioms.md`);
 /// the frame path never meets it, and it holds no `IOSurface`.
 ///
-/// **The state is published only when it is settled.** A listing that needs a
-/// `prepare` publishes after the runtime has answered, with the outcome; one that needs
-/// none publishes at once. Identical states are not published twice.
+/// **The state is published whenever it changes.** A listing that needs a `prepare`
+/// publishes after the runtime has answered, with the outcome; one that needs none
+/// publishes at once, carrying what the last attempt has answered so far (`outcome` is
+/// `nil` while that attempt is still out). A source that cannot be read shows its problem
+/// over the runtime's answer, which comes back with the next listing that reads it.
+/// Identical states are not published twice.
 ///
 /// **Newest wins, twice over.** The runtime keeps the effect of its newest `prepare`
 /// (`EffectRuntimeRepository`), so what the menu shows must be the newest request's
@@ -22,10 +25,12 @@ import Domain
 /// the flow of that choice.
 actor EffectCatalogSession {
     /// What the runtime was last handed: kept to tell a hot reload (same effect, new
-    /// source) from a choice, and to hand the runtime nothing it already has.
-    private struct Prepared: Equatable {
-        let id: EffectID
+    /// source) from a choice, to hand the runtime nothing it already has, and to say how
+    /// the runtime took it (`answer`, `nil` while that is still out).
+    private struct Prepared {
+        var id: EffectID
         let source: EffectSource
+        var answer: EffectSelectionOutcome?
     }
 
     @Dependency(\.effectPackageRepository) private var packages
@@ -40,10 +45,27 @@ actor EffectCatalogSession {
     /// bundled one when the chosen one is gone. `nil` until the run has restored it and
     /// listed a catalog to settle it against.
     private var selection: EffectID?
-    /// How the chosen effect's last attempt went; `nil` while that attempt is still running.
-    private var outcome: EffectSelectionOutcome?
     private var prepared: Prepared?
+    /// Why the chosen effect's source could not be read at the last look; `nil` once a look
+    /// succeeds (or a `prepare` is issued). It is shown over the runtime's answer, never
+    /// instead of it: the runtime keeps running what it has.
+    private var unreadableSource: EffectPackageProblem?
     private var generation = 0
+    /// One per run, taken in the turn `run()` begins. A flow that was suspended across a run
+    /// boundary (a choice waiting for its source, a cancelled run waiting for the runtime) finds
+    /// the number changed when it resumes, and leaves what is now the new run's alone.
+    private var epoch = 0
+    /// One per look at an effect's source, taken in the turn that issues the read. Of two reads
+    /// of the same effect (a choice and a listing, say) only the newer may act on its answer:
+    /// the older one may hold files that have been edited since.
+    private var readToken = 0
+
+    /// How the chosen effect's last attempt went: the problem if its source could not be read
+    /// at the last look, otherwise how the runtime took what it was last handed. `nil` while
+    /// that attempt is still running.
+    private var outcome: EffectSelectionOutcome? {
+        unreadableSource.map { .unavailable($0) } ?? prepared?.answer
+    }
 
     init(broadcast: EffectCatalogBroadcast) {
         self.broadcast = broadcast
@@ -52,24 +74,36 @@ actor EffectCatalogSession {
     /// Restores the persisted choice, then follows the catalog until the caller's task is
     /// cancelled. A listing is the cue for everything: it is how a new package, a gone
     /// package and an edited shader all arrive (the Repository lists again after every
-    /// change). One run at a time: the Interactor owns the task.
+    /// change). The Interactor owns the task, and starts the next run only after the one before
+    /// has returned, but a run that is started while the one before it still waits for the
+    /// runtime takes over at once: the old one leaves without touching what is the new one's.
     func run() async {
-        selection = await settings.selectedEffect()
+        epoch += 1
+        let mine = epoch
+        clear()
+        broadcast.forget()
+        let restored = await settings.selectedEffect()
+        guard epoch == mine else { return }
+        selection = restored
         for await listing in packages.catalog() {
-            await reconcile(listing)
+            await reconcile(listing, in: mine)
         }
+        guard epoch == mine else { return }
         end()
     }
 
     func select(_ id: EffectID) async -> EffectSelectionOutcome {
         guard let entry = entries.first(where: { $0.id == id }) else { return .unavailable(nil) }
         if case .broken(let problem) = entry.availability { return .unavailable(problem) }
+        let mine = epoch
         selection = id
         await settings.setSelectedEffect(id)
-        let source = await packages.source(of: id)
-        // Another choice (or a fallback) came in while this one waited: it owns the effect now.
-        guard selection == id else { return .unavailable(nil) }
-        switch source {
+        // Another choice (or a fallback, or a new run) came in while the choice was being remembered: it owns the effect now.
+        guard epoch == mine, selection == id else { return .unavailable(nil) }
+        let source = await read(source: id)
+        // Another choice, a newer read of this effect, a fallback or a new run came in while this one waited: it owns the effect now.
+        guard epoch == mine, isNewest(source), selection == id else { return .unavailable(nil) }
+        switch source.answer {
         case .success(let source): return await prepare(source, for: id, announcing: "selected")
         case .failure(let problem): return unreadable(id, problem)
         }
@@ -77,16 +111,20 @@ actor EffectCatalogSession {
 
     // MARK: - A listing
 
-    private func reconcile(_ listing: [EffectCatalogEntry]) async {
+    private func reconcile(_ listing: [EffectCatalogEntry], in run: Int) async {
+        guard epoch == run else { return }
         entries = listing
         guard let settled = settleSelection() else { return }
-        let source = await packages.source(of: settled.id)
-        guard selection == settled.id else { return }
-        switch source {
+        let source = await read(source: settled.id)
+        guard epoch == run, isNewest(source), selection == settled.id else { return }
+        switch source.answer {
         case .failure(let problem):
             unreadable(settled.id, problem)
         case .success(let source) where source == prepared?.source:
-            prepared = Prepared(id: settled.id, source: source)
+            // The runtime has this very source already. If the last look could not read it, the menu
+            // goes back to how the runtime took it (which may still be out).
+            unreadableSource = nil
+            prepared?.id = settled.id
             publish()
         case .success(let source):
             // A fallback says what happened itself; a first choice and a hot reload are announced here.
@@ -119,6 +157,28 @@ actor EffectCatalogSession {
         entries.first { $0.id == id }?.displayName ?? (prepared?.id == id ? prepared?.source.name : nil) ?? id.key
     }
 
+    // MARK: - Reading a source
+
+    /// What a look at an effect's source found, and the number the look was issued under.
+    private struct SourceRead {
+        let token: Int
+        let answer: Result<EffectSource, EffectPackageProblem>
+    }
+
+    /// Reads the source of `id`. The number is taken before the read is issued, with no
+    /// suspension in between, so a later read always holds a later number.
+    private func read(source id: EffectID) async -> SourceRead {
+        readToken += 1
+        let token = readToken
+        return SourceRead(token: token, answer: await packages.source(of: id))
+    }
+
+    /// Whether no read was issued after `read`. A read that is not the newest may hold files that
+    /// have been edited since, whichever effect it was for, and must not act on its answer.
+    private func isNewest(_ read: SourceRead) -> Bool {
+        read.token == readToken
+    }
+
     // MARK: - Handing the runtime an effect
 
     /// Prepares `source` as the effect `id` and publishes how that went, unless a newer
@@ -128,27 +188,27 @@ actor EffectCatalogSession {
     private func prepare(_ source: EffectSource, for id: EffectID, announcing verb: String?) async -> EffectSelectionOutcome {
         generation += 1
         let mine = generation
-        prepared = Prepared(id: id, source: source)
-        outcome = nil
+        prepared = Prepared(id: id, source: source, answer: nil)
+        unreadableSource = nil
         if let verb {
             developerLog.record(.effect, "effect '\(source.name)' \(verb)")
         }
 
         let answer = await runtime.prepare(source).selectionOutcome
         guard generation == mine else { return answer }
-        outcome = answer
+        prepared?.answer = answer
         publish()
         return answer
     }
 
     /// The chosen effect is listed as usable but its source could not be read just now (the
-    /// files changed between the listing and the read). The runtime keeps what it has;
-    /// the menu is told, and the next listing tries again.
+    /// files changed between the listing and the read). The runtime keeps what it has, and
+    /// a `prepare` still out goes on: its answer is kept (`Prepared.answer`) but the menu
+    /// shows the problem until a listing reads the source again, which brings the answer back.
     @discardableResult
     private func unreadable(_ id: EffectID, _ problem: EffectPackageProblem) -> EffectSelectionOutcome {
         errorLog.record(.effect, "effect '\(displayName(of: id))' cannot be read: \(problem)")
-        generation += 1
-        outcome = .unavailable(problem)
+        unreadableSource = problem
         publish()
         return .unavailable(problem)
     }
@@ -161,15 +221,22 @@ actor EffectCatalogSession {
     }
 
     /// The run is over: close the streams, and forget everything so that the next run starts
-    /// from the persisted choice. `generation` only grows, so an answer still pending from this
-    /// run (the runtime ignores cancellation) publishes nothing into the next one.
+    /// from the persisted choice. Only the run that is still the newest ends the streams: one
+    /// that a newer run took over from leaves them, and everything else, to that run.
     private func end() {
+        clear()
+        broadcast.endObservations()
+    }
+
+    /// Forgets everything a run decided, so that the next run starts from the persisted choice.
+    /// `generation` only grows, so an answer still pending from the run before (the runtime
+    /// ignores cancellation) publishes nothing into the next one.
+    private func clear() {
         generation += 1
         entries = []
         selection = nil
-        outcome = nil
         prepared = nil
-        broadcast.endObservations()
+        unreadableSource = nil
     }
 }
 

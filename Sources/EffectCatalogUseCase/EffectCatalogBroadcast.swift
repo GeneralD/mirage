@@ -23,15 +23,26 @@ final class EffectCatalogBroadcast: @unchecked Sendable {
         states.send(state)
     }
 
+    /// Forgets the state, so that a stream opened after this waits for the next state published.
+    /// The streams already open stay open.
+    func forget() {
+        states.send(nil)
+    }
+
     /// Finishes every stream opened so far, then forgets the state so that a stream opened
     /// after this waits for the next run's first one.
     func endObservations() {
         ends.send()
-        states.send(nil)
+        forget()
     }
 
     /// The current state (if any), then every state published after, until the consumer lets
     /// go or the run ends. Any number of streams may be open at once.
+    ///
+    /// The two subscriptions are not one step, and neither are the two halves of
+    /// `endObservations`, so a stream opened in the very instant a run ends may get that run's
+    /// last state or miss the end. No lock above the Gateway can close that window, and the
+    /// port asks callers not to open a stream then (`EffectCatalogUseCase.observe()`).
     func observe() -> AsyncStream<EffectCatalogState> {
         AsyncStream { continuation in
             let following = states.compactMap { $0 }.sink { continuation.yield($0) }
