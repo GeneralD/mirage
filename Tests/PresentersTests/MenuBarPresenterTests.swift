@@ -241,6 +241,51 @@ struct MenuBarPresenterTests {
 
         #expect(rig.interactor.inner.starts.count == 2)
     }
+
+    // Releasing a Presenter runs its deinit on the main actor, which the test is running on, so
+    // like `stop()` it has happened by the time the assignment returns: there is nothing to wait
+    // for, and a deinit that hopped somewhere else would fail the first of these.
+    //
+    // What these read is the Interactor's stops. The observation task the deinit also ends (through
+    // the same `stop()`) is parked on a stream nothing can reach any more, so no test can see whether
+    // it ended; `stopEndsObservation` and `stopDropsTheStateOnItsWay` pin what `stop()` ends.
+
+    @Test("a started Presenter that is let go stops the Interactor")
+    func letGoWhileStartedStops() async {
+        let interactor = SpyEffectInteractor(FakeEffectInteractor(state: .fixture([chromatic])))
+        var presenter: MenuBarPresenter? = await startedPresenter(over: interactor)
+        weak let letGo = presenter
+        #expect(interactor.inner.stops.count == 0)
+
+        presenter = nil
+
+        #expect(letGo == nil, "nothing else holds the Presenter, so the stop below is its release's")
+        #expect(interactor.inner.stops.count == 1)
+    }
+
+    @Test("a Presenter that was never started asks nothing of the Interactor when it is let go")
+    func letGoBeforeStartIsQuiet() async {
+        let interactor = SpyEffectInteractor(FakeEffectInteractor(state: .fixture([chromatic])))
+
+        _ = makePresenter(over: interactor)
+        // A started Presenter let go afterwards shows that a release does reach the Interactor, so
+        // the single stop below is the started one's and the idle one's silence is not a deinit that never ran.
+        _ = await startedPresenter(over: interactor)
+
+        #expect(interactor.inner.stops.count == 1)
+    }
+
+    @Test("a Presenter that was stopped does not stop the Interactor a second time when it is let go")
+    func letGoAfterStopIsQuiet() async {
+        let interactor = SpyEffectInteractor(FakeEffectInteractor(state: .fixture([chromatic])))
+        var presenter: MenuBarPresenter? = await startedPresenter(over: interactor)
+        presenter?.stop()
+        #expect(interactor.inner.stops.count == 1)
+
+        presenter = nil
+
+        #expect(interactor.inner.stops.count == 1)
+    }
 }
 
 /// A Presenter over a `FakeEffectInteractor` the test publishes into, built inside
@@ -253,11 +298,7 @@ private struct PresenterRig {
     init(state: EffectCatalogState) {
         let interactor = SpyEffectInteractor(FakeEffectInteractor(state: state))
         self.interactor = interactor
-        presenter = withDependencies {
-            $0.effectInteractor = interactor
-        } operation: {
-            MenuBarPresenter()
-        }
+        presenter = makePresenter(over: interactor)
     }
 
     /// Starts the Presenter and waits for the first state to reach the rows.
@@ -265,6 +306,26 @@ private struct PresenterRig {
         presenter.start()
         await settle(presenter.$items) { !$0.isEmpty }
     }
+}
+
+/// A Presenter over `interactor`, built inside `withDependencies` (see `PresenterRig`).
+@MainActor
+private func makePresenter(over interactor: SpyEffectInteractor) -> MenuBarPresenter {
+    withDependencies {
+        $0.effectInteractor = interactor
+    } operation: {
+        MenuBarPresenter()
+    }
+}
+
+/// A started Presenter whose first state has reached the rows; the caller holds the only
+/// reference, so a test lets go of it by dropping that one.
+@MainActor
+private func startedPresenter(over interactor: SpyEffectInteractor) async -> MenuBarPresenter {
+    let presenter = makePresenter(over: interactor)
+    presenter.start()
+    await settle(presenter.$items) { !$0.isEmpty }
+    return presenter
 }
 
 /// A `FakeEffectInteractor` that also counts its `state` subscriptions that were cancelled,

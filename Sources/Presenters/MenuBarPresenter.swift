@@ -9,7 +9,9 @@ import Domain
 ///
 /// The Presenter owns the Interactor's lifecycle for the menu: `start()` begins
 /// observing and starts the Interactor, `stop()` ends both. Whoever builds the
-/// Presenter (the Router) calls them; nothing starts on its own.
+/// Presenter (the Router) calls them; nothing starts on its own. A started Presenter that is
+/// let go does what `stop()` does, since its observation task and the Interactor's run would
+/// outlive the only object that knows about them.
 ///
 /// The states reach the main actor through a `@MainActor` task over an `AsyncStream`, not
 /// through `receive(on: DispatchQueue.main)` (so a test waits with `settle`, and the
@@ -30,6 +32,13 @@ public final class MenuBarPresenter: ObservableObject {
     private var observation: StateObservation?
 
     public init() {}
+
+    /// Letting go of a started Presenter stops it. A Presenter that was never started, or was
+    /// stopped, asks nothing of the Interactor.
+    isolated deinit {
+        guard observation != nil else { return }
+        stop()
+    }
 
     /// Observes the Interactor's state, then starts the Interactor. Calling it again while
     /// started does nothing.
