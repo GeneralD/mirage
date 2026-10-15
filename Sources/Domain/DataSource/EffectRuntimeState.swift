@@ -20,11 +20,12 @@ import Dependencies
 ///   effect's name. Only a successful compile is kept, whatever its ticket.
 /// - **The selection** is the effect `apply` runs. It never returns to "nothing
 ///   prepared". A source that does not compile is final until a newer `begin`; a
-///   compile that found no GPU context is not (`ShaderDiagnostics.Cause`).
+///   compile that failed for the environment's reasons (no GPU context, or the compiler
+///   service failing: `ShaderDiagnostics.Cause.environment`) is not.
 /// - **Waiting.** An `admit` that finds the newest compile still running parks
 ///   until the selection settles, and is released in arrival order.
-/// - **Streaks.** A compile that found no GPU context is retried by every `admit`,
-///   so a settlement says where it falls in its streak (`EffectSettlement`): the
+/// - **Streaks.** A compile that failed for the environment's reasons is retried by
+///   every `admit`, so a settlement says where it falls in its streak (`EffectSettlement`): the
 ///   caller logs the first failure and the recovery, and the rest is only counted.
 public protocol EffectRuntimeState: Sendable {
     /// A `prepare` begins: takes the next ticket. A cached library is selected at
@@ -53,7 +54,7 @@ public enum EffectAdmission: Sendable {
     /// the library to run or the failure to answer, and the pass's uniforms.
     case ready(Result<any LibraryHandle, EffectFailure>, EffectUniforms)
     /// Nothing is ready, but there is an effect to compile: the `fallback` while
-    /// nothing was prepared, or the one whose compile found no GPU context. The
+    /// nothing was prepared, or the one whose compile failed for the environment's reasons. The
     /// caller starts that compile, settles it under `ticket` when it ends, and reads
     /// `selected()` without waiting for the compile: the selection settles when the
     /// newest effect does, which a newer `begin` may make happen first.

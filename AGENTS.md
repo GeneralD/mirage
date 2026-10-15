@@ -135,9 +135,9 @@ Shared conventions:
   While nothing is prepared, the first `apply` prepares
   `BundledEffects.defaultEffect`, served by `BundledEffectDataSource` as an
   MSL string constant (no `Bundle.main`). A source that does not compile is
-  `.compileFailed` and final; a compile that found no GPU context is
-  `.internalError` and retried by the next `apply`
-  (`ShaderDiagnostics.cause`), and that streak is logged once, plus its recovery.
+  `.compileFailed` and final; a compile that failed for the environment's reasons
+  (`ShaderDiagnostics.cause == .environment`) is `.internalError` and retried by the
+  next `apply`, and that streak is logged once, plus its recovery.
   Two things make a compile `.environment`: no GPU context, and
   `MTLLibraryError.internal` (the compiler service failing) — the pure
   `LibraryErrorMapping` in `ShaderCompilationDataSource` classifies the raw code
