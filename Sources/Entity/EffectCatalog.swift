@@ -14,12 +14,16 @@ public struct EffectCatalogEntry: Sendable, Hashable {
     /// Always `id.origin`; a field of its own because the menu groups by it.
     public let origin: EffectOrigin
     public let availability: EffectAvailability
+    /// The manifest's `author`, for the menu to show beside the name; `nil` for a bundled
+    /// effect, for a manifest that names none, and for a package whose manifest cannot be read.
+    public let author: String?
 
-    public init(id: EffectID, displayName: String, origin: EffectOrigin, availability: EffectAvailability) {
+    public init(id: EffectID, displayName: String, origin: EffectOrigin, availability: EffectAvailability, author: String? = nil) {
         self.id = id
         self.displayName = displayName
         self.origin = origin
         self.availability = availability
+        self.author = author
     }
 }
 

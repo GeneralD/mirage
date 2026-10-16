@@ -198,11 +198,14 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   tagged with their issuing instance like the other manual-completion fakes, `heldSources`
   and `pendingSourceCount` to see them), so "a select arrives while a listing waits for a
   source" is a sequence a test writes down;
-  `FakeEffectCatalogUseCase.run()` parks on `suspendUntilCancelled`, counts
-  `runCancellations`, and when cancelled finishes the open `observe()` streams and leaves
-  nothing current (the live use case does, so an Interactor that does not subscribe again
-  at each start is caught); `FakeEffectInteractor.publish(_:)` pushes into its
-  `CurrentValueSubject`.
+  `FakeEffectCatalogUseCase.run()` parks on `suspendUntilCancelled` and counts
+  `runCancellations`, and `runEvents` orders when each run began and returned. When
+  cancelled it finishes the open `observe()` streams and leaves nothing current, once the
+  run returns (the live use case does, so an Interactor that does not subscribe again at
+  each start is caught); `holdCancelledRuns()` keeps a cancelled run in `run()` (ignoring
+  the cancel, like the other manual-completion fakes; `heldRunCount` counts them) until
+  `releaseCancelledRuns()`, which is how a subject that must wait for the run it ends
+  is proven; `FakeEffectInteractor.publish(_:)` pushes into its `CurrentValueSubject`.
 
 ## Property tests
 

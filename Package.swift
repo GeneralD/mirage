@@ -75,11 +75,17 @@ let package = Package(
         .testTarget(name: "HostTimeTests", dependencies: ["HostTime"] + testDependencies),
         .target(name: "UnifiedLog", dependencies: dependencies),
         .testTarget(name: "UnifiedLogTests", dependencies: ["UnifiedLog"] + testDependencies),
+        // Host only: the effects folder's path under Application Support. Builds a path, reads no environment variable.
+        .target(name: "AppDirectories", dependencies: dependencies),
+        .testTarget(name: "AppDirectoriesTests", dependencies: ["AppDirectories"] + testDependencies),
 
         // ── Gateway (OS boundary) ──
         .target(name: "AVFoundationGateway", dependencies: dependencies),
         .target(name: "IOSurfaceGateway", dependencies: dependencies),
         .testTarget(name: "IOSurfaceGatewayTests", dependencies: ["IOSurfaceGateway"] + testDependencies),
+        // Host only: the user's defaults as strings by key (`KeyValueStoreGatewayImpl`). Smoke runs on a UUID suite.
+        .target(name: "UserDefaultsGateway", dependencies: dependencies),
+        .testTarget(name: "UserDefaultsGatewayTests", dependencies: ["UserDefaultsGateway"] + testDependencies),
         // Host only: never a dependency of ExtensionDependencyInjection / ExtensionApp
         // (scripts/check-extension-no-metal.sh). Exercised by GPUSmokeTests, not here.
         .target(name: "MetalGateway", dependencies: dependencies),
@@ -91,6 +97,15 @@ let package = Package(
         .target(name: "CMIOExtensionGateway", dependencies: dependencies),
         .target(name: "DispatchExecutorGateway", dependencies: dependencies),
         .testTarget(name: "DispatchExecutorGatewayTests", dependencies: ["DispatchExecutorGateway"] + testDependencies),
+        // Host only (with FileWatchGateway, WorkspaceGateway and AppDirectories): the effects folder's
+        // file system. Smoke under a UUID temp directory; nothing above resolves it until EffectPackageDataSource.
+        .target(name: "FileSystemGateway", dependencies: dependencies),
+        .testTarget(name: "FileSystemGatewayTests", dependencies: ["FileSystemGateway"] + testDependencies),
+        // Host only: DispatchSource file-system object sources over event-only descriptors. Smoke under a UUID temp directory.
+        .target(name: "FileWatchGateway", dependencies: dependencies),
+        .testTarget(name: "FileWatchGatewayTests", dependencies: ["FileWatchGateway"] + testDependencies),
+        // Host only: Finder through NSWorkspace. Coverage-ignored and thin (scripts/check-live-thin.sh); no smoke, CI must not open Finder.
+        .target(name: "WorkspaceGateway", dependencies: dependencies),
 
         // ── DataSource ──
         .target(name: "CameraDataSource", dependencies: dependencies),
@@ -131,7 +146,7 @@ let package = Package(
         .testTarget(name: "EffectWatchDataSourceTests", dependencies: ["EffectWatchDataSource"] + testDependencies),
 
         // ── DataStore ──
-        // Host only: the chosen effect, kept between launches. Holds `EmptyPreferences` for now.
+        // Host only: the chosen effect, kept between launches in the user's defaults (`KeyValueStoreGateway`).
         .target(name: "PreferencesDataStore", dependencies: dependencies),
         .testTarget(name: "PreferencesDataStoreTests", dependencies: ["PreferencesDataStore"] + testDependencies),
 
@@ -154,12 +169,12 @@ let package = Package(
             name: "EffectRuntimeRepositoryTests", dependencies: ["EffectRuntimeRepository", "EffectRuntimeStateDataSource"] + testDependencies),
         .target(name: "PreviewRepository", dependencies: dependencies),
         .testTarget(name: "PreviewRepositoryTests", dependencies: ["PreviewRepository"] + testDependencies),
-        // Host only: the bundled effects and the packages as one catalog. Holds `BundledOnlyCatalog` for now.
+        // Host only: the bundled effects and the packages as one catalog, listed again after every change.
         .target(name: "EffectPackageRepository", dependencies: dependencies),
         .testTarget(name: "EffectPackageRepositoryTests", dependencies: ["EffectPackageRepository"] + testDependencies),
-        // Host only: the chosen effect as the UseCases see it. Holds `EmptySettings` for now.
+        // Host only: the chosen effect as the UseCases see it, a pass-through to `PreferencesDataStore`.
         .target(name: "SettingsRepository", dependencies: dependencies),
-        .testTarget(name: "SettingsRepositoryTests", dependencies: ["SettingsRepository"] + testDependencies),
+        .testTarget(name: "SettingsRepositoryTests", dependencies: ["SettingsRepository", "PreferencesDataStore"] + testDependencies),
 
         // ── UseCase ──
         .target(name: "FramePipelineUseCase", dependencies: dependencies),
@@ -180,9 +195,13 @@ let package = Package(
         // Host only: the dev harness's launch sequence (camera prompt, then the pipeline).
         .target(name: "HarnessInteractor", dependencies: dependencies),
         .testTarget(name: "HarnessInteractorTests", dependencies: ["HarnessInteractor"] + testDependencies),
-        // Host only: the effects menu's Combine pipeline. Holds `StaticEffectInteractor` for now.
+        // Host only: the effects menu's Combine pipeline; owns the task that runs the catalog.
         .target(name: "EffectInteractor", dependencies: dependencies),
         .testTarget(name: "EffectInteractorTests", dependencies: ["EffectInteractor"] + testDependencies),
+
+        // ── Presenter (@Published display state; no AppKit / SwiftUI; host only) ──
+        .target(name: "Presenters", dependencies: dependencies),
+        .testTarget(name: "PresentersTests", dependencies: ["Presenters"] + testDependencies),
 
         // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
         .target(
@@ -204,13 +223,16 @@ let package = Package(
                 "BundledEffectDataSource", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
                 "PreviewDataSource", "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
+                "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
+                "UserDefaultsGateway",
             ]
         ),
         .testTarget(
             name: "HostDependencyInjectionTests",
             dependencies: [
                 "HostDependencyInjection", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
-                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore", "UserDefaultsGateway",
+                "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
             ] + testDependencies
         ),
         .target(

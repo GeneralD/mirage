@@ -11,15 +11,18 @@ import SettingsRepository
 import TestDoubles
 import TestSupport
 import Testing
+import UserDefaultsGateway
 
 /// The host registers a live value for every port of the effect catalog (epic #42, D10):
 /// the pass-through default of its module, until the later issue puts the real one there.
+/// The OS-boundary ports register no pass-through: their live is the Gateway itself, which
+/// the registration only type-checks here and never calls (it would read the user's defaults).
 ///
 /// Every resolution here happens inside `withDependencies { $0.context = .live }`. The live
 /// values in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its
 /// first resolution and keeps it for the life of the process (the test bundle is one
-/// process), and a pass-through that resolves a port of its own (`BundledOnlyCatalog`
-/// resolves `bundledEffects`) captures the scope it is built in. These keys are resolved
+/// process), and a live value that resolves a port of its own (`EffectPackageRepositoryImpl`
+/// resolves `effectPackages`, `effectWatch` and `bundledEffects`) captures the scope it is built in. These keys are resolved
 /// by no other suite, and none of them is overridden here, so what each one captures is
 /// the live context whichever test builds it first. Add no override of one of these keys
 /// in this suite and no test that resolves one in another. (The one override below is the
@@ -39,14 +42,16 @@ struct HostEffectRegistrationsTests {
             @Dependency(\.effectPackages) var effectPackages
             @Dependency(\.effectWatch) var effectWatch
             @Dependency(\.preferences) var preferences
+            @Dependency(\.keyValueStoreGateway) var keyValueStoreGateway
 
-            #expect(effectInteractor is StaticEffectInteractor)
+            #expect(effectInteractor is EffectInteractorImpl)  // the real one (#49), not a pass-through: it runs nothing until `start()`
             #expect(effectCatalogUseCase is EffectCatalogUseCaseImpl)
-            #expect(effectPackageRepository is BundledOnlyCatalog)
-            #expect(settingsRepository is EmptySettings)
+            #expect(effectPackageRepository is EffectPackageRepositoryImpl)
+            #expect(settingsRepository is SettingsRepositoryImpl)
             #expect(effectPackages is NoPackages)
             #expect(effectWatch is NeverChangingWatch)
-            #expect(preferences is EmptyPreferences)
+            #expect(preferences is PreferencesDataStoreImpl)
+            #expect(keyValueStoreGateway is KeyValueStoreGatewayImpl)
         }
     }
 

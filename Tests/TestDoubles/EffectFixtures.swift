@@ -8,9 +8,11 @@ extension EffectID {
 }
 
 extension EffectCatalogEntry {
-    /// An entry for `id`, shown as `displayName` (the key when omitted), `.ready` unless told otherwise.
-    public static func fixture(_ id: EffectID, displayName: String? = nil, availability: EffectAvailability = .ready) -> EffectCatalogEntry {
-        EffectCatalogEntry(id: id, displayName: displayName ?? id.key, origin: id.origin, availability: availability)
+    /// An entry for `id`, shown as `displayName` (the key when omitted), `.ready` unless told otherwise, by no author unless one is given.
+    public static func fixture(
+        _ id: EffectID, displayName: String? = nil, availability: EffectAvailability = .ready, author: String? = nil
+    ) -> EffectCatalogEntry {
+        EffectCatalogEntry(id: id, displayName: displayName ?? id.key, origin: id.origin, availability: availability, author: author)
     }
 }
 
@@ -22,11 +24,13 @@ extension EffectCatalogState {
 }
 
 extension EffectPackage {
-    /// A package whose manifest is valid and whose source is `source`.
-    public static func fixture(_ id: EffectID, name: String? = nil, source: String = "kernel void effect() {}") -> EffectPackage {
+    /// A package whose manifest is valid, names `author` if one is given, and whose source is `source`.
+    public static func fixture(
+        _ id: EffectID, name: String? = nil, author: String? = nil, source: String = "kernel void effect() {}"
+    ) -> EffectPackage {
         EffectPackage(
             id: id,
-            manifest: EffectManifest(formatVersion: 1, name: name ?? id.key),
+            manifest: EffectManifest(formatVersion: 1, name: name ?? id.key, author: author),
             source: EffectSource(name: name ?? id.key, source: source))
     }
 }
