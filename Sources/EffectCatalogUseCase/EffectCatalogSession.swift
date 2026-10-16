@@ -61,10 +61,12 @@ actor EffectCatalogSession {
     private var readToken = 0
 
     /// How the chosen effect's last attempt went: the problem if its source could not be read
-    /// at the last look, otherwise how the runtime took what it was last handed. `nil` while
-    /// that attempt is still running.
+    /// at the last look, otherwise how the runtime took what it was last handed, if that was
+    /// the chosen effect. `nil` while that attempt is still running, or has not begun: a choice
+    /// is made before its `prepare` is issued, and an answer for the effect chosen before can
+    /// arrive in between, which is not this choice's.
     private var outcome: EffectSelectionOutcome? {
-        unreadableSource.map { .unavailable($0) } ?? prepared?.answer
+        unreadableSource.map { .unavailable($0) } ?? (prepared?.id == selection ? prepared?.answer : nil)
     }
 
     init(broadcast: EffectCatalogBroadcast) {

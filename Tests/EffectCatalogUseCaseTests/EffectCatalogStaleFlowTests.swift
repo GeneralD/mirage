@@ -223,4 +223,35 @@ struct EffectCatalogStaleFlowTests {
         #expect(rig.runtime.prepareRequests.count == 1, "nothing was prepared again: the second run's source is the one the runtime has")
         await rig.stop(second)
     }
+
+    @Test(
+        "the runtime's answer for the effect chosen before, arriving while the next choice is still being remembered, is not shown as the next one's outcome"
+    )
+    func answerOfTheChoiceBeforeWhileTheNextIsBeingRemembered() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        let older = Task { await rig.subject.select(glitch.id) }
+        await rig.runtime.prepareRequests.waitForCount(2)  // glitch's compile is out...
+        rig.settings.holdWrites()
+        let newer = Task { await rig.subject.select(other.id) }  // ...when other is chosen, and is still being remembered
+        await rig.settings.heldRequests.waitForCount(1)
+        await rig.answer(2, with: .failure(.compileFailed))  // glitch's compile ends now, and no newer prepare has been issued
+        #expect(await older.value == .failed(.compileFailed), "the caller of the older choice is told how it went")
+        await watcher.states.waitForCount(2)
+
+        rig.settings.holdWrites(false)
+        rig.settings.complete(rig.settings.heldRequests.values[0])
+        await rig.answer(3)
+        #expect(await newer.value == .prepared)
+        await watcher.states.waitForCount(3)
+
+        #expect(
+            watcher.states.values == [Rig.state(), Rig.state(selection: other, outcome: nil), Rig.state(selection: other)],
+            "glitch's failure was not shown on the other row: the menu waited for other's own answer")
+        await rig.stop(run)
+    }
 }
