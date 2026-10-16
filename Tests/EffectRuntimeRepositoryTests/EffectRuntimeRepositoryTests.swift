@@ -137,7 +137,7 @@ struct EffectRuntimeRepositoryTests {
         #expect(
             fixture.log.messages(in: .effect) == [
                 "effect 'first' did not compile: no GPU context to compile on: noDevice",
-                "effect 'first' compiled after 1 failed attempt for want of a GPU context",
+                "effect 'first' compiled after 1 failed attempt for environment reasons",
             ], "a streak of one is reported in the singular")
 
         // Once it compiled, it is cached like any other.
@@ -218,7 +218,7 @@ struct EffectRuntimeRepositoryTests {
         _ = try await fixture.succeedCompile(4)
         #expect(await fixture.answer(recovered) == .success)
         #expect(await fixture.compilesFinished(4))
-        #expect(fixture.log.messages(in: .effect) == [failure, "effect 'bundled' compiled after 3 failed attempts for want of a GPU context"])
+        #expect(fixture.log.messages(in: .effect) == [failure, "effect 'bundled' compiled after 3 failed attempts for environment reasons"])
     }
 
     @Test("a prepare after a streak starts a new one: its first GPU-context failure is logged again")

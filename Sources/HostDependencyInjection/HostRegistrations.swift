@@ -64,7 +64,7 @@ extension ExtensionInstallUseCaseKey: DependencyKey {
 }
 
 extension EffectCatalogUseCaseKey: DependencyKey {
-    public static let liveValue: any EffectCatalogUseCase = BundledOnlyEffectCatalog()
+    public static let liveValue: any EffectCatalogUseCase = EffectCatalogUseCaseImpl()
 }
 
 extension CameraRepositoryKey: DependencyKey {

@@ -9,7 +9,10 @@ import TestSupport
 ///
 /// `run()` records its start and then does what the live one does: it runs until the
 /// caller's task is cancelled (`suspendUntilCancelled`) and records that cancel, so a
-/// test that stops the Interactor proves the task it owned was cancelled.
+/// test that stops the Interactor proves the task it owned was cancelled. Like the live
+/// one, a run that ends this way ends every stream open at that moment and leaves nothing
+/// current, so an Interactor that subscribed once and not again at each start is caught
+/// here: the stream it holds is finished, and a stream opened after waits for the next publish.
 ///
 /// The live `run()` has teardown to finish once it is cancelled (it stops its file watch),
 /// and a subject that starts the next run must wait for it. `holdCancelledRuns()` makes
@@ -17,6 +20,7 @@ import TestSupport
 /// ignoring the cancellation as the other manual-completion fakes do, until
 /// `releaseCancelledRuns()`. `heldRunCount` is how many are held right now; the cancel and
 /// the hold are recorded in one step, so a test that has seen the cancel finds the run held.
+/// The streams end when the run returns, as live, so a held run still has its streams open.
 /// `runEvents` records when each run began and returned, in one order, so a test can tell
 /// "the next run began after the old one returned" from "while it was still returning".
 public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
@@ -79,7 +83,10 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
             runs.append(())
             return locked.runCount
         }
-        if await suspendUntilCancelled() { await recordCancelAndHoldIfAsked() }
+        if await suspendUntilCancelled() {
+            await recordCancelAndHoldIfAsked()
+            endObservations()
+        }
         runEvents.append(.ended(number))
     }
 
@@ -124,6 +131,18 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
 
     public func openEffectsFolder() {
         folderOpens.append(())
+    }
+
+    /// The run is over: every open stream finishes (outside the lock: finishing one runs its
+    /// termination handler, which takes it) and nothing is current any more.
+    private func endObservations() {
+        let open = state.withLock { locked -> [AsyncStream<EffectCatalogState>.Continuation] in
+            locked.current = nil
+            let open = Array(locked.continuations.values)
+            locked.continuations.removeAll()
+            return open
+        }
+        for continuation in open { continuation.finish() }
     }
 
     /// Records the cancel, then waits for `releaseCancelledRuns()` when the holding is on. The

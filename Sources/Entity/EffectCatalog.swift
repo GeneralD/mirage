@@ -34,12 +34,18 @@ public enum EffectSelectionOutcome: Sendable, Hashable {
     /// The runtime could not compile it. The pipeline passes frames through
     /// (epic #42, D5); fixing the source selects it again by itself.
     case failed(EffectFailure)
-    /// There was nothing to prepare: the package is broken (its problem), or no longer there (`nil`).
+    /// There was nothing to prepare: the package is broken, or its files could not be read just now
+    /// (its problem); or the effect is not there to be chosen, or another choice took it over before
+    /// this one could prepare anything (`nil`).
     case unavailable(EffectPackageProblem?)
 }
 
 /// What the menu needs to know, in one value: the rows, the chosen effect and how the
-/// last attempt to run it went (`nil` before the first one).
+/// last attempt to run it went. The outcome is `nil` while the newest attempt has not been
+/// answered: a state can be published in that time (a listing that needs no `prepare`
+/// arrives meanwhile, or the answer for the effect chosen before arrives while the new
+/// choice is still being remembered), and the last answer then belongs to a request that
+/// is no longer the newest.
 public struct EffectCatalogState: Sendable, Hashable {
     public let entries: [EffectCatalogEntry]
     public let selection: EffectID

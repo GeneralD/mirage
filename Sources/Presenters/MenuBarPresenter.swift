@@ -29,31 +29,27 @@ public final class MenuBarPresenter: ObservableObject {
     @Published public private(set) var status: String?
 
     @Dependency(\.effectInteractor) private var interactor
-    private var observation: StateObservation?
+    /// What a started Presenter holds; `nil` when it was never started or has been stopped.
+    /// Releasing it ends the observation and stops the Interactor, so `stop()` and letting the
+    /// Presenter go are one path, and a Presenter that is not started asks nothing of the
+    /// Interactor when it goes.
+    private var running: Running?
 
     public init() {}
-
-    /// Letting go of a started Presenter stops it. A Presenter that was never started, or was
-    /// stopped, asks nothing of the Interactor.
-    isolated deinit {
-        guard observation != nil else { return }
-        stop()
-    }
 
     /// Observes the Interactor's state, then starts the Interactor. Calling it again while
     /// started does nothing.
     public func start() {
-        guard observation == nil else { return }
-        observation = StateObservation(of: interactor.state) { [weak self] state in self?.apply(state) }
+        guard running == nil else { return }
+        running = Running(over: interactor) { [weak self] state in self?.apply(state) }
         interactor.start()
     }
 
     /// Ends the observation and stops the Interactor. The rows stay as they were, even
     /// when a state had already been sent and not yet applied.
     public func stop() {
-        observation?.end()
-        observation = nil
-        interactor.stop()
+        guard running != nil else { return interactor.stop() }
+        running = nil
     }
 
     public func select(_ id: EffectID) {
@@ -73,6 +69,27 @@ public final class MenuBarPresenter: ObservableObject {
 }
 
 extension MenuBarPresenter {
+    /// A started Presenter's observation of the Interactor's states and the Interactor's run, ended
+    /// together when this is released. Its own class rather than the Presenter's `deinit`: a main-actor
+    /// class's `deinit` is not isolated, so it could not reach the Presenter's state, and `isolated deinit`
+    /// is not available on the toolchain that builds the release. Releasing it on any thread is safe: ending
+    /// an observation and `stop()` both are.
+    private final class Running {
+        private let observation: StateObservation
+        private let interactor: any EffectInteractor
+
+        @MainActor
+        init(over interactor: any EffectInteractor, apply: @escaping @MainActor (EffectCatalogState) -> Void) {
+            self.interactor = interactor
+            observation = StateObservation(of: interactor.state, apply: apply)
+        }
+
+        deinit {
+            observation.end()
+            interactor.stop()
+        }
+    }
+
     /// One subscription to the Interactor's states and the main-actor task that applies them.
     /// The sink runs on whatever thread the publisher sends from and only hands the state to
     /// the stream, which keeps the newest one.

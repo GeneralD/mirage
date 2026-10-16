@@ -22,7 +22,8 @@ import Domain
 ///
 /// **Retrying.** A source that does not compile is final until a newer `begin`: the
 /// selection stays failed and the frames after it answer at once. A compile that
-/// found no GPU context says nothing about the source, so the selection remembers the
+/// found no GPU context, or whose compiler service failed (`ShaderDiagnostics.cause`
+/// is `.environment`), says nothing about the source, so the selection remembers the
 /// effect, and the next `admit` hands it back to be compiled again (the renderer asks
 /// for its context again on the next pass for the same reason). Those retries run at
 /// the camera's pace, so each settlement says where it falls in its streak of
@@ -39,7 +40,8 @@ public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     /// `admit`s and `selected`s waiting for the selection to settle, resumed in arrival order.
     private var waiting: [@Sendable (Result<any LibraryHandle, EffectFailure>) -> Void] = []
     private var session: EffectSession?
-    /// Consecutive compiles of the newest effect that found no GPU context. Only a
+    /// Consecutive compiles of the newest effect that failed for the environment's
+    /// reasons (no GPU context, a compiler service fault). Only a
     /// `begin` starts it over: the retries an `admit` hands back keep counting.
     private var contextFailures = 0
 
@@ -135,7 +137,7 @@ extension EffectRuntimeStateDataSourceImpl {
     }
 
     /// The effect an `admit` compiles itself: the fallback while nothing has been
-    /// prepared, or the one whose compile found no GPU context.
+    /// prepared, or the one whose compile failed for the environment's reasons.
     private func compilable(fallback: @Sendable () -> EffectSource) -> EffectSource? {
         switch selection {
         case .nothing: fallback()
@@ -177,8 +179,8 @@ private enum Selection {
     case ready(any LibraryHandle)
     /// The newest `begin`'s source does not compile: final until a newer `begin`.
     case failed
-    /// The newest `begin`'s compile found no GPU context, which is not the effect's
-    /// fault: not final. The next `admit` hands this effect back to be compiled again.
+    /// The newest `begin`'s compile failed for the environment's reasons (no GPU context,
+    /// a compiler service fault), which are not the effect's fault: not final. The next `admit` hands this effect back to be compiled again.
     case retry(EffectSource)
 
     /// What a caller gets from it, or `nil` while there is nothing to run yet.

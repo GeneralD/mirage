@@ -190,12 +190,20 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `FakeEffectPackageRepository` register a stream before `changes(of:)` / `catalog()`
   returns, so `fire(request:)` / `publish(_:)` right after the call cannot be lost, and
   their `terminations` collector fires when the consumer lets go. A test keeps such a
-  stream alive with `withExtendedLifetime` (a dropped iterator cancels it). An unscripted
-  `FakeEffectPackageRepository.source(of:)` reports an issue and answers `.sourceMissing`;
+  stream alive with `withExtendedLifetime` (a dropped iterator cancels it).
+  `FakeEffectPackageRepository.publish(_:)` yields an equal catalog again, as the live port
+  does after an edit that changes no row. An unscripted `source(of:)` reports an issue and
+  answers `.sourceMissing`; `holdSources()` parks every read until `completeSource(_:with:)`
+  (any order, exactly once, the answer being what was scripted when the read began, requests
+  tagged with their issuing instance like the other manual-completion fakes, `heldSources`
+  and `pendingSourceCount` to see them), so "a select arrives while a listing waits for a
+  source" is a sequence a test writes down;
   `FakeEffectCatalogUseCase.run()` parks on `suspendUntilCancelled` and counts
-  `runCancellations`, and `runEvents` orders when each run began and returned;
-  `holdCancelledRuns()` keeps a cancelled run in `run()` (ignoring the cancel, like the
-  other manual-completion fakes; `heldRunCount` counts them) until
+  `runCancellations`, and `runEvents` orders when each run began and returned. When
+  cancelled it finishes the open `observe()` streams and leaves nothing current, once the
+  run returns (the live use case does, so an Interactor that does not subscribe again at
+  each start is caught); `holdCancelledRuns()` keeps a cancelled run in `run()` (ignoring
+  the cancel, like the other manual-completion fakes; `heldRunCount` counts them) until
   `releaseCancelledRuns()`, which is how a subject that must wait for the run it ends
   is proven; `FakeEffectInteractor.publish(_:)` pushes into its `CurrentValueSubject`.
 

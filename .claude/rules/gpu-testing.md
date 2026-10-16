@@ -70,6 +70,14 @@ device: it pins `GPUCompletionMapping`'s domain string and code numbers to the
 SDK's `MTLCommandBufferErrorDomain` / `MTLCommandBufferError.Code`, wrapped as
 `MetalGateway` wraps them, because this is the only target that links Metal.
 
+`LibraryErrorCodeTests` (suite `Library error codes`) does the same for
+`LibraryErrorMapping`, the compile-error classifier of `ShaderCompilationDataSource`
+(epic #42, D7): the number it calls `internal` is `MTLLibraryError.Code.internal`
+(`MTLLibraryErrorDomain`), every other code the SDK declares is the source's, and the
+real compiler's rejection of a broken source (`compileFailure`) and a missing entry
+point (code 0) are both the source's. No run provokes a transient compiler fault; it
+is a raw code the main suite writes down.
+
 ## Rules
 
 - These suites live in `Tests/GPUSmokeTests`, are `.serialized`, and are gated

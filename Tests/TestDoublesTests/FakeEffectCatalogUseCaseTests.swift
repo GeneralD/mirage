@@ -131,6 +131,36 @@ struct FakeEffectCatalogUseCaseTests {
         #expect(seen.count == 1)
     }
 
+    @Test("a run that is cancelled ends the open streams and leaves nothing current, as the live one does")
+    func runEndsTheStreams() async {
+        let useCase = FakeEffectCatalogUseCase(state: .fixture([chromatic]))
+        let seen = Collector<EffectCatalogState>()
+        let ended = Collector<Void>()
+        let consumer = Task {
+            for await state in useCase.observe() { seen.append(state) }
+            ended.append(())
+        }
+        await seen.waitForCount(1)
+        let run = Task { await useCase.run() }
+        await useCase.runs.waitForCount(1)
+
+        run.cancel()
+        await ended.waitForCount(1)
+        await consumer.value
+        await useCase.observationTerminations.waitForCount(1)
+
+        let later = Collector<EffectCatalogState>()
+        let next = Task { for await state in useCase.observe() { later.append(state) } }
+        await useCase.observations.waitForCount(2)
+        useCase.publish(.fixture([glitch]))
+        await later.waitForCount(1)
+        next.cancel()
+        await next.value
+        #expect(seen.values == [.fixture([chromatic])])
+        #expect(
+            later.values == [.fixture([glitch])], "the state of the run that ended is not replayed: a stream opened after waits for the next publish")
+    }
+
     @Test("select records the id and answers the scripted outcome, prepared unless told otherwise")
     func selectIsRecorded() async {
         let useCase = FakeEffectCatalogUseCase()

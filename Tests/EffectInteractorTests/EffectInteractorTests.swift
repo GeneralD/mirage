@@ -166,6 +166,7 @@ struct EffectInteractorTests {
         await seen.waitForCount(1)
         rig.subject.stop()
         await rig.catalog.observationTerminations.waitForCount(1)
+        await rig.catalog.runEvents.waitForCount(2)  // the run has returned, and with it everything it had made current
         rig.catalog.publish(unseen)
         #expect(seen.values == [first], "the stream was gone before the change, so the stopped Interactor forwarded nothing")
 
@@ -187,6 +188,8 @@ struct EffectInteractorTests {
         rig.subject.start()
         await seen.waitForCount(1)
         rig.subject.start()
+        await rig.catalog.observations.waitForCount(2)  // the second run observes; the first run's end left nothing current
+        rig.catalog.publish(first)  // the second run's own first state
         await seen.waitForCount(2)
         rig.catalog.publish(second)
         rig.catalog.publish(third)

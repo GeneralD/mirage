@@ -125,7 +125,7 @@ struct EffectPackageRepositoryTests {
         Task { for await entries in stream { seen.append(entries) } }
     }
 
-    /// The first catalog, taken as `BundledOnlyEffectCatalog.select` takes it: iterate once and let go.
+    /// The first catalog, as a consumer that wants one answer takes it: iterate once and let go.
     private func firstCatalog(of subject: EffectPackageRepositoryImpl) async -> [EffectCatalogEntry]? {
         for await entries in subject.catalog() { return entries }
         return nil

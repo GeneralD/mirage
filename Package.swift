@@ -185,7 +185,7 @@ let package = Package(
         .testTarget(name: "ExtensionInstallUseCaseTests", dependencies: ["ExtensionInstallUseCase"] + testDependencies),
         .target(name: "ExtensionRelayUseCase", dependencies: dependencies),
         .testTarget(name: "ExtensionRelayUseCaseTests", dependencies: ["ExtensionRelayUseCase"] + testDependencies),
-        // Host only: the effects menu's policy (selection, hot reload, fallback). Holds `BundledOnlyEffectCatalog` for now.
+        // Host only: the effects menu's policy (selection, hot reload, fallback).
         .target(name: "EffectCatalogUseCase", dependencies: dependencies),
         .testTarget(name: "EffectCatalogUseCaseTests", dependencies: ["EffectCatalogUseCase"] + testDependencies),
 

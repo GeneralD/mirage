@@ -52,7 +52,7 @@ struct FixedAppDirectoriesTests {
     }
 }
 
-@Suite("FakeSettingsRepository")
+@Suite("FakeSettingsRepository", .timeLimit(.minutes(1)))
 struct FakeSettingsRepositoryTests {
     @Test("selectedEffect answers what it was made with, then what was set, and both are recorded")
     func readsAndWrites() async {
@@ -69,6 +69,75 @@ struct FakeSettingsRepositoryTests {
     @Test("nothing chosen is nil")
     func nothingChosen() async {
         #expect(await FakeSettingsRepository().selectedEffect() == nil)
+    }
+
+    @Test("a held read stays parked until it is completed, and answers what was stored when it began")
+    func heldRead() async {
+        let settings = FakeSettingsRepository(selected: .package("glitch"))
+        settings.holdReads()
+        let read = Task { await settings.selectedEffect() }
+        await settings.heldRequests.waitForCount(1)
+        let request = settings.heldRequests.values[0]
+        #expect(request.call == .read)
+        #expect(settings.pendingCount == 1)
+
+        await settings.setSelectedEffect(.package("other"))  // not held: lands while the read is parked
+        #expect(settings.complete(request))
+        #expect(await read.value == .package("glitch"), "the read began before the write")
+        #expect(settings.pendingCount == 0)
+        settings.holdReads(false)
+        #expect(await settings.selectedEffect() == .package("other"), "a read after the write sees it")
+    }
+
+    @Test("a held write has stored its value, and its caller waits until the call is completed")
+    func heldWrite() async {
+        let settings = FakeSettingsRepository()
+        settings.holdWrites()
+        let returned = Collector<Void>()
+        let write = Task {
+            await settings.setSelectedEffect(.package("glitch"))
+            returned.append(())
+        }
+        await settings.heldRequests.waitForCount(1)
+        let request = settings.heldRequests.values[0]
+        #expect(request.call == .write(.package("glitch")))
+        #expect(settings.writes.values == [.package("glitch")])
+        #expect(await settings.selectedEffect() == .package("glitch"), "remembered already, though the call has not returned")
+        #expect(returned.count == 0)
+
+        #expect(settings.complete(request))
+        await write.value
+        #expect(returned.count == 1)
+    }
+
+    @Test("a request completes once, and one from another repository completes nothing")
+    func completeOnce() async {
+        let settings = FakeSettingsRepository()
+        let stranger = FakeSettingsRepository()
+        settings.holdReads()
+        let read = Task { await settings.selectedEffect() }
+        await settings.heldRequests.waitForCount(1)
+        let request = settings.heldRequests.values[0]
+
+        #expect(!stranger.complete(request), "ids restart at 1 per instance, so the id alone is not an identity")
+        #expect(settings.pendingCount == 1)
+        #expect(settings.complete(request))
+        #expect(!settings.complete(request), "it was already resumed")
+        _ = await read.value
+    }
+
+    @Test("holding can be switched off again: later calls answer at once, and the calls already parked stay parked")
+    func releasingTheHold() async {
+        let settings = FakeSettingsRepository(selected: .package("glitch"))
+        settings.holdReads()
+        let parked = Task { await settings.selectedEffect() }
+        await settings.heldRequests.waitForCount(1)
+        settings.holdReads(false)
+
+        #expect(await settings.selectedEffect() == .package("glitch"), "answers at once now")
+        #expect(settings.pendingCount == 1)
+        #expect(settings.complete(settings.heldRequests.values[0]))
+        _ = await parked.value
     }
 }
 

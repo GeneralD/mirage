@@ -24,7 +24,8 @@ public struct ShaderDiagnostics: Error, Sendable, Hashable {
         /// the same way.
         case source
         /// The environment, not the source: no GPU context could be made, so
-        /// nothing was compiled. A later compile may succeed.
+        /// nothing was compiled, or the compiler service itself failed
+        /// (`MTLLibraryError.internal`). A later compile may succeed.
         case environment
     }
 
