@@ -242,13 +242,13 @@ struct MenuBarPresenterTests {
         #expect(rig.interactor.inner.starts.count == 2)
     }
 
-    // Releasing a Presenter runs its deinit on the main actor, which the test is running on, so
-    // like `stop()` it has happened by the time the assignment returns: there is nothing to wait
-    // for, and a deinit that hopped somewhere else would fail the first of these.
+    // Releasing a Presenter releases the run it holds on the thread the test is running on, so like
+    // `stop()` it has happened by the time the assignment returns: there is nothing to wait for, and a
+    // release that hopped somewhere else would fail the first of these.
     //
-    // What these read is the Interactor's stops. The observation task the deinit also ends (through
-    // the same `stop()`) is parked on a stream nothing can reach any more, so no test can see whether
-    // it ended; `stopEndsObservation` and `stopDropsTheStateOnItsWay` pin what `stop()` ends.
+    // What these read is the Interactor's stops. The observation task the release also ends (the run
+    // ends it the same way `stop()` does) is parked on a stream nothing can reach any more, so no test
+    // can see whether it ended; `stopEndsObservation` and `stopDropsTheStateOnItsWay` pin what `stop()` ends.
 
     @Test("a started Presenter that is let go stops the Interactor")
     func letGoWhileStartedStops() async {
