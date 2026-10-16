@@ -200,9 +200,7 @@ let package = Package(
         .testTarget(name: "EffectInteractorTests", dependencies: ["EffectInteractor"] + testDependencies),
 
         // ── Presenter (@Published display state; no AppKit / SwiftUI; host only) ──
-        // `MenuBarPresenter` stops itself in an `isolated deinit`. The release runner's toolchain (macos-15, see the `release-build`
-        // job) still gates that behind a frontend flag; newer toolchains accept the flag and ignore it.
-        .target(name: "Presenters", dependencies: dependencies, swiftSettings: [.enableExperimentalFeature("IsolatedDeinit")]),
+        .target(name: "Presenters", dependencies: dependencies),
         .testTarget(name: "PresentersTests", dependencies: ["Presenters"] + testDependencies),
 
         // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
