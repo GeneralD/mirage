@@ -129,7 +129,7 @@ Conventions for contributors and AI agents: [`AGENTS.md`](AGENTS.md), [`.claude/
 |---|---|
 | M0 | Pass-through frame visible in Zoom via the real Camera Extension |
 | MVP-A | One bundled effect end to end: camera → GPU → preview in the dev harness and the loopback (the extension path is M0's) |
-| MVP-B (done, epic #42) | Runtime `.lens` loading, hot reload, menu switching; timings on a device still to be measured |
+| MVP-B (landed, epic #42) | Runtime `.lens` loading, hot reload, menu switching; timings on a device still to be measured |
 | MVP-C | Parameter UI generated from the manifest |
 | MVP-D | Pass-through on failure, auto-disable |
 | Later | Face landmarks / person segmentation inputs, GLSL (Shadertoy) import, URL/Git import, gallery |
