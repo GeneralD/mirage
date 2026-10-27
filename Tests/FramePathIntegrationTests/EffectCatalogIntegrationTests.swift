@@ -291,10 +291,14 @@ extension EffectCatalogIntegrationTests {
             return Session(rig: rig, side: side, relay: relay, running: running)
         }
 
-        /// Ends the catalog's run, the extension and the host; the fake GPU has no pass or draw pending.
+        /// Ends the catalog's run, the extension and the host; every file watch the catalog armed is stopped
+        /// (once each) and the fake GPU has no pass or draw pending.
         @MainActor
         func finish() async throws {
             await rig.stopCatalog(running)
+            // The catalog arms its watches again on every listing, and the end of a watch's stream stops them.
+            // That may land a moment after the run ends, so this waits for the positive condition.
+            #expect(await rig.pumpHost(until: { side.fileWatch.isBalanced }), "a file watch the catalog armed was not stopped, or was stopped twice")
             try await rig.stopExtension(relay)
             rig.stopHostExpectingIdleGPU()
         }
