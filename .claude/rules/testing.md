@@ -147,8 +147,10 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   alone hangs. The watch sleeps on a `GatedClock` of the catalog's own, not on the
   host's `TestClock`: the sleep is parked by a task the test cannot see, and a clock that
   cannot say when it is parked would lose an `advance` that ran before it
-  (`fireWatch(_:)` waits on `sleepers`). A successful hot reload publishes no state (the
-  menu shows the same), so its marker is the compile that finished, not a state.
+  (`fireWatch(_:)` waits on `sleepers`). A successful hot reload publishes no state when the
+  menu shows the same as before, so its marker is the compile that finished, not a state; one
+  that changes what the menu shows (the recovery from `.failed` to `.prepared`) does publish,
+  and that state is what a test waits for.
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
   answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
   `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing
