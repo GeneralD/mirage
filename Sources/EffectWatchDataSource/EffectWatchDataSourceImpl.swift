@@ -63,21 +63,26 @@ extension EffectWatchDataSourceImpl {
         case quiet(after: Int)
     }
 
+    /// The two kinds of watch a set asks for; the raw value is what the developer log calls it.
+    fileprivate enum Kind: String, CaseIterable, Sendable {
+        case directory
+        case file
+    }
+
     private func arm(_ watchSet: EffectWatchSet, onChange: @escaping @Sendable () -> Void) -> [any FileWatchHandle] {
-        let directories = watchSet.directories.compactMap { path in
-            armed(path, as: "directory") { try fileWatchGateway.watch(directory: path, onChange: onChange) }
-        }
-        let files = watchSet.files.compactMap { path in
-            armed(path, as: "file") { try fileWatchGateway.watch(file: path, onChange: onChange) }
-        }
+        let directories = watchSet.directories.compactMap { armed($0, as: .directory, onChange: onChange) }
+        let files = watchSet.files.compactMap { armed($0, as: .file, onChange: onChange) }
         return directories + files
     }
 
-    private func armed(_ path: String, as kind: String, _ attempt: () throws -> any FileWatchHandle) -> (any FileWatchHandle)? {
+    private func armed(_ path: String, as kind: Kind, onChange: @escaping @Sendable () -> Void) -> (any FileWatchHandle)? {
         do {
-            return try attempt()
+            switch kind {
+            case .directory: return try fileWatchGateway.watch(directory: path, onChange: onChange)
+            case .file: return try fileWatchGateway.watch(file: path, onChange: onChange)
+            }
         } catch {
-            developerLog.record(.effect, "could not watch \(kind) \(path), skipped: \(error)")
+            developerLog.record(.effect, "could not watch \(kind.rawValue) \(path), skipped: \(error)")
             return nil
         }
     }

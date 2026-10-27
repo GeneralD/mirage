@@ -57,7 +57,9 @@ struct EffectWatchDataSourceImplTests {
         let consumer = rig.listen(to: stream, into: heard)
 
         #expect(rig.gateway.watches.values.map(\.path) == ["/effects", WatchRig.shader], "the watch that threw was not armed")
-        #expect(rig.log.messages(in: .effect).contains { $0.contains(gone) }, "the developer log says which path could not be watched")
+        #expect(
+            rig.log.messages(in: .effect).contains { $0.contains("directory \(gone)") },
+            "the developer log says which kind of watch and which path could not be armed")
 
         rig.gateway.fire(WatchRig.shader)
         await rig.clock.sleepers.waitForCount(1)
