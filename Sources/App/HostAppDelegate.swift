@@ -1,20 +1,23 @@
 import AppKit
+import AppRouter
 import Dependencies
 import Domain
 
-/// Lifecycle glue: launch the camera interactor when AppKit is ready, shut it
-/// down on termination. The status item exists only so the user can quit an
-/// app that has no window.
+/// Lifecycle glue, untested by design: when AppKit is ready, start the menu's Router and
+/// launch the camera interactor; on termination, stop both. The Router is built with the
+/// delegate, so the scene (`HostApplication`) can draw the menu from its Presenter before
+/// anything starts; the entry lane starts and stops the Router and nothing below it (the
+/// Presenter owns the effect Interactor's lifecycle).
+@MainActor
 final class HostAppDelegate: NSObject, NSApplicationDelegate {
     @Dependency(\.cameraInteractor) private var cameraInteractor
     @Dependency(\.developerLog) private var developerLog
 
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    let router = AppRouter()
     private let launch = LaunchHandle()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        statusItem.button?.title = "◉"
-        statusItem.menu = quitMenu
+        router.start()
         launch.start { [cameraInteractor, developerLog] in
             let report = await cameraInteractor.launch(descriptor: .hd720, frameRate: .standard)
             developerLog.record(.app, "launch finished: \(report)")
@@ -23,13 +26,8 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         launch.cancel()
+        router.stop()
         cameraInteractor.shutDown()
-    }
-
-    private var quitMenu: NSMenu {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        return menu
     }
 }
 

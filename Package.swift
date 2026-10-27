@@ -254,7 +254,7 @@ let package = Package(
         .target(name: "Views", dependencies: dependencies + ["Presenters"]),
 
         // ── Entry ──
-        .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
+        .target(name: "App", dependencies: dependencies + ["HostDependencyInjection", "AppRouter", "Views"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
         // The development harness (host graph only). `main.swift` launches AppKit;
         // HarnessSession holds its lifecycle and wiring (DevHarnessTests); what it does
