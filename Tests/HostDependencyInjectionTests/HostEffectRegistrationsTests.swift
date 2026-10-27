@@ -11,10 +11,10 @@ import TestDoubles
 import TestSupport
 import Testing
 
-/// The host registers a live value for every port of the effect catalog (epic #42, D10):
-/// the pass-through default of its module, or the real implementation where one has landed.
-/// The OS-boundary ports register no pass-through: their live is the Gateway itself, which
-/// the registration only type-checks here and never calls (it would read the user's defaults).
+/// The host registers the real implementation of its module for every stateless port of the effect
+/// catalog (epic #42, D10): no pass-through of the catalog remains. The OS-boundary lives under them
+/// (the file system, the file events, Finder, the app directories, the key-value store) are not
+/// checked here: `HostFileGatewayRegistrationsTests` pins them.
 /// The Gateways the real implementations resolve and that would touch the machine are faked, in both
 /// tests: the file system and the app directories (`EffectPackageDataSourceImpl` lists and makes
 /// the effects folder), `fileWatchGateway` (`EffectWatchDataSourceImpl` opens a descriptor on it), the
@@ -59,7 +59,7 @@ struct HostEffectRegistrationsTests {
     }
 
     @Test("each stateless port of the catalog has the live value of its module's implementation")
-    func everyPortHasItsPassThrough() async {
+    func everyStatelessPortHasItsImplementation() async {
         await Self.live {
             @Dependency(\.effectPackageRepository) var effectPackageRepository
             @Dependency(\.settingsRepository) var settingsRepository

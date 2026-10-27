@@ -149,7 +149,9 @@ Shared conventions:
   system, a fixed effects folder, a `FakeFileWatchGateway`, an in-memory key-value store,
   a `FakeWorkspaceGateway` and fresh logs: a test never touches the user's own folder,
   defaults or Finder, or opens a real descriptor. That suite resolves only the stateless
-  values (the Repositories, DataSources and DataStore); `effectInteractor` and
+  values (the Repositories, DataSources and DataStore);
+  `HostFileGatewayRegistrationsTests` pins the OS-boundary lives (file system, file
+  events, Finder, app directories, key-value store). `effectInteractor` and
   `effectCatalogUseCase` are resolved live by `HarnessLiveWiringTests` alone, because
   they hold a task and a session and freeze the scope that built them (see the
   harness bullet below).
