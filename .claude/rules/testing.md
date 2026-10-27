@@ -171,8 +171,9 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
 - `FakeStreamOutput.connectClient()` / `disconnectClient()` — client count and
   `.streamStarted` / `.streamStopped`; `GatedClock` — a hand-stepped clock whose
   `sleepers` collector fires once a sleep is registered, so a test advances time
-  only when the subject is parked (reconnect backoff proof); its sleeps honour
-  task cancellation like `ContinuousClock`. `RecordingWorkRunner` — the
+  only when the subject is parked (the reconnect backoff proof, the watch's quiet
+  period); its sleeps honour task cancellation like `ContinuousClock`.
+  `RecordingWorkRunner` — the
   `WorkRunner` double: starts each work item as a real `Task` at once and
   records `started` / `finished` / `cancelled`, so a test awaits
   `work.finished.waitForCount(n)` instead of polling.
@@ -186,7 +187,13 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `listings` / `reads` / `createdDirectories` are `Collector`s. `FakeFileWatchGateway.fire(path)`
   runs the `onChange` of every live watch on that path and returns how many ran;
   `isBalanced` is every watch stopped exactly once (`doubleStopCount` counts the
-  second `stop()` of a handle). `FakeEffectWatch` and
+  second `stop()` of a handle). `EffectWatchDataSourceImpl` is written as
+  `gateway.fire(path)`, then `await clock.sleepers.waitForCount(n)` on a `GatedClock`,
+  then `clock.advance(by:)`: an `advance` straight after `fire` can run before the
+  subject's sleep is registered and is lost. "No element yet" is read off the clock
+  (`clock.parkedCount` still counts the sleep that could yield one), never off a
+  window of ticks, and a property test writes the 200 ms out itself instead of
+  reading `quietPeriod`. `FakeEffectWatch` and
   `FakeEffectPackageRepository` register a stream before `changes(of:)` / `catalog()`
   returns, so `fire(request:)` / `publish(_:)` right after the call cannot be lost, and
   their `terminations` collector fires when the consumer lets go. A test keeps such a
