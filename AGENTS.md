@@ -76,6 +76,15 @@ Shared conventions:
   layers.
 - Product name appears only in `README.md`, `project.yml` and
   `Sources/Entity/ProductIdentity.swift`. Everything else is role-named.
+- A `.lens` package is a directory `<id>.lens/` in the effects folder
+  (`~/Library/Application Support/<host bundle id>/Effects`, the path comes from
+  `AppDirectoriesProvider`) holding `manifest.json` (`formatVersion` 1 and
+  `name`; optional `author` / `description`; unknown keys, `parameters`
+  included, ignored) and `effect.metal` (entry point `effect`, compiled behind
+  the prelude). The id is the directory name without the suffix.
+  `EffectPackageDataSource` reads it through `FileSystemGateway` and lists a
+  package it cannot use as `.broken` with the reason instead of leaving it out
+  (epic #42, D1 / D3); `Examples/Ripple.lens` is a complete one.
 
 ## Non-Negotiable Rules
 
@@ -125,15 +134,20 @@ Shared conventions:
   (`StoredEffectID`) in the user's defaults through `KeyValueStoreGateway`, ignoring
   and logging a stored string that does not decode, and `SettingsRepositoryImpl`
   passes it through; there is no `SettingsUseCase` until a settings UI exists.
+  `NoPackages` is replaced as well (#45): `EffectPackageDataSourceImpl` lists the effects
+  folder's `.lens` packages through the file ports.
   The OS-boundary ports of the catalog get their live with the issue that wraps
   the OS API: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and
   `AppDirectoriesProvider` (module `AppDirectories`) are registered in
   `HostDependencyInjection` (#44), and `KeyValueStoreGateway` as
-  `UserDefaultsGateway` (#51), which `PreferencesDataStoreImpl` resolves. No other
-  pass-through resolves a Gateway, so nothing reaches one before the DataSource
-  that replaces it. `EffectWatchDataSourceImpl` (#46) resolves `FileWatchGateway`,
-  so both tests of `HostEffectRegistrationsTests` install `FakeFileWatchGateway`:
-  a test never opens a real descriptor.
+  `UserDefaultsGateway` (#51), which `PreferencesDataStoreImpl` resolves. No
+  pass-through of the catalog remains: `EffectPackageDataSourceImpl` (#45) resolves
+  `FileSystemGateway`, `AppDirectoriesProvider` and `WorkspaceGateway`,
+  `EffectWatchDataSourceImpl` (#46) resolves `FileWatchGateway`, and each of them has
+  a live value, so nothing reaches a Gateway that has none. Every test of
+  `HostEffectRegistrationsTests` resolves through `live(_:)` over an in-memory file
+  system, a fixed effects folder and a `FakeFileWatchGateway`: a test never touches
+  the user's own folder or opens a real descriptor.
 - The effects menu lane (epic #42, D9): `EffectInteractorImpl` owns the one task
   that runs `EffectCatalogUseCase` (`run()` and the forwarding of `observe()` are
   its two structured children) and publishes the state through a
@@ -149,8 +163,12 @@ Shared conventions:
   and never `publisher.values` (an `AsyncPublisher` drops states sent while it
   is applying the last one), and owns the Interactor's `start()` / `stop()` (whoever wires the Presenter calls
   only its `start()` / `stop()`, never `effectInteractor.start()`: a second
-  `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. Details: the *Key Design Decisions* entry in
-  `docs/ARCHITECTURE.md`.
+  `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the one
+  Presenter in `init` and calls only its `start()` / `stop()`: the host (`HostAppDelegate`) and the dev harness
+  (`HarnessAppDelegate`) start and stop the Router and nothing below it. `EffectMenu` (`Views`) draws the Presenter for
+  the host's `MenuBarExtra(.menu)` and the harness's `NSHostingMenu` and decides nothing (a `Toggle` per row, the
+  Presenter's flags and words); the host stays out of the Dock through `LSUIElement` in `project.yml`. Details: the
+  *Key Design Decisions* entries in `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*).
 
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
@@ -271,9 +289,11 @@ Shared conventions:
   executable with `-sectcreate` (xcodegen never builds it); it carries no
   product name, and `make check` scans `Tools/` for one.
 - `DevHarness` keeps `main.swift` to AppKit's launch and `HarnessSession` to
-  the lifecycle and the view wiring; it resolves only `HarnessInteractor`,
+  the lifecycle and the view wiring; the session resolves only `HarnessInteractor`,
   which drives `CameraControlUseCase` and `FramePipelineUseCase`. Each layer is
-  tested against fakes. It logs through `DeveloperLog` / `ErrorLog` like
+  tested against fakes. `HarnessAppDelegate` also owns an `AppRouter`, started beside the
+  session, and shows the host's `EffectMenu` as the main menu's Effects item (`NSHostingMenu`,
+  macOS 14.4+); `HarnessLiveWiringTests` resolves none of the catalog's keys. It logs through `DeveloperLog` / `ErrorLog` like
   every other module, never `print`. `HarnessSession.live()` builds the
   session inside `withDependencies { $0.useDiscardingVirtualCameraSink() }`:
   the host's real graph with one substitution, `DiscardingVirtualCameraSink`

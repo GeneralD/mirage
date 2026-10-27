@@ -41,8 +41,8 @@ allowed_for() {
         Domain)                                  echo "Foundation Combine Dependencies Entity" ;;
         *DependencyInjection)                    echo "*" ;;
         Views|AppRouter)              echo "$COMMON $UI_FRAMEWORKS" ;;
-        App)                          echo "$COMMON $UI_FRAMEWORKS HostDependencyInjection" ;;
-        DevHarness)                   echo "$COMMON AppKit SwiftUI Views HostDependencyInjection" ;;
+        App)                          echo "$COMMON $UI_FRAMEWORKS HostDependencyInjection AppRouter Views" ;;
+        DevHarness)                   echo "$COMMON AppKit SwiftUI Views AppRouter HostDependencyInjection" ;;
         ExtensionApp)                 echo "$COMMON $UI_FRAMEWORKS ExtensionDependencyInjection" ;;
         Presenters)                   echo "$COMMON" ;;  # display state: no AppKit / SwiftUI / MetalKit
         *)

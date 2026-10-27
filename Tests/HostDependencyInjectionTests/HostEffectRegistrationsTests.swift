@@ -17,31 +17,42 @@ import UserDefaultsGateway
 /// the pass-through default of its module, or the real implementation where one has landed.
 /// The OS-boundary ports register no pass-through: their live is the Gateway itself, which
 /// the registration only type-checks here and never calls (it would read the user's defaults).
-/// The one Gateway that is faked is `fileWatchGateway`, in both tests: the real
-/// `EffectWatchDataSourceImpl` resolves it, so a listing that asked for a watch (the effects
-/// folder, once `EffectPackageDataSource` lists one) would otherwise open a real descriptor.
+/// The Gateways the real implementations resolve and that would touch the machine are faked, in both
+/// tests: the file system and the app directories (`EffectPackageDataSourceImpl` lists and makes
+/// the effects folder) and `fileWatchGateway` (`EffectWatchDataSourceImpl` opens a descriptor on it).
 ///
-/// Every resolution here happens inside `withDependencies { $0.context = .live }`. The live
-/// values in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its
-/// first resolution and keeps it for the life of the process (the test bundle is one
-/// process), and a live value that resolves a port of its own (`EffectPackageRepositoryImpl`
-/// resolves `effectPackages`, `effectWatch` and `bundledEffects`) captures the scope it is built in. These keys are resolved
-/// by no other suite, and none of them is overridden here, so what each one captures is
-/// the live context whichever test builds it first. Add no override of one of these keys
-/// in this suite and no test that resolves one in another. (The watch gateway is the
-/// exception: `EffectWatchDataSourceImpl` captures the gateway it is first built with, so
-/// every test below that can build it installs a `FakeFileWatchGateway`, and what it
-/// captures is a fake whichever test comes first. The other override is the effect
-/// runtime's, on a UseCase the test builds itself: the catalog's pass-throughs never
-/// resolve it, so what they capture is untouched.)
+/// Every resolution here happens inside `live(_:)`: `withDependencies { $0.context = .live }` over
+/// an in-memory file system, a fixed effects folder and a fake file-watch gateway. The live values
+/// in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its first
+/// resolution and keeps it for the life of the process (the test bundle is one process), and a live
+/// value that resolves a port of its own (`EffectPackageRepositoryImpl` resolves `effectPackages`,
+/// `effectWatch` and `bundledEffects`; `EffectPackageDataSourceImpl` resolves the file system;
+/// `EffectWatchDataSourceImpl` resolves the file-watch gateway) captures the scope it is built in.
+/// These keys are resolved by no other suite and every test of this one resolves them through
+/// `live(_:)`, so what each one captures is the same scope whichever test builds it first.
+/// The file system and the file-watch gateway are the two things that are not live: the first
+/// catalog the default graph asks for lists the effects folder (and makes it) and asks to watch it,
+/// and a test must neither make the user's own folder, see what is in it, nor open a real
+/// descriptor on it. Resolve nothing through any other scope in this suite, and no test that
+/// resolves one of these keys in another. (The one override beyond `live(_:)` is the effect
+/// runtime's, on a UseCase the test builds itself, inside the same scope: the catalog's
+/// pass-throughs never resolve it, so what they capture is untouched.)
 @Suite("Host registrations of the effect catalog", .timeLimit(.minutes(1)))
 struct HostEffectRegistrationsTests {
-    @Test("each port of the catalog has the live value of its module's pass-through")
-    func everyPortHasItsPassThrough() {
+    private static func live<Value>(_ operation: () -> Value) -> Value {
         withDependencies {
             $0.context = .live
+            $0.fileSystemGateway = InMemoryFileSystemGateway()
+            $0.appDirectories = FixedAppDirectories(effectsDirectory: "/effects")
             $0.fileWatchGateway = FakeFileWatchGateway()
         } operation: {
+            operation()
+        }
+    }
+
+    @Test("each port of the catalog has the live value of its module's pass-through")
+    func everyPortHasItsPassThrough() {
+        Self.live {
             @Dependency(\.effectInteractor) var effectInteractor
             @Dependency(\.effectCatalogUseCase) var effectCatalogUseCase
             @Dependency(\.effectPackageRepository) var effectPackageRepository
@@ -55,7 +66,7 @@ struct HostEffectRegistrationsTests {
             #expect(effectCatalogUseCase is EffectCatalogUseCaseImpl)
             #expect(effectPackageRepository is EffectPackageRepositoryImpl)
             #expect(settingsRepository is SettingsRepositoryImpl)
-            #expect(effectPackages is NoPackages)
+            #expect(effectPackages is EffectPackageDataSourceImpl)
             #expect(effectWatch is EffectWatchDataSourceImpl)
             #expect(preferences is PreferencesDataStoreImpl)
             #expect(keyValueStoreGateway is KeyValueStoreGatewayImpl)
@@ -67,12 +78,12 @@ struct HostEffectRegistrationsTests {
     )
     func defaultGraphChoosesTheBundledEffect() async throws {
         let runtime = FakeEffectRuntimeRepository()
-        let useCase = withDependencies {
-            $0.context = .live
-            $0.fileWatchGateway = FakeFileWatchGateway()
-            $0.effectRuntimeRepository = runtime
-        } operation: {
-            EffectCatalogUseCaseImpl()
+        let useCase = Self.live {
+            withDependencies {
+                $0.effectRuntimeRepository = runtime
+            } operation: {
+                EffectCatalogUseCaseImpl()
+            }
         }
         let states = Collector<EffectCatalogState>()
         let observer = Task { for await state in useCase.observe() { states.append(state) } }
