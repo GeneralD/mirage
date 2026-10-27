@@ -267,7 +267,7 @@ let package = Package(
         // link does not depend on the directory `swift` runs from.
         .executableTarget(
             name: "DevHarness",
-            dependencies: dependencies + ["HostDependencyInjection", "Views"],
+            dependencies: dependencies + ["HostDependencyInjection", "Views", "AppRouter"],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
