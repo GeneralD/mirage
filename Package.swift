@@ -137,8 +137,8 @@ let package = Package(
         // Host only: the preview kernel and the draw order (scripts/check-extension-no-metal.sh).
         .target(name: "PreviewDataSource", dependencies: dependencies),
         .testTarget(name: "PreviewDataSourceTests", dependencies: ["PreviewDataSource"] + testDependencies),
-        // Host only: the effects folder's `.lens` packages. Holds the pass-through `NoPackages` until
-        // the real DataSource lands in this module (epic #42, D10).
+        // Host only: the effects folder's `.lens` packages, listed and read through the file ports
+        // (epic #42, D1 / D3). Its pass-through default, `NoPackages`, gave way to the real one (#45).
         .target(name: "EffectPackageDataSource", dependencies: dependencies),
         .testTarget(name: "EffectPackageDataSourceTests", dependencies: ["EffectPackageDataSource"] + testDependencies),
         // Host only: file events folded into one change per burst. Holds `NeverChangingWatch` for now.

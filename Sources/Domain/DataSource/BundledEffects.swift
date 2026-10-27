@@ -3,8 +3,8 @@ import Dependencies
 /// `BundledEffectDataSource`: the effects that ship inside the app. Their MSL is
 /// a Swift string constant rather than a resource (epic #14, D1), so no
 /// `Bundle.main`, no bundle port and no resource bundle in the Xcode shell. They
-/// come out as the same `EffectSource` a `.lens` package will
-/// (`EffectPackageDataSource`, MVP-B), so `EffectRuntimeRepository` never knows
+/// come out as the same `EffectSource` a `.lens` package does
+/// (`EffectPackageDataSource`), so `EffectRuntimeRepository` never knows
 /// where an effect came from.
 public protocol BundledEffects: Sendable {
     /// The effect `EffectRuntimeRepository` runs while no other one has been prepared.
