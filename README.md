@@ -12,9 +12,10 @@ macOS, with effects you can write, drop in, and share without rebuilding the app
 
 > **Pre-alpha.** The architecture is settled (see `docs/ARCHITECTURE.md`). The frame path, the
 > bundled effect and the preview run today in the dev harness (`swift run dev-harness`, below).
-> Runtime `.lens` loading, hot reload and the Effects menu are built into it and covered end to
-> end by the loopback tests, but their timings on a device have not been measured yet. The
-> virtual camera itself still awaits its first run on a device through the Camera Extension.
+> Runtime `.lens` loading and hot reload are built into it and covered end to end by the loopback
+> tests, and the Effects menu's Presenter by a live-wiring test; how the menu looks and how fast
+> any of it reacts on a device have not been checked yet. The virtual camera itself still awaits
+> its first run on a device through the Camera Extension.
 
 ## How it works
 
