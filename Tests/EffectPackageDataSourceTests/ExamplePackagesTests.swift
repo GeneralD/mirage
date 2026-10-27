@@ -15,28 +15,34 @@ struct ExamplePackagesTests {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appending(path: "Examples", directoryHint: .isDirectory)
 
-    /// The folder names of the packages in `Examples/`.
-    private static func packageNames() throws -> [String] {
-        try FileManager.default.contentsOfDirectory(atPath: examples.path).filter { $0.hasSuffix(".lens") }.sorted()
+    private static let suffix = ".lens"
+
+    /// The ids of the packages in `Examples/`, in the order the DataSource lists them: the folder's name
+    /// without `.lens`, in plain string order. Sorting the folder names instead would not do: with
+    /// `Ripple.lens` and `Ripple-b.lens` the names put `Ripple-b` first (`-` sorts before `.`) and the
+    /// ids put `Ripple` first.
+    private static func packageIDs() throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: examples.path)
+            .filter { $0.hasSuffix(suffix) }.map { String($0.dropLast(suffix.count)) }.sorted()
     }
 
-    private static func text(of file: String, in package: String) throws -> String {
-        try String(contentsOf: examples.appending(path: package).appending(path: file), encoding: .utf8)
+    private static func text(of file: String, in id: String) throws -> String {
+        try String(contentsOf: examples.appending(path: id + suffix).appending(path: file), encoding: .utf8)
     }
 
     @Test("every package under Examples/ is ready, listed under its folder name, with a name and a kernel called `effect`")
     func examplesAreReady() async throws {
-        let names = try Self.packageNames()
+        let ids = try Self.packageIDs()
         let rig = PackageRig()
-        for name in names {
-            rig.files.write("\(PackageRig.folder)/\(name)/manifest.json", try Self.text(of: "manifest.json", in: name))
-            rig.files.write("\(PackageRig.folder)/\(name)/effect.metal", try Self.text(of: "effect.metal", in: name))
+        for id in ids {
+            rig.files.write("\(PackageRig.folder)/\(id)\(Self.suffix)/manifest.json", try Self.text(of: "manifest.json", in: id))
+            rig.files.write("\(PackageRig.folder)/\(id)\(Self.suffix)/effect.metal", try Self.text(of: "effect.metal", in: id))
         }
 
         let inventory = await rig.subject.packages()
 
-        #expect(!names.isEmpty, "Examples/ holds no package")
-        #expect(inventory.listings.map(\.id) == names.map { .package(String($0.dropLast(".lens".count))) })
+        #expect(!ids.isEmpty, "Examples/ holds no package")
+        #expect(inventory.listings.map(\.id) == ids.map { .package($0) })
         for listing in inventory.listings {
             guard case .ready(let package) = listing else {
                 Issue.record("\(listing.id.key) is not ready: \(listing)")
