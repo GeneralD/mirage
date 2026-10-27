@@ -156,8 +156,12 @@ Shared conventions:
   and never `publisher.values` (an `AsyncPublisher` drops states sent while it
   is applying the last one), and owns the Interactor's `start()` / `stop()` (whoever wires the Presenter calls
   only its `start()` / `stop()`, never `effectInteractor.start()`: a second
-  `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. Details: the *Key Design Decisions* entry in
-  `docs/ARCHITECTURE.md`.
+  `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the one
+  Presenter in `init` and calls only its `start()` / `stop()`: the host (`HostAppDelegate`) and the dev harness
+  (`HarnessAppDelegate`) start and stop the Router and nothing below it. `EffectMenu` (`Views`) draws the Presenter for
+  the host's `MenuBarExtra(.menu)` and the harness's `NSHostingMenu` and decides nothing (a `Toggle` per row, the
+  Presenter's flags and words); the host stays out of the Dock through `LSUIElement` in `project.yml`. Details: the
+  *Key Design Decisions* entries in `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*).
 
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
@@ -268,9 +272,11 @@ Shared conventions:
   executable with `-sectcreate` (xcodegen never builds it); it carries no
   product name, and `make check` scans `Tools/` for one.
 - `DevHarness` keeps `main.swift` to AppKit's launch and `HarnessSession` to
-  the lifecycle and the view wiring; it resolves only `HarnessInteractor`,
+  the lifecycle and the view wiring; the session resolves only `HarnessInteractor`,
   which drives `CameraControlUseCase` and `FramePipelineUseCase`. Each layer is
-  tested against fakes. It logs through `DeveloperLog` / `ErrorLog` like
+  tested against fakes. `HarnessAppDelegate` also owns an `AppRouter`, started beside the
+  session, and shows the host's `EffectMenu` as the main menu's Effects item (`NSHostingMenu`,
+  macOS 14.4+); `HarnessLiveWiringTests` resolves none of the catalog's keys. It logs through `DeveloperLog` / `ErrorLog` like
   every other module, never `print`. `HarnessSession.live()` builds the
   session inside `withDependencies { $0.useDiscardingVirtualCameraSink() }`:
   the host's real graph with one substitution, `DiscardingVirtualCameraSink`

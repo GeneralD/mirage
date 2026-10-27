@@ -11,8 +11,8 @@ import PackageDescription
 // installer and the three DI targets; MVP-A added the effect runtime, the
 // preview and the dev harness. MVP-B adds the `.lens` catalog: its seven modules
 // (EffectPackageDataSource … EffectInteractor) start as pass-through defaults that
-// the later MVP-B issues replace in place; the menu-bar UI lane (AppRouter, the
-// Presenters) arrives with them.
+// the later MVP-B issues replace in place; the menu-bar UI lane (the Presenters,
+// AppRouter and the Views' EffectMenu) is shown by the host app and the dev harness.
 
 let dependencies: [Target.Dependency] = [
     "Domain",
@@ -203,6 +203,10 @@ let package = Package(
         .target(name: "Presenters", dependencies: dependencies),
         .testTarget(name: "PresentersTests", dependencies: ["Presenters"] + testDependencies),
 
+        // ── Router (builds the Presenter and starts / stops it; View lane; host only) ──
+        .target(name: "AppRouter", dependencies: dependencies + ["Presenters"]),
+        .testTarget(name: "AppRouterTests", dependencies: ["AppRouter", "Presenters"] + testDependencies),
+
         // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
         .target(
             name: "CommonDependencyInjection",
@@ -247,10 +251,10 @@ let package = Package(
         ),
 
         // ── View (declarative, coverage-ignored, no test target; host only) ──
-        .target(name: "Views", dependencies: dependencies),
+        .target(name: "Views", dependencies: dependencies + ["Presenters"]),
 
         // ── Entry ──
-        .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
+        .target(name: "App", dependencies: dependencies + ["HostDependencyInjection", "AppRouter", "Views"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
         // The development harness (host graph only). `main.swift` launches AppKit;
         // HarnessSession holds its lifecycle and wiring (DevHarnessTests); what it does
@@ -263,7 +267,7 @@ let package = Package(
         // link does not depend on the directory `swift` runs from.
         .executableTarget(
             name: "DevHarness",
-            dependencies: dependencies + ["HostDependencyInjection", "Views"],
+            dependencies: dependencies + ["HostDependencyInjection", "Views", "AppRouter"],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

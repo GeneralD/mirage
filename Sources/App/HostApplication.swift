@@ -1,22 +1,25 @@
-import AppKit
-import Dependencies
 import Domain
 import HostDependencyInjection
+import SwiftUI
+import Views
 
-/// The host process entry point behind `Apps/Host/main.swift`: an accessory
-/// (menu-bar) application whose whole M0 job is to run the launch sequence
-/// and expose a way to quit. The menu-bar UI proper arrives with MVP-B.
-public struct HostApplication {
+/// The host process entry point behind `Apps/Host/main.swift` (`HostApplication.main()`): a
+/// menu-bar application with no window, whose one scene is the effects menu. Staying out of
+/// the Dock is `LSUIElement` in the host's Info.plist (`project.yml`), not an activation
+/// policy set at launch, which would show the Dock icon until it ran.
+///
+/// The delegate runs what is not a scene: the camera launch and the menu's Router, started
+/// and stopped with the process. The menu is drawn from the Presenter the delegate's Router
+/// built (`EffectMenu`); it starts nothing itself.
+public struct HostApplication: App {
+    @NSApplicationDelegateAdaptor(HostAppDelegate.self) private var delegate
+
     public init() {}
 
-    /// Runs the AppKit main loop; returns when the application terminates.
-    @MainActor
-    public func run() {
-        let application = NSApplication.shared
-        let delegate = HostAppDelegate()
-        application.delegate = delegate
-        application.setActivationPolicy(.accessory)
-        application.run()
-        withExtendedLifetime(delegate) {}
+    public var body: some Scene {
+        MenuBarExtra(ProductIdentity.displayName, systemImage: "camera.filters") {
+            EffectMenu(presenter: delegate.router.menuBarPresenter)
+        }
+        .menuBarExtraStyle(.menu)
     }
 }
