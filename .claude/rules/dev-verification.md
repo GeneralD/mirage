@@ -87,9 +87,12 @@ Record, next to the numbers:
   a real editor. Do step 3 once each way if you can (an editor that saves atomically, then
   `cat edited.metal > effect.metal` for in place) and say which one produced which number.
 - **Whether the second line of step 8 is drawn.** The Presenter's `detail` becomes the
-  `NSMenuItem.subtitle` of the row, which the system may not draw on macOS 14.x. If it is not
-  drawn, write that down with the OS version; the row, its mark and its enabled state are
-  still the check, and the reason for a broken package is then visible only in the logs.
+  `NSMenuItem.subtitle` of the row. The SDK header (`NSMenuItem.h`) declares it macOS 14.4+ and
+  says that on macOS 14 an item with an attributed title does not show it (macOS 15 and later
+  do), so on a 14.x machine it may be missing: a known limit (`docs/ARCHITECTURE.md` → *Menu
+  bar*). If it is not drawn, write that down with the OS version; the row, its mark and its
+  enabled state are still the check, and the reason for a broken package is then visible only
+  in the logs.
 - **Anything over a budget**, with the log lines around it: that is the finding, not a failure to
   hide. The fix is a new issue; the budget stays.
 

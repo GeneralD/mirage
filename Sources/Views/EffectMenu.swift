@@ -11,8 +11,9 @@ import SwiftUI
 ///
 /// SwiftUI turns this content into `NSMenuItem`s (checked with `NSHostingMenu`): a `Toggle`
 /// is an item whose `state` is `.on` for the checked row, so every title lines up in the state
-/// column; two `Text`s in one label are an item's title and its `subtitle`; a bare `Text` is a
-/// disabled item. A `Button` with a checkmark image would put the mark in the image column
+/// column; two `Text`s in one label are an item's title and its `subtitle` (macOS 14.4+, and not
+/// drawn on macOS 14 for an attributed title: `docs/ARCHITECTURE.md` → *Menu bar*); a bare `Text`
+/// is a disabled item. A `Button` with a checkmark image would put the mark in the image column
 /// instead and leave `state` off.
 public struct EffectMenu: View {
     @ObservedObject private var presenter: MenuBarPresenter
