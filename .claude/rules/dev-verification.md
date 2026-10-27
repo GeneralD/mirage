@@ -57,7 +57,8 @@ log stream --level debug --style compact --predicate 'subsystem == "<log subsyst
 
 ### Effects menu: the timed run (issue #52, epic #42)
 
-Not yet run on a device: the budgets below are the targets of epic #42, not measurements, and
+Not yet run on a device: a budget below is a target of epic #42 (a step whose budget says
+*none* has no target, only something to record), not a measurement, and
 the last column says **not yet run** until someone does the run. Do not fill it from the
 automated twin (`EffectCatalogIntegrationTests` proves the order of events and the 200 ms quiet
 period under a fake clock; it cannot say how long a Metal compile or a window takes). Run it with
@@ -74,7 +75,7 @@ step from the action to the window changing, with a screen recording or the `eff
 | 3. Save | change a constant in `<folder>/Ripple.lens/effect.metal` (the sway amplitude, say) and save | the window shows the change without touching the menu; `effect: effect 'Ripple' compiled` again, once | within 1 s of the save (200 ms quiet period plus the compile) | not yet run |
 | 4. Break and fix | misspell a type name in that `effect.metal` and save; then undo the misspelling and save | broken: the window shows the plain camera video, a disabled line `Ripple: compile failed` sits between the first divider and *Open Effects Folder…*, exactly one `effect: effect 'Ripple' did not compile: …` error line. Fixed: the effect is back and the line is gone | each save within 1 s | not yet run |
 | 5. Add and remove | `cp -R Examples/Ripple.lens "<folder>/Second.lens"`, then `rm -r "<folder>/Second.lens"`; also remove the *chosen* package once | the row appears, then disappears. Removing the chosen package moves the check mark to `Chromatic Grain` and the window to its effect; the stored choice is not rewritten | each within 1 s | not yet run |
-| 6. Open folder | choose *Open Effects Folder…* with `<folder>` deleted first | Finder opens the folder (it is made if it was missing) | Finder in front within a second | not yet run |
+| 6. Open folder | choose *Open Effects Folder…* with `<folder>` deleted first | Finder opens the folder (it is made if it was missing) | none; record whether Finder comes to the front and how long it takes | not yet run |
 | 7. Restart | choose `Ripple`, quit with ⌘Q, run `swift run dev-harness` again | `Ripple` is checked from the first menu opening and the window shows its effect with no click. `defaults read com.generald.dev-harness selectedEffect` is `package:Ripple` (the harness's own defaults domain) | no click needed | not yet run |
 | 8. Second line | with `Ripple` listed, and after `mkdir "<folder>/Broken.lens"` | `Ripple` shows `Example Author` under its title; `Broken` is a disabled row whose second line says `manifest.json is missing` | none; record what is drawn | not yet run |
 
