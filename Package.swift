@@ -9,10 +9,11 @@ import PackageDescription
 //
 // M0 built the pass-through frame path host → Camera Extension, the
 // installer and the three DI targets; MVP-A added the effect runtime, the
-// preview and the dev harness. MVP-B adds the `.lens` catalog: its seven modules
-// (EffectPackageDataSource … EffectInteractor) start as pass-through defaults that
-// the later MVP-B issues replace in place; the menu-bar UI lane (the Presenters,
-// AppRouter and the Views' EffectMenu) is shown by the host app and the dev harness.
+// preview and the dev harness. The effects catalog (epic #42) added the `.lens`
+// modules (EffectPackageDataSource … EffectInteractor), each of which started as a
+// pass-through default and was replaced in place; the menu-bar UI lane (the
+// Presenters, AppRouter and the Views' EffectMenu) is shown by the host app and the
+// dev harness.
 
 let dependencies: [Target.Dependency] = [
     "Domain",
@@ -234,7 +235,7 @@ let package = Package(
         .testTarget(
             name: "HostDependencyInjectionTests",
             dependencies: [
-                "HostDependencyInjection", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
+                "HostDependencyInjection", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
                 "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore", "UserDefaultsGateway",
                 "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
             ] + testDependencies
@@ -279,8 +280,11 @@ let package = Package(
         ),
         .testTarget(
             name: "DevHarnessTests",
-            dependencies: ["DevHarness", "FramePipelineUseCase", "HarnessInteractor", "HostDependencyInjection", "VirtualCameraRepository"]
-                + testDependencies
+            dependencies: [
+                "DevHarness", "FramePipelineUseCase", "HarnessInteractor", "HostDependencyInjection", "VirtualCameraRepository",
+                "AppRouter", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
+            ] + testDependencies
         ),
 
         // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──
@@ -321,6 +325,8 @@ let package = Package(
                 "FrameReceiverDataSource", "StreamOutputDataSource", "PreviewRepository", "PreviewDataSource",
                 "EffectRuntimeRepository", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
                 "BundledEffectDataSource",
+                "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
             ]
         ),
     ]

@@ -119,14 +119,14 @@ Shared conventions:
   Both are real now: `PreviewSink` is `PreviewRepositoryImpl` over
   `PreviewDataSource` (which completes frames at once until a view is
   attached), and `EffectRuntimeRepository` is `EffectRuntimeRepositoryImpl`.
-  The MVP-B effect catalog (epic #42) follows the same rule: its seven modules
-  start as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
-  `EmptySettings`, `BundledOnlyEffectCatalog`, `StaticEffectInteractor`, and
-  `BundledOnlyCatalog`, which `EffectPackageRepositoryImpl` has replaced) that
-  list the bundled effect alone, and the later issues replace each in place
-  (`EffectInteractorImpl` has replaced `StaticEffectInteractor`, #49,
-  `EffectCatalogUseCaseImpl` has replaced `BundledOnlyEffectCatalog`, #48, and
-  `EffectWatchDataSourceImpl` has replaced `NeverChangingWatch`, #46).
+  The effects catalog (epic #42) followed the same rule: its seven modules
+  started as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
+  `EmptySettings`, `BundledOnlyEffectCatalog`, `StaticEffectInteractor` and
+  `BundledOnlyCatalog`) that listed the bundled effect alone, and each was replaced
+  in place (`EffectInteractorImpl` replaced `StaticEffectInteractor`, #49,
+  `EffectCatalogUseCaseImpl` replaced `BundledOnlyEffectCatalog`, #48,
+  `EffectPackageRepositoryImpl` replaced `BundledOnlyCatalog`, #47, and
+  `EffectWatchDataSourceImpl` replaced `NeverChangingWatch`, #46).
   Their streams, and `EffectWatchDataSourceImpl`'s, stay open until the consumer
   lets go.
   `EmptyPreferences` and `EmptySettings` are already replaced (#51):
@@ -146,8 +146,15 @@ Shared conventions:
   `EffectWatchDataSourceImpl` (#46) resolves `FileWatchGateway`, and each of them has
   a live value, so nothing reaches a Gateway that has none. Every test of
   `HostEffectRegistrationsTests` resolves through `live(_:)` over an in-memory file
-  system, a fixed effects folder and a `FakeFileWatchGateway`: a test never touches
-  the user's own folder or opens a real descriptor.
+  system, a fixed effects folder, a `FakeFileWatchGateway`, an in-memory key-value store,
+  a `FakeWorkspaceGateway` and fresh logs: a test never touches the user's own folder,
+  defaults or Finder, or opens a real descriptor. That suite resolves only the stateless
+  values (the Repositories, DataSources and DataStore);
+  `HostFileGatewayRegistrationsTests` pins the OS-boundary lives (file system, file
+  events, Finder, app directories, key-value store). `effectInteractor` and
+  `effectCatalogUseCase` are resolved live by `HarnessLiveWiringTests` alone, because
+  they hold a task and a session and freeze the scope that built them (see the
+  harness bullet below).
 - The effects menu lane (epic #42, D9): `EffectInteractorImpl` owns the one task
   that runs `EffectCatalogUseCase` (`run()` and the forwarding of `observe()` are
   its two structured children) and publishes the state through a
@@ -176,8 +183,9 @@ Shared conventions:
   `EffectRuntimeStateDataSource` (port `EffectRuntimeState`), confined to
   `FrameExecutor` (no lock, no actor), whose calls hop onto the executor
   themselves. The compile cache is in-process, keyed by
-  `(source, compile options)` and never by the effect's name; device id / OS
-  version and a cache on disk are MVP-B. The newest `prepare` decides what
+  `(source, compile options)` and never by the effect's name; a cache on disk
+  (which would need a device id, an OS version and a `RuntimeEnvironment` port) is
+  deferred to Later, epic #42 D12. The newest `prepare` decides what
   `apply` runs (newest wins, success or failure); a stale compile still answers
   its own caller and fills the cache but never releases a waiting `apply`. An
   `apply` that compiles an effect itself starts the compile on the `WorkRunner`
@@ -293,7 +301,8 @@ Shared conventions:
   which drives `CameraControlUseCase` and `FramePipelineUseCase`. Each layer is
   tested against fakes. `HarnessAppDelegate` also owns an `AppRouter`, started beside the
   session, and shows the host's `EffectMenu` as the main menu's Effects item (`NSHostingMenu`,
-  macOS 14.4+); `HarnessLiveWiringTests` resolves none of the catalog's keys. It logs through `DeveloperLog` / `ErrorLog` like
+  macOS 14.4+); `HarnessLiveWiringTests` builds that Router beside the session and drives
+  its Presenter through the real catalog. It logs through `DeveloperLog` / `ErrorLog` like
   every other module, never `print`. `HarnessSession.live()` builds the
   session inside `withDependencies { $0.useDiscardingVirtualCameraSink() }`:
   the host's real graph with one substitution, `DiscardingVirtualCameraSink`
@@ -301,10 +310,18 @@ Shared conventions:
   because the harness has no extension). The host app keeps the real sink, and
   the substitution must wrap the construction, because `@Dependency` captures
   the scope where it is built. `HarnessLiveWiringTests` is the one `.live` test
-  of that route (the live registrations are process-wide singletons: add no
-  second one), and `scripts/check-dev-substitutions.sh` (in `make check`) keeps
+  of that route and the only suite that resolves `effectInteractor` and
+  `effectCatalogUseCase` live (the live registrations are process-wide singletons that
+  keep the first builder's scope, and the whole test bundle is one process: add no
+  second one in any target, and wrap every call that can
+  reach a catalog value in that test's `wired { }`), over fakes at the OS boundary
+  only (camera, IOSurface, Mach, GPU, file system, file events, key-value store,
+  Finder). `scripts/check-dev-substitutions.sh` (in `make check`) keeps
   the sink's name out of everything but the harness, its DI helper and
-  `VirtualCameraRepository`.
+  `VirtualCameraRepository`, and `scripts/check-live-owner.sh` (in `make check`)
+  fails when a test file other than that suite names `effectInteractor` or
+  `effectCatalogUseCase` as a key path (an override, `$0.effectInteractor = fake`,
+  resolves nothing and stays free).
 - Host absence: the extension detects it by frame gap (watchdog every
   `frameGap / 4`, counted from the last frame, or from `start` while no host
   has been seen yet, so a host that never launched is lost too) and by dead-name
@@ -370,7 +387,16 @@ Shared conventions:
   `captureThroughRuntime` (the compile runs on the work runner and the GPU
   completes by hand); `RealEffectRuntimeIntegrationTests` asserts the
   extension streams the effect's output, and that a source that does not
-  compile still streams the camera's own frames.
+  compile still streams the camera's own frames. `LoopbackRig(effects: .real,
+  catalog: .real)` adds the real effects catalog on that runtime (`HostSide.catalog`,
+  a `CatalogSide`: an `InMemoryFileSystemGateway` effects folder, a
+  `FakeFileWatchGateway`, an `InMemoryKeyValueStore`, a `FakeWorkspaceGateway`, and a
+  `GatedClock` of its own for the watch's quiet period, which a test can see parked);
+  `EffectCatalogIntegrationTests` writes a package, fires the watch, steps that clock
+  past 200 ms and judges by the fake GPU's pass graph what the extension is sent: the
+  package appears, choosing it compiles it once, a rewritten source compiles again, a
+  source that does not compile streams the camera's own frame, and a removed package
+  falls back to the bundled effect.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof and for the watch's quiet period); slate PTS is `base + n × (1/fps)` from
   one base — never read from a wall clock.

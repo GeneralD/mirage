@@ -10,8 +10,8 @@ import Domain
 /// **The cache** is keyed by `(source, compile options)` — a `Hashable` key of the
 /// two, so two sources never share a library even if their hashes collide — and never
 /// by the name, so one source compiles once whatever it is called. Only a compile that
-/// succeeded is kept: a broken source compiles again when it is prepared again. Device
-/// id, OS version and a cache on disk are MVP-B (epic #14, D14).
+/// succeeded is kept: a broken source compiles again when it is prepared again. A cache
+/// on disk, and with it a device id and an OS version in the key, is deferred to Later (epic #42, D12).
 ///
 /// **The selection** is the effect `apply` runs, as the newest `begin` left it. A cache
 /// hit settles it at once, so it overtakes a compile still running, and releases the

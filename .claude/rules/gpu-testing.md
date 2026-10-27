@@ -92,10 +92,10 @@ is a raw code the main suite writes down.
   `accessRevoked`: a repeated hang can revoke the test process's Metal access.
   Those scenarios are a manual VM lane (`.claude/rules/dev-verification.md`).
 - The compile cache is `EffectRuntimeStateDataSource`'s (behind
-  `EffectRuntimeRepository`), in-process only: MVP-A keys it by
-  `(source, compile options)`, and device id / OS version (a cache on disk) are
-  MVP-B. A GPU test builds its own runtime and state, so it never shares cache
-  state with another test.
+  `EffectRuntimeRepository`), in-process only: it is keyed by
+  `(source, compile options)`, and a cache on disk (which would need a device id
+  and an OS version) is deferred to Later, epic #42 D12. A GPU test builds its own
+  runtime and state, so it never shares cache state with another test.
 - **GitHub-hosted macOS runners do expose a Metal device** (measured
   2026-10-09, issue #4, on both `macos-latest` = macOS 26.6.2 / Xcode 26.6 and
   `macos-15` = macOS 15.7.9 / Xcode 16.4; hardware `VirtualMac2,1`, "Apple M2

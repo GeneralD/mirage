@@ -26,14 +26,15 @@ app keeps the real sink. The harness shows nothing about the Camera Extension
 SwiftPM does not see the plist as a link input, and the make target relinks.
 
 The automated twin of this lane is `Tests/FramePathIntegrationTests`
-(`RealEffectRuntimeIntegrationTests`): the same effect runtime and DataSources
-over the fake GPU layer. What only the device adds is the Metal compile, the
+(`RealEffectRuntimeIntegrationTests`, and `EffectCatalogIntegrationTests` for the
+effects menu): the same effect runtime, DataSources and catalog over the fake GPU
+layer and an in-memory effects folder. What only the device adds is the Metal compile, the
 command buffer, the camera and the screen.
 
 Not yet run on a device: the camera prompt is a modal dialog on the user's
 screen, so drive it yourself only when the user is at the machine. The numbers
 below are budgets (issue #24), not measurements; record what you see next to
-them once a run exists.
+them once a run exists. The effects menu has its own timed table below (*Effects menu: the timed run*).
 
 ```sh
 make build-dev-harness
@@ -53,6 +54,44 @@ log stream --level debug --style compact --predicate 'subsystem == "<log subsyst
 | Broken source | local build only, never committed: break the bundled shader source (for example misspell a type name in `Sources/BundledEffectDataSource/ChromaticGrainEffect.swift`), `make build-dev-harness`, run. Expect exactly one error line `effect: effect 'Chromatic Grain' did not compile: …` (not one per frame), the **plain camera video** in the window with no fringing or grain, the per-second effect line showing `applied=0` with `compileFailed=<n>` rising, and `frames` in the pipeline line still rising with `received`. Then revert the edit |
 | Occluded window | cover the window or move it to another Space for a while: `pipeline:` summary lines further apart than a second mean `nextDrawable` blocked the frame executor (`docs/ARCHITECTURE.md` → *Preview*); record what you see |
 | Quit | ⌘Q or closing the window ends the process |
+
+### Effects menu: the timed run (issue #52, epic #42)
+
+Not yet run on a device: a budget below is a target of epic #42 (a step whose budget says
+*none* has no target, only something to record), not a measurement, and
+the last column says **not yet run** until someone does the run. Do not fill it from the
+automated twin (`EffectCatalogIntegrationTests` proves the order of events and the 200 ms quiet
+period under a fake clock; it cannot say how long a Metal compile or a window takes). Run it with
+the user at the machine, on top of the table above (camera granted, harness running, Effects menu
+open at least once). The effects folder is the one *Open Effects Folder…* shows
+(`~/Library/Application Support/<host bundle id>/Effects`); `<folder>` below is that path. Time each
+step from the action to the window changing, with a screen recording or the `effect:` log lines
+(`--level debug`), and write the number, the OS version and the Mac in the last column.
+
+| Step | Action | Expected | Budget | Measured |
+|---|---|---|---|---|
+| 1. List | open the Effects menu with `<folder>` empty or absent; then `cp -R Examples/Ripple.lens "<folder>/"` and open the menu again | first: `Chromatic Grain` alone, checked. After the copy: `Ripple` below it, unchecked, `Chromatic Grain` still checked and the window unchanged | the row is there within 1 s of the copy (step 5's budget) | not yet run |
+| 2. Choose | choose `Ripple` | the check mark moves; the window shows Ripple's swaying bands instead of the fringing and grain; `effect: effect 'Ripple' compiled` appears once | the window changes within 1 s of the click, with one compile | not yet run |
+| 3. Save | change a constant in `<folder>/Ripple.lens/effect.metal` (the sway amplitude, say) and save | the window shows the change without touching the menu; `effect: effect 'Ripple' compiled` again, once | within 1 s of the save (200 ms quiet period plus the compile) | not yet run |
+| 4. Break and fix | misspell a type name in that `effect.metal` and save; then undo the misspelling and save | broken: the window shows the plain camera video, a disabled line `Ripple: compile failed` sits between the first divider and *Open Effects Folder…*, exactly one `effect: effect 'Ripple' did not compile: …` error line. Fixed: the effect is back and the line is gone | each save within 1 s | not yet run |
+| 5. Add and remove | `cp -R Examples/Ripple.lens /tmp/Second.lens`, change `name` in `/tmp/Second.lens/manifest.json` to `Second` (a row is titled by the manifest's name, not its folder), `mv /tmp/Second.lens "<folder>/"`, then `rm -r "<folder>/Second.lens"`. Then move the *chosen* package out, `mv "<folder>/Ripple.lens" /tmp/`, and back, `mv /tmp/Ripple.lens "<folder>/"` | a `Second` row appears below `Ripple`, then disappears. With `Ripple.lens` out, the check mark moves to `Chromatic Grain`, the window to its effect, and `effect: effect 'Ripple' is gone; back to 'Chromatic Grain'` is logged; the stored choice is not rewritten. With it back, the `Ripple` row returns unchecked (listing a package chooses nothing) | each within 1 s | not yet run |
+| 6. Open folder | `rm -r "<folder>"` (`Ripple.lens` goes with it), then choose *Open Effects Folder…* | Finder opens the folder (it is made if it was missing) | none; record whether Finder comes to the front and how long it takes | not yet run |
+| 7. Restart | `cp -R Examples/Ripple.lens "<folder>/"` (step 6 removed it), choose `Ripple`, quit with ⌘Q, run `swift run dev-harness` again | `Ripple` is checked from the first menu opening and the window shows its effect with no click. `defaults read com.generald.dev-harness selectedEffect` is `package:Ripple` (the harness's own defaults domain) | no click needed | not yet run |
+| 8. Second line | with `Ripple` listed, and after `mkdir "<folder>/Broken.lens"` | `Ripple` shows `Example Author` under its title; `Broken` is a disabled row whose second line says `manifest.json is missing` | none; record what is drawn | not yet run |
+
+Record, next to the numbers:
+
+- **The editor and its save style for steps 3 and 4.** The watch has two halves: a directory
+  watch hears an atomic save (a temporary file renamed over `effect.metal`), a file watch hears
+  an in-place overwrite (the same file truncated and written), and only a device hears both with
+  a real editor. Do step 3 once each way if you can (an editor that saves atomically, then
+  `cat edited.metal > effect.metal` for in place) and say which one produced which number.
+- **Whether the second line of step 8 is drawn.** The Presenter's `detail` becomes the
+  `NSMenuItem.subtitle` of the row, which the system may not draw on macOS 14.x. If it is not
+  drawn, write that down with the OS version; the row, its mark and its enabled state are
+  still the check, and the reason for a broken package is then visible only in the logs.
+- **Anything over a budget**, with the log lines around it: that is the finding, not a failure to
+  hide. The fix is a new issue; the budget stays.
 
 **When TCC ignores the linked plist.** A process started from a terminal is
 attributed to the terminal app (its "responsible process"), so the prompt may

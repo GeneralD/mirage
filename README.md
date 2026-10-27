@@ -11,8 +11,11 @@ virtual camera. The lens experience Snap Camera left behind when it shut down, r
 macOS, with effects you can write, drop in, and share without rebuilding the app.
 
 > **Pre-alpha.** The architecture is settled (see `docs/ARCHITECTURE.md`). The frame path, the
-> bundled effect and the preview run today in the dev harness (`swift run dev-harness`, below);
-> the virtual camera itself still awaits its first run on a device through the Camera Extension.
+> bundled effect and the preview run today in the dev harness (`swift run dev-harness`, below).
+> Runtime `.lens` loading and hot reload are built into it and covered end to end by the loopback
+> tests, and the Effects menu's Presenter by a live-wiring test; how the menu looks and how fast
+> any of it reacts on a device have not been checked yet. The virtual camera itself still awaits
+> its first run on a device through the Camera Extension.
 
 ## How it works
 
@@ -32,8 +35,7 @@ webcam ──▶ mirage (host app) ──▶ Metal effect (.lens, compiled at ru
 
 ### Writing an effect
 
-Runtime `.lens` loading arrives in MVP-B (see the roadmap); this is the contract `effect.metal`
-is compiled against.
+This is the contract `effect.metal` is compiled against.
 
 - **The engine's prelude comes first.** Your source is compiled after a prelude that already
   includes `<metal_stdlib>` with `using namespace metal;` and declares:
@@ -127,7 +129,7 @@ Conventions for contributors and AI agents: [`AGENTS.md`](AGENTS.md), [`.claude/
 |---|---|
 | M0 | Pass-through frame visible in Zoom via the real Camera Extension |
 | MVP-A | One bundled effect end to end: camera → GPU → preview in the dev harness and the loopback (the extension path is M0's) |
-| MVP-B | Runtime `.lens` loading, hot reload, menu switching |
+| MVP-B (landed, epic #42) | Runtime `.lens` loading, hot reload, menu switching; timings on a device still to be measured |
 | MVP-C | Parameter UI generated from the manifest |
 | MVP-D | Pass-through on failure, auto-disable |
 | Later | Face landmarks / person segmentation inputs, GLSL (Shadertoy) import, URL/Git import, gallery |

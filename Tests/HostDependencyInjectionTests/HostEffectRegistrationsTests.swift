@@ -1,7 +1,6 @@
 import Dependencies
 import Domain
 import EffectCatalogUseCase
-import EffectInteractor
 import EffectPackageDataSource
 import EffectPackageRepository
 import EffectWatchDataSource
@@ -11,65 +10,68 @@ import SettingsRepository
 import TestDoubles
 import TestSupport
 import Testing
-import UserDefaultsGateway
 
-/// The host registers a live value for every port of the effect catalog (epic #42, D10):
-/// the pass-through default of its module, or the real implementation where one has landed.
-/// The OS-boundary ports register no pass-through: their live is the Gateway itself, which
-/// the registration only type-checks here and never calls (it would read the user's defaults).
+/// The host registers the real implementation of its module for every stateless port of the effect
+/// catalog (epic #42, D10): no pass-through of the catalog remains. The OS-boundary lives under them
+/// (the file system, the file events, Finder, the app directories, the key-value store) are not
+/// checked here: `HostFileGatewayRegistrationsTests` pins them.
 /// The Gateways the real implementations resolve and that would touch the machine are faked, in both
 /// tests: the file system and the app directories (`EffectPackageDataSourceImpl` lists and makes
-/// the effects folder) and `fileWatchGateway` (`EffectWatchDataSourceImpl` opens a descriptor on it).
+/// the effects folder), `fileWatchGateway` (`EffectWatchDataSourceImpl` opens a descriptor on it), the
+/// key-value store (the chosen effect) and Finder, and the logs they write to.
 ///
-/// Every resolution here happens inside `live(_:)`: `withDependencies { $0.context = .live }` over
-/// an in-memory file system, a fixed effects folder and a fake file-watch gateway. The live values
-/// in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its first
-/// resolution and keeps it for the life of the process (the test bundle is one process), and a live
-/// value that resolves a port of its own (`EffectPackageRepositoryImpl` resolves `effectPackages`,
-/// `effectWatch` and `bundledEffects`; `EffectPackageDataSourceImpl` resolves the file system;
-/// `EffectWatchDataSourceImpl` resolves the file-watch gateway) captures the scope it is built in.
-/// These keys are resolved by no other suite and every test of this one resolves them through
-/// `live(_:)`, so what each one captures is the same scope whichever test builds it first.
-/// The file system and the file-watch gateway are the two things that are not live: the first
-/// catalog the default graph asks for lists the effects folder (and makes it) and asks to watch it,
-/// and a test must neither make the user's own folder, see what is in it, nor open a real
-/// descriptor on it. Resolve nothing through any other scope in this suite, and no test that
-/// resolves one of these keys in another. (The one override beyond `live(_:)` is the effect
-/// runtime's, on a UseCase the test builds itself, inside the same scope: the catalog's
-/// pass-throughs never resolve it, so what they capture is untouched.)
+/// **Which keys this suite resolves, and which it leaves to `HarnessLiveWiringTests`.** The live values
+/// in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its first resolution
+/// and keeps it for the life of the process (the test bundle is one process, and its suites run
+/// concurrently). The catalog's values come in two kinds:
+///
+/// - **Stateless** (`effectPackageRepository`, `settingsRepository`, `effectPackages`, `effectWatch`,
+///   `preferences`): structs that hold nothing between calls. A caller's own overrides win over the
+///   scope such a value captured, so these are resolved here, inside `live(_:)`, with every Gateway
+///   they reach overridden by a fake of this suite, whichever suite built the singleton first.
+/// - **Stateful** (`effectInteractor`, `effectCatalogUseCase`): `EffectInteractorImpl` resolves the
+///   catalog and the logs once and starts a supervising `Task`, which freezes the task-locals of the scope
+///   that built it; `EffectCatalogUseCaseImpl` owns the catalog's session. The first scope that builds
+///   them stays theirs for the process. **`HarnessLiveWiringTests` is the one suite that resolves them
+///   live**, with the fakes of the whole harness graph, and checks their types there; this suite builds
+///   its own `EffectCatalogUseCaseImpl` (not the registered singleton) and never resolves either key.
+///
+/// Everything here runs inside `live(_:)`, tasks included: a `Task` made inside it inherits its
+/// overrides, so what the catalog's `run()` resolves is this test's file system and store even when a
+/// singleton captured another suite's. Resolve nothing outside `live(_:)` in this suite, and add no
+/// resolution of `effectInteractor` or `effectCatalogUseCase` (`docs/ARCHITECTURE.md` →
+/// *The effect catalog follows the same rule*).
 @Suite("Host registrations of the effect catalog", .timeLimit(.minutes(1)))
 struct HostEffectRegistrationsTests {
-    private static func live<Value>(_ operation: () -> Value) -> Value {
-        withDependencies {
+    private static func live<Value>(_ operation: () async throws -> Value) async rethrows -> Value {
+        try await withDependencies {
             $0.context = .live
             $0.fileSystemGateway = InMemoryFileSystemGateway()
             $0.appDirectories = FixedAppDirectories(effectsDirectory: "/effects")
             $0.fileWatchGateway = FakeFileWatchGateway()
+            $0.keyValueStoreGateway = InMemoryKeyValueStore()
+            $0.workspaceGateway = FakeWorkspaceGateway()
+            $0.errorLog = RecordingLog()
+            $0.developerLog = RecordingLog()
         } operation: {
-            operation()
+            try await operation()
         }
     }
 
-    @Test("each port of the catalog has the live value of its module's pass-through")
-    func everyPortHasItsPassThrough() {
-        Self.live {
-            @Dependency(\.effectInteractor) var effectInteractor
-            @Dependency(\.effectCatalogUseCase) var effectCatalogUseCase
+    @Test("each stateless port of the catalog has the live value of its module's implementation")
+    func everyStatelessPortHasItsImplementation() async {
+        await Self.live {
             @Dependency(\.effectPackageRepository) var effectPackageRepository
             @Dependency(\.settingsRepository) var settingsRepository
             @Dependency(\.effectPackages) var effectPackages
             @Dependency(\.effectWatch) var effectWatch
             @Dependency(\.preferences) var preferences
-            @Dependency(\.keyValueStoreGateway) var keyValueStoreGateway
 
-            #expect(effectInteractor is EffectInteractorImpl)  // the real one (#49), not a pass-through: it runs nothing until `start()`
-            #expect(effectCatalogUseCase is EffectCatalogUseCaseImpl)
             #expect(effectPackageRepository is EffectPackageRepositoryImpl)
             #expect(settingsRepository is SettingsRepositoryImpl)
             #expect(effectPackages is EffectPackageDataSourceImpl)
             #expect(effectWatch is EffectWatchDataSourceImpl)
             #expect(preferences is PreferencesDataStoreImpl)
-            #expect(keyValueStoreGateway is KeyValueStoreGatewayImpl)
         }
     }
 
@@ -78,24 +80,25 @@ struct HostEffectRegistrationsTests {
     )
     func defaultGraphChoosesTheBundledEffect() async throws {
         let runtime = FakeEffectRuntimeRepository()
-        let useCase = Self.live {
-            withDependencies {
+        let states = Collector<EffectCatalogState>()
+        let request = try await Self.live {
+            let useCase = withDependencies {
                 $0.effectRuntimeRepository = runtime
             } operation: {
                 EffectCatalogUseCaseImpl()
             }
-        }
-        let states = Collector<EffectCatalogState>()
-        let observer = Task { for await state in useCase.observe() { states.append(state) } }
-        let run = Task { await useCase.run() }
+            let observer = Task { for await state in useCase.observe() { states.append(state) } }
+            let run = Task { await useCase.run() }
 
-        await runtime.prepareRequests.waitForCount(1)
-        let request = try #require(runtime.prepareRequests.values.first)
-        runtime.completePrepare(request, with: .success(()))
-        await states.waitForCount(1)
-        run.cancel()
-        await run.value
-        await observer.value
+            await runtime.prepareRequests.waitForCount(1)
+            let request = try #require(runtime.prepareRequests.values.first)
+            runtime.completePrepare(request, with: .success(()))
+            await states.waitForCount(1)
+            run.cancel()
+            await run.value
+            await observer.value
+            return request
+        }
 
         let state = try #require(states.values.first)
         let entry = try #require(state.entries.first)
