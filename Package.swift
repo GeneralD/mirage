@@ -141,7 +141,7 @@ let package = Package(
         // the real DataSource lands in this module (epic #42, D10).
         .target(name: "EffectPackageDataSource", dependencies: dependencies),
         .testTarget(name: "EffectPackageDataSourceTests", dependencies: ["EffectPackageDataSource"] + testDependencies),
-        // Host only: file events folded into one change per burst. Holds `NeverChangingWatch` for now.
+        // Host only: file events folded into one change per burst (`EffectWatchDataSourceImpl`, epic #42, D4).
         .target(name: "EffectWatchDataSource", dependencies: dependencies),
         .testTarget(name: "EffectWatchDataSourceTests", dependencies: ["EffectWatchDataSource"] + testDependencies),
 

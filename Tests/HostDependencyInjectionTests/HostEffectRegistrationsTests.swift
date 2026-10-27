@@ -14,9 +14,12 @@ import Testing
 import UserDefaultsGateway
 
 /// The host registers a live value for every port of the effect catalog (epic #42, D10):
-/// the pass-through default of its module, until the later issue puts the real one there.
+/// the pass-through default of its module, or the real implementation where one has landed.
 /// The OS-boundary ports register no pass-through: their live is the Gateway itself, which
 /// the registration only type-checks here and never calls (it would read the user's defaults).
+/// The one Gateway that is faked is `fileWatchGateway`, in both tests: the real
+/// `EffectWatchDataSourceImpl` resolves it, so a listing that asked for a watch (the effects
+/// folder, once `EffectPackageDataSource` lists one) would otherwise open a real descriptor.
 ///
 /// Every resolution here happens inside `withDependencies { $0.context = .live }`. The live
 /// values in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its
@@ -25,8 +28,11 @@ import UserDefaultsGateway
 /// resolves `effectPackages`, `effectWatch` and `bundledEffects`) captures the scope it is built in. These keys are resolved
 /// by no other suite, and none of them is overridden here, so what each one captures is
 /// the live context whichever test builds it first. Add no override of one of these keys
-/// in this suite and no test that resolves one in another. (The one override below is the
-/// effect runtime's, on a UseCase the test builds itself: the catalog's pass-throughs never
+/// in this suite and no test that resolves one in another. (The watch gateway is the
+/// exception: `EffectWatchDataSourceImpl` captures the gateway it is first built with, so
+/// every test below that can build it installs a `FakeFileWatchGateway`, and what it
+/// captures is a fake whichever test comes first. The other override is the effect
+/// runtime's, on a UseCase the test builds itself: the catalog's pass-throughs never
 /// resolve it, so what they capture is untouched.)
 @Suite("Host registrations of the effect catalog", .timeLimit(.minutes(1)))
 struct HostEffectRegistrationsTests {
@@ -34,6 +40,7 @@ struct HostEffectRegistrationsTests {
     func everyPortHasItsPassThrough() {
         withDependencies {
             $0.context = .live
+            $0.fileWatchGateway = FakeFileWatchGateway()
         } operation: {
             @Dependency(\.effectInteractor) var effectInteractor
             @Dependency(\.effectCatalogUseCase) var effectCatalogUseCase
@@ -49,7 +56,7 @@ struct HostEffectRegistrationsTests {
             #expect(effectPackageRepository is EffectPackageRepositoryImpl)
             #expect(settingsRepository is SettingsRepositoryImpl)
             #expect(effectPackages is NoPackages)
-            #expect(effectWatch is NeverChangingWatch)
+            #expect(effectWatch is EffectWatchDataSourceImpl)
             #expect(preferences is PreferencesDataStoreImpl)
             #expect(keyValueStoreGateway is KeyValueStoreGatewayImpl)
         }
@@ -62,6 +69,7 @@ struct HostEffectRegistrationsTests {
         let runtime = FakeEffectRuntimeRepository()
         let useCase = withDependencies {
             $0.context = .live
+            $0.fileWatchGateway = FakeFileWatchGateway()
             $0.effectRuntimeRepository = runtime
         } operation: {
             EffectCatalogUseCaseImpl()
