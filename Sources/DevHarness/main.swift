@@ -1,5 +1,5 @@
 // `swift run dev-harness`: AppKit's launch and nothing else. The window is
-// HarnessAppDelegate's, the lifecycle HarnessSession's.
+// HarnessAppDelegate's, the lifecycle HarnessSession's and the main menu HarnessMenu's.
 import AppKit
 
 let delegate = HarnessAppDelegate()

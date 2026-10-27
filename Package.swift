@@ -258,8 +258,9 @@ let package = Package(
         .target(name: "App", dependencies: dependencies + ["HostDependencyInjection", "AppRouter", "Views"]),
         .target(name: "ExtensionApp", dependencies: dependencies + ["ExtensionDependencyInjection"]),
         // The development harness (host graph only). `main.swift` launches AppKit;
-        // HarnessSession holds its lifecycle and wiring (DevHarnessTests); what it does
-        // is HarnessInteractor's, over CameraControlUseCase and FramePipelineUseCase.
+        // HarnessSession holds its lifecycle and wiring and HarnessMenu its main menu and
+        // the Router's lifecycle (DevHarnessTests); what it does is HarnessInteractor's,
+        // over CameraControlUseCase and FramePipelineUseCase.
         // A SwiftPM executable has no bundle, so its Info.plist (bundle id, camera
         // usage string for TCC) is linked in as the __TEXT,__info_plist section —
         // the one hand-written plist, outside the xcodegen shells (docs/ARCHITECTURE.md
@@ -283,7 +284,7 @@ let package = Package(
             dependencies: [
                 "DevHarness", "FramePipelineUseCase", "HarnessInteractor", "HostDependencyInjection", "VirtualCameraRepository",
                 "AppRouter", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
-                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore", "Presenters", "Views",
             ] + testDependencies
         ),
 

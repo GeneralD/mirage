@@ -172,7 +172,7 @@ Shared conventions:
   only its `start()` / `stop()`, never `effectInteractor.start()`: a second
   `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the one
   Presenter in `init` and calls only its `start()` / `stop()`: the host (`HostAppDelegate`) and the dev harness
-  (`HarnessAppDelegate`) start and stop the Router and nothing below it. `EffectMenu` (`Views`) draws the Presenter for
+  (`HarnessMenu`, called by `HarnessAppDelegate`) start and stop the Router and nothing below it. `EffectMenu` (`Views`) draws the Presenter for
   the host's `MenuBarExtra(.menu)` and the harness's `NSHostingMenu` and decides nothing (a `Toggle` per row, the
   Presenter's flags and words); the host stays out of the Dock through `LSUIElement` in `project.yml`. Details: the
   *Key Design Decisions* entries in `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*).
@@ -299,9 +299,10 @@ Shared conventions:
 - `DevHarness` keeps `main.swift` to AppKit's launch and `HarnessSession` to
   the lifecycle and the view wiring; the session resolves only `HarnessInteractor`,
   which drives `CameraControlUseCase` and `FramePipelineUseCase`. Each layer is
-  tested against fakes. `HarnessAppDelegate` also owns an `AppRouter`, started beside the
-  session, and shows the host's `EffectMenu` as the main menu's Effects item (`NSHostingMenu`,
-  macOS 14.4+); `HarnessLiveWiringTests` builds that Router beside the session and drives
+  tested against fakes. `HarnessMenu` owns an `AppRouter`, started beside the
+  session by `HarnessAppDelegate`, and shows the host's `EffectMenu` as the main menu's Effects item
+  (`NSHostingMenu`, macOS 14.4+; `HarnessMenuTests` run it over a fake Interactor);
+  `HarnessLiveWiringTests` builds that menu (`HarnessMenu.live()`) beside the session and drives
   its Presenter through the real catalog. It logs through `DeveloperLog` / `ErrorLog` like
   every other module, never `print`. `HarnessSession.live()` builds the
   session inside `withDependencies { $0.useDiscardingVirtualCameraSink() }`:

@@ -116,7 +116,7 @@ struct HarnessLiveWiringTests {
         func wired<Value>(_ operation: () -> Value) -> Value {
             withDependencies(wiring, operation: operation)
         }
-        let (session, router) = wired {
+        let (session, menu) = wired {
             // Resolved here, in this scope, so that what the two singletons freeze is this test's.
             @Dependency(\.effectInteractor) var effectInteractor
             @Dependency(\.effectCatalogUseCase) var effectCatalogUseCase
@@ -132,18 +132,19 @@ struct HarnessLiveWiringTests {
             #expect(effectPackages is EffectPackageDataSourceImpl)
             #expect(effectWatch is EffectWatchDataSourceImpl)
             #expect(preferences is PreferencesDataStoreImpl)
-            // The router beside the session, not inside the harness's substitution, as `HarnessAppDelegate` builds them.
-            return (HarnessSession.live(), AppRouter())
+            // The menu, and the Router in it, beside the session and not inside the harness's substitution: the pair
+            // `HarnessAppDelegate` builds, by the same two calls.
+            return (HarnessSession.live(), HarnessMenu.live())
         }
-        let presenter = router.menuBarPresenter
+        let presenter = menu.router.menuBarPresenter
         defer {
-            router.stop()
+            menu.stop()
             session.stop()
         }
 
         wired {
             session.start()
-            router.start()
+            menu.start()
         }
         let started = await tickUntil(tick: { executor.drain() }, until: { developer.contains("pipeline started") })
         let listed = await tickUntil(tick: { executor.drain() }, until: { presenter.items.contains { $0.isSelected } })
