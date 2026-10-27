@@ -172,7 +172,9 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `.streamStarted` / `.streamStopped`; `GatedClock` — a hand-stepped clock whose
   `sleepers` collector fires once a sleep is registered, so a test advances time
   only when the subject is parked (the reconnect backoff proof, the watch's quiet
-  period); its sleeps honour task cancellation like `ContinuousClock`.
+  period); its sleeps honour task cancellation like `ContinuousClock`, and its
+  `cancelledSleepers` collector fires once a parked sleep was cancelled (and has left
+  `parkedCount`), so a test waits for a cancellation instead of polling for it.
   `RecordingWorkRunner` — the
   `WorkRunner` double: starts each work item as a real `Task` at once and
   records `started` / `finished` / `cancelled`, so a test awaits
