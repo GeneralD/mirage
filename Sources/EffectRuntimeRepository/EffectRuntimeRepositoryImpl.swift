@@ -15,8 +15,9 @@ import Domain
 /// **`apply`** is admitted by the state, which also builds the pass's uniforms
 /// (`EffectUniforms.pass`). Until something is prepared, the first `apply` prepares
 /// `BundledEffects.defaultEffect` itself, so the pipeline runs the bundled effect
-/// without knowing it exists (MVP-A has no effect menu); an `apply` that meets a
-/// compile still running waits for it rather than counting a failure. A failure
+/// without knowing it exists (the effects menu prepares the chosen effect once its
+/// run has listed the catalog; until then the bundled one runs); an `apply` that
+/// meets a compile still running waits for it rather than counting a failure. A failure
 /// is one the effect's author caused (`.compileFailed`, final until a newer
 /// `prepare`) or the runtime's (`.internalError`: no GPU context or a compiler
 /// service fault, tried again by the next `apply`). That retry runs at the camera's pace, so only the first failure
