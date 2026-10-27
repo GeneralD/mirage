@@ -74,7 +74,7 @@ overrides, which assign rather than resolve.
 
 | Lane (modules) | May resolve | Per-key exceptions |
 |---|---|---|
-| Entry (`App`, `DevHarness`, `ExtensionApp`) | Interactor, Support | `ExtensionApp`: `extensionRelayUseCase` — the extension process has no GUI and so no Interactor lane; its entry point resolves the relay UseCase (Key Design Decisions) |
+| Entry (`App`, `DevHarness`, `ExtensionApp`) | Interactor, Support; but `App` and `DevHarness` never `effectInteractor` (*Per-key denials* below) | `ExtensionApp`: `extensionRelayUseCase` — the extension process has no GUI and so no Interactor lane; its entry point resolves the relay UseCase (Key Design Decisions) |
 | View (`Views`, `AppRouter`) | Presenter, Support | |
 | Presenter (`Presenters`, `*Presenter`) | Interactor, Support | |
 | `*Interactor` | UseCase, Support | |
@@ -82,6 +82,16 @@ overrides, which assign rather than resolve.
 | `*Repository` | DataSource, DataStore, Support | `workRunner` only; never `frameExecutor` or `frameScheduler` (→ *Effect runtime*, epic #14 D14; the decision of #36) |
 | `*DataSource` / `*DataStore` | Gateway, Support | `GPURenderDataSource`, `PreviewDataSource`: `surfacePool` — leases resolve through the executor-confined pool (→ *One effect, one command buffer*, epic #14 D4; Physical Abstraction Table: *Texture binding*) |
 | Everything else (Entity, Domain, Gateway and Support lives, DI targets) | nothing | |
+
+**Per-key denials.** The kind rule cannot say "this Interactor and not that one": the Entry lane
+resolves Interactors (`cameraInteractor`, `harnessInteractor`), yet `App` and `DevHarness` may not
+resolve `\.effectInteractor`. That Interactor is started and stopped by `MenuBarPresenter`, and the
+Presenter by `AppRouter` alone (`docs/ARCHITECTURE.md` → *Menu bar*): an entry point that started it
+too would restart the catalog (`run()` twice, the first state sent twice). A denial is a `DENIALS`
+entry in the script, `<module glob> <key> <reason>`, checked before the lane's kinds and before any
+exception. A denial that works is never matched by a resolution, so the staleness check is static:
+an entry fails when its key is no longer a declared port, when no module matches its glob, or when
+the lane's kinds already keep that module from the key, so the list cannot outlive its reason.
 
 ## Protocol API Design
 

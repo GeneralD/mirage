@@ -94,6 +94,8 @@ Shared conventions:
 - No layer skipping through `@Dependency`: a module resolves only the ports of
   the layer right below it, plus Support (`scripts/check-dependency-keypaths.sh`,
   run by `make check`; a port's kind is its `Sources/Domain/<Kind>/` directory).
+  One key is denied to a lane that would otherwise allow it: `App` and `DevHarness`
+  never resolve `\.effectInteractor` (the Router alone starts the Presenter that owns it).
   The exceptions are listed in `.claude/rules/architecture-boundaries.md`: the
   frame path's execution context for UseCases, `workRunner` for Repositories,
   `surfacePool` for `GPURenderDataSource` and `PreviewDataSource`, and
@@ -169,7 +171,7 @@ Shared conventions:
   that a `sink` feeds (newest state wins), never `receive(on: DispatchQueue.main)`
   and never `publisher.values` (an `AsyncPublisher` drops states sent while it
   is applying the last one), and owns the Interactor's `start()` / `stop()` (whoever wires the Presenter calls
-  only its `start()` / `stop()`, never `effectInteractor.start()`: a second
+  only its `start()` / `stop()`, never `effectInteractor.start()` (`App` and `DevHarness` are denied the key): a second
   `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the one
   Presenter in `init` and calls only its `start()` / `stop()`: the host (`HostAppDelegate`) and the dev harness
   (`HarnessMenu`, called by `HarnessAppDelegate`) start and stop the Router and nothing below it. `EffectMenu` (`Views`) draws the Presenter for

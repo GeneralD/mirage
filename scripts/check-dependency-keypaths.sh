@@ -13,8 +13,10 @@
 # member, so a new port needs no entry here: its directory is its kind. A lane may resolve the
 # kind of the layer right below it plus Support; the few keys a lane may resolve beyond that
 # are listed per key, each with the decision it rests on, and an exception nothing resolves any
-# more fails, so the list cannot outlive its reason. Only the plain `\.key` form is understood:
-# a key-path chain, `Key.self` or `\DependencyValues.key` fails instead of passing unchecked.
+# more fails, so the list cannot outlive its reason. The other way round, a key of a kind the
+# lane may resolve can still be denied to a module (DENIALS below): the kind rule cannot say
+# "this Interactor and not that one". Only the plain `\.key` form is understood: a key-path
+# chain, `Key.self` or `\DependencyValues.key` fails instead of passing unchecked.
 
 # shellcheck source=scripts/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -151,6 +153,42 @@ ExtensionApp extensionRelayUseCase
 '
 USED_EXCEPTIONS=""
 
+# DENIALS — "<module glob> <key> <reason>": a key a module may not resolve although its lane's
+# kinds allow it. A denial that works is never matched by a resolution, so it cannot be told
+# stale by use; instead each entry is checked for what it rests on, after the resolutions: the key
+# is still a declared port, a module still matches the glob, and the lane's kinds do allow the
+# key (otherwise the lane forbids it already and the entry is dead weight).
+#
+#   App, DevHarness — effectInteractor. The entry lane may resolve Interactors (`cameraInteractor`,
+#                 `harnessInteractor`), but the effects menu's Interactor is started and stopped
+#                 by its Presenter, and the Presenter by the Router alone (docs/ARCHITECTURE.md →
+#                 Menu bar, epic #42 D8; → The effects menu's Interactor and Presenter, D9). A
+#                 second `effectInteractor.start()` from an entry point is a restart, so the
+#                 catalog's `run()` would run twice and the first state would be sent twice.
+DENIALS='
+App effectInteractor the Presenter owns the Interactor and the Router alone starts the Presenter: start the menu through AppRouter (docs/ARCHITECTURE.md, Menu bar)
+DevHarness effectInteractor the Presenter owns the Interactor and the Router alone starts the Presenter: start the menu through AppRouter (docs/ARCHITECTURE.md, Menu bar)
+'
+
+# denial_reason <module> <key> — prints the reason of the DENIALS entry that covers the pair and
+# returns 0, or returns 1 when none does.
+denial_reason() {
+    local module="$1" key="$2" glob entry_key reason
+    while IFS=' ' read -r glob entry_key reason; do
+        [ -n "$glob" ] || continue
+        [ "$entry_key" = "$key" ] || continue
+        # The glob is the pattern.
+        # shellcheck disable=SC2254
+        case "$module" in
+            $glob)
+                printf '%s\n' "$reason"
+                return 0
+                ;;
+        esac
+    done <<< "$DENIALS"
+    return 1
+}
+
 # excepted <module> <key> — 0 when an EXCEPTIONS entry covers the pair, recording it as used.
 excepted() {
     local module="$1" key="$2" glob entry_key
@@ -219,6 +257,10 @@ while IFS="$(printf '\t')" read -r file line_no arg; do
         fail "$file:$line_no" "\\.$key is not a port declared under Sources/Domain/<Kind>/"
         continue
     fi
+    if reason=$(denial_reason "$module" "$key"); then
+        fail "$file:$line_no" "module $module may not resolve \\.$key: $reason"
+        continue
+    fi
     excepted "$module" "$key" && continue
     case " $kinds " in
         *" $kind "*) ;;
@@ -241,5 +283,29 @@ while IFS=' ' read -r glob entry_key; do
         *) fail "scripts/check-dependency-keypaths.sh:1" "no module matching $glob resolves \\.$entry_key any more; remove the exception with its reason" ;;
     esac
 done <<< "$EXCEPTIONS"
+
+while IFS=' ' read -r glob entry_key _; do
+    [ -n "$glob" ] || continue
+    kind=$(kind_of_key "$entry_key")
+    if [ -z "$kind" ]; then
+        fail "scripts/check-dependency-keypaths.sh:1" "the denial of \\.$entry_key to $glob names no port declared under Sources/Domain/<Kind>/ any more; remove it with its reason"
+        continue
+    fi
+    module_found=""
+    # The glob is the pattern, expanded on purpose.
+    # shellcheck disable=SC2231
+    for dir in Sources/$glob; do
+        [ -d "$dir" ] && module_found=1
+    done
+    if [ -z "$module_found" ]; then
+        fail "scripts/check-dependency-keypaths.sh:1" "no module matches $glob any more; remove its denial of \\.$entry_key with its reason"
+        continue
+    fi
+    lane=$(lane_of "$glob")
+    case " $(allowed_kinds "$lane") " in
+        *" $kind "*) ;;
+        *) fail "scripts/check-dependency-keypaths.sh:1" "the $lane lane of $glob does not resolve port kind $kind (\\.$entry_key) anyway; remove the denial with its reason" ;;
+    esac
+done <<< "$DENIALS"
 
 finish "check-dependency-keypaths"

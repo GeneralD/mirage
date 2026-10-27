@@ -18,7 +18,8 @@ When adding a new module (UseCase, Repository, DataSource, Gateway, …):
    module whose name carries no layer suffix (an entry point, a view or
    presenter module) needs a lane in `scripts/check-dependency-keypaths.sh`,
    and a key outside the lane's kinds is a per-key exception there that cites
-   the decision it rests on.
+   the decision it rests on. The reverse, a key of an allowed kind that one
+   module must not resolve, is a per-key denial (`DENIALS`) with its reason.
 7. **codecov.yml** — if the module is a CI-unreachable Gateway, add it to
    `ignore` and make it obey the thin-live rule.
 8. **Documentation**:
