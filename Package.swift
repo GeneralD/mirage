@@ -203,6 +203,10 @@ let package = Package(
         .target(name: "Presenters", dependencies: dependencies),
         .testTarget(name: "PresentersTests", dependencies: ["Presenters"] + testDependencies),
 
+        // ── Router (builds the Presenter and starts / stops it; View lane; host only) ──
+        .target(name: "AppRouter", dependencies: dependencies + ["Presenters"]),
+        .testTarget(name: "AppRouterTests", dependencies: ["AppRouter", "Presenters"] + testDependencies),
+
         // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
         .target(
             name: "CommonDependencyInjection",
