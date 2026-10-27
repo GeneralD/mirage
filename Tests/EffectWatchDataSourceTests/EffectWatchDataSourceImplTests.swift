@@ -215,34 +215,42 @@ struct EffectWatchDataSourceImplTests {
         #expect(rig.gateway.isBalanced)
     }
 
-    @Test("the quiet period in progress is dropped when the consumer lets go, and a later event reaches nobody")
-    func endingDropsTheSleepAndIgnoresLateEvents() async {
+    @Test("the quiet period in progress is dropped when the consumer lets go, and every watch is stopped")
+    func endingDropsTheSleepAndStopsTheWatches() async {
         let consumer = rig.listen(to: rig.subject.changes(of: WatchRig.onePackage), into: heard)
         rig.gateway.fire(WatchRig.shader)
         await rig.clock.sleepers.waitForCount(1)
 
         await rig.end(consumer)
 
-        let sleepWasCancelled = await tickUntil(tick: {}, until: { rig.clock.parkedCount == 0 })
-        #expect(sleepWasCancelled, "the sleep the period was waiting on is cancelled with the stream")
-        #expect(rig.gateway.fire(WatchRig.shader) == 0, "every watch was stopped: nothing hears a late event")
-        #expect(heard.count == 0)
+        await rig.clock.cancelledSleepers.waitForCount(1)
+        #expect(rig.clock.parkedCount == 0, "the sleep the period was waiting on is cancelled with the stream")
+        #expect(rig.gateway.fire(WatchRig.shader) == 0, "every watch was stopped: the gateway has nobody to tell about a later event")
     }
 
-    @Test("streams are independent: one that ends leaves the other armed, and the ended one hears nothing more")
-    func endingOneLeavesTheOther() async {
-        let endedHeard = Collector<Duration>()
-        let ended = rig.listen(to: rig.subject.changes(of: WatchRig.onePackage), into: endedHeard)
+    @Test("an event that arrives after the stream ended starts no period, and the other stream is unaffected")
+    func lateEventsOfAnEndedStreamStartNothing() async {
+        let ended = rig.listen(to: rig.subject.changes(of: WatchRig.onePackage), into: Collector())
+        // What the ended stream's watches were armed with, taken before the second stream adds its own.
+        let late = rig.keeper.callbacks
+        #expect(late.count == 4, "one callback per watch of the set")
         let live = rig.listen(to: rig.subject.changes(of: WatchRig.onePackage), into: heard)
         await rig.end(ended)
 
+        // The fake does not fire a stopped watch, so the callbacks are delivered directly, as a dispatch
+        // source's handler that was already running when its watch was stopped would.
+        for callback in late { callback() }
+
+        // The second stream is the sentinel: its burst goes through the same clock, and an element
+        // for it is heard only after the late events had their chance to start a period of their own.
         #expect(rig.gateway.fire(WatchRig.shader) == 1, "only the second stream's watch on the shader is still live")
         await rig.clock.sleepers.waitForCount(1)
         rig.clock.advance(by: .milliseconds(200))
         await heard.waitForCount(1)
         await rig.end(live)
 
-        #expect(endedHeard.count == 0, "the second stream's element is the sentinel that the first one heard nothing")
+        #expect(rig.clock.sleepers.count == 1, "the second stream's period is the only sleep ever registered: the late events started none")
+        #expect(heard.values == [.milliseconds(200)])
         #expect(rig.gateway.isBalanced)
     }
 }

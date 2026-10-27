@@ -5,7 +5,8 @@ import TestDoubles
 import TestSupport
 
 /// The subject over the fakes, with the test holding every end: the watches
-/// (`gateway.fire(path)`), the clock (`clock.advance(by:)`) and the developer log.
+/// (`gateway.fire(path)`, and `keeper.callbacks` for an event that arrives after the watch was
+/// stopped), the clock (`clock.advance(by:)`) and the developer log.
 ///
 /// The clock is a `GatedClock`, not a `TestClock`: an event travels from the watch's
 /// callback through the debouncing task to a sleep on the clock, and a clock that cannot
@@ -16,6 +17,8 @@ import TestSupport
 /// timer or a tick.
 struct WatchRig: Sendable {
     let gateway = FakeFileWatchGateway()
+    /// What the subject resolves as `fileWatchGateway`: `gateway` behind a wrapper that keeps each callback.
+    let keeper: CallbackKeepingGateway
     let clock = GatedClock()
     let log = RecordingLog()
     let subject: EffectWatchDataSourceImpl
@@ -27,11 +30,12 @@ struct WatchRig: Sendable {
     static let onePackage = EffectWatchSet(directories: ["/effects", "/effects/a.lens"], files: [manifest, shader])
 
     init() {
-        let gateway = gateway
+        let keeper = CallbackKeepingGateway(wrapping: gateway)
         let clock = clock
         let log = log
+        self.keeper = keeper
         subject = withDependencies {
-            $0.fileWatchGateway = gateway
+            $0.fileWatchGateway = keeper
             $0.continuousClock = clock
             $0.developerLog = log
         } operation: {

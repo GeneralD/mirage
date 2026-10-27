@@ -195,8 +195,12 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   subject's sleep is registered and is lost. "No element yet" is read off the clock
   (`clock.parkedCount` still counts the sleep that could yield one), never off a
   window of ticks, and a property test writes the 200 ms out itself instead of
-  reading `quietPeriod`. `FakeEffectWatch` and
-  `FakeEffectPackageRepository` register a stream before `changes(of:)` / `catalog()`
+  reading `quietPeriod`. The fake never fires a stopped watch, so an event that
+  arrives after a stream ended (a dispatch source cannot recall a handler that is
+  already running) is delivered through a wrapper that keeps each `onChange`
+  (`WatchRig.keeper.callbacks`), and "it started nothing" is read off the clock's
+  `sleepers` after a second stream's burst, which is the sentinel.
+  `FakeEffectWatch` and `FakeEffectPackageRepository` register a stream before `changes(of:)` / `catalog()`
   returns, so `fire(request:)` / `publish(_:)` right after the call cannot be lost, and
   their `terminations` collector fires when the consumer lets go. A test keeps such a
   stream alive with `withExtendedLifetime` (a dropped iterator cancels it).
