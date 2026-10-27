@@ -11,8 +11,8 @@ import PackageDescription
 // installer and the three DI targets; MVP-A added the effect runtime, the
 // preview and the dev harness. MVP-B adds the `.lens` catalog: its seven modules
 // (EffectPackageDataSource … EffectInteractor) start as pass-through defaults that
-// the later MVP-B issues replace in place; the menu-bar UI lane (AppRouter, the
-// Presenters) arrives with them.
+// the later MVP-B issues replace in place; the menu-bar UI lane (the Presenters,
+// AppRouter and the Views' EffectMenu) is shown by the host app and the dev harness.
 
 let dependencies: [Target.Dependency] = [
     "Domain",
