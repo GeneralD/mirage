@@ -204,8 +204,9 @@ extension EffectPackageDataSourceImpl {
         directory + "/" + name
     }
 
-    /// The file is not there: the two codes the file APIs use for it. Every other error, whatever
-    /// its type, is a file that is there and cannot be read.
+    /// The file is not there: `fileReadNoSuchFile`, which the live and the in-memory gateway raise,
+    /// or `fileNoSuchFile`, accepted as well in case an API reports a vanished path with it. Every
+    /// other error, whatever its type, is a file that is there and cannot be read.
     private static func isMissing(_ error: any Error) -> Bool {
         let code = (error as? CocoaError)?.code
         return code == .fileReadNoSuchFile || code == .fileNoSuchFile
