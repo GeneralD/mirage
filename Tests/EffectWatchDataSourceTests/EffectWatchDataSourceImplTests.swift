@@ -81,7 +81,7 @@ struct EffectWatchDataSourceImplTests {
 
         rig.clock.advance(by: .milliseconds(199))
         #expect(rig.clock.parkedCount == 1, "one millisecond short: the period is still running")
-        #expect(heard.count == 0)
+        #expect(heard.count == 0, "the only sleep that could yield an element has not been woken")
 
         rig.clock.advance(by: .milliseconds(1))
         #expect(rig.clock.parkedCount == 0, "the period ran out")
@@ -102,12 +102,12 @@ struct EffectWatchDataSourceImplTests {
         rig.gateway.fire(WatchRig.manifest)
         await rig.clock.sleepers.waitForCount(2)
         rig.clock.advance(by: .milliseconds(150))
-        #expect(heard.count == 0, "the first event's period ran out at 200 ms, but a later event replaced it")
+        #expect(rig.clock.parkedCount == 1, "the first event's sleep ended at 200 ms; the second's, due at 350 ms, is the one still running")
         rig.gateway.fire("/effects")
         await rig.clock.sleepers.waitForCount(3)
 
         rig.clock.advance(by: .milliseconds(199))
-        #expect(heard.count == 0, "199 ms after the last event of the burst")
+        #expect(rig.clock.parkedCount == 1, "199 ms after the last event of the burst: only its sleep (due at 500 ms) is still running")
         rig.clock.advance(by: .milliseconds(1))
         await heard.waitForCount(1)
 
@@ -118,7 +118,9 @@ struct EffectWatchDataSourceImplTests {
         await heard.waitForCount(2)
         await rig.end(consumer)
 
-        #expect(heard.values == [.milliseconds(500), .milliseconds(700)], "one element per burst, stamped when its period ran out")
+        #expect(
+            heard.values == [.milliseconds(500), .milliseconds(700)],
+            "one element per burst, stamped when its period ran out: the periods of the first two events ended at 200 and 350 ms and yielded nothing")
     }
 
     @Test("two events a quiet period apart are two elements")
@@ -165,7 +167,9 @@ struct EffectWatchDataSourceImplTests {
     func staysOpenWithNothingToWatch() async {
         // Nothing is armed, so no event can reach the stream and there is no sentinel to send through
         // it: a bounded run of ticks, each moving the clock a second, is the check that it neither
-        // ends by itself nor ends on a timer. A stream that ended at once would end on the first tick.
+        // ends by itself nor ends on a timer (the budget is the proof, as `tickUntil` documents). A
+        // stream that ended at once would end within the first ticks, each of which gives the
+        // consumer's task a millisecond to run.
         for set in [EffectWatchSet.empty, EffectWatchSet(directories: ["/effects"], files: [WatchRig.shader])] {
             let rig = WatchRig()
             rig.gateway.failWatch(of: "/effects", with: CocoaError(.fileNoSuchFile))
