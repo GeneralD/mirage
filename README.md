@@ -80,7 +80,7 @@ Ripple.lens/
   "formatVersion": 1,
   "name": "Ripple",
   "author": "Example Author",
-  "description": "Bands of the frame sway sideways like heat haze, drifting with time."
+  "description": "The frame sways sideways like heat haze, in a smooth wave that drifts with time."
 }
 ```
 
