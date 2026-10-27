@@ -170,10 +170,14 @@ struct HarnessLiveWiringTests {
             presenter.openEffectsFolder()
             presenter.select(chromatic)
         }
+        // The choice reaches the store first; the source read, the runtime's prepare and the Interactor's log line come
+        // after it, so the select is over only when that line is there, and only then can the error log be judged.
+        let selectDone = "select bundled/Chromatic Grain: prepared"
         let chosen = await tickUntil(
-            tick: { executor.drain() }, until: { workspace.opened.count == 1 && store.values[selectedEffectKey] != nil })
+            tick: { executor.drain() },
+            until: { workspace.opened.count == 1 && store.values[selectedEffectKey] != nil && developer.contains(selectDone) })
 
-        #expect(chosen, "the command never reached Finder, or the choice never reached the store")
+        #expect(chosen, "the command never reached Finder, the choice never reached the store, or the select did not end prepared")
         #expect(workspace.opened.values == [folder])
         #expect(store.values[selectedEffectKey] == "bundled:Chromatic Grain")
         #expect(errors.entries.count == 0)
