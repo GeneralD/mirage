@@ -75,6 +75,11 @@ struct EffectCatalogIntegrationTests {
         #expect(await rig.choose(Neon.id) == .prepared)
 
         #expect(Self.compiledEffects(of: rig) == ["bundled", "neon first"], "the bundled effect at the start, then the package, once")
+        // The answer and the state reach the test on different tasks (the observer appends the state itself), so the
+        // state is waited for before it is read: the answer alone does not say the observer has run.
+        #expect(
+            await rig.pumpHost(until: { session.side.states.last?.selection == Neon.id && session.side.states.last?.outcome == .prepared }),
+            "the choice is published as a state")
         let state = try #require(session.side.states.last)
         #expect(state.selection == Neon.id)
         #expect(state.outcome == .prepared)
