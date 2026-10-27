@@ -82,6 +82,8 @@ struct EffectCatalogIntegrationTests {
         #expect(session.side.store.writes.count == 1)
 
         let camera = await session.capture()
+        #expect(
+            Self.compiledEffects(of: rig) == ["bundled", "neon first"], "drawing the frame compiled nothing more: the package's library was kept")
         let drawn = try session.lastPass()
         #expect(Self.effect(of: drawn.kernel) == "neon first", "the frame was drawn with the package's library")
         #expect(ObjectIdentifier(drawn.input) == ObjectIdentifier(camera), "...from the camera's frame")
@@ -104,6 +106,7 @@ struct EffectCatalogIntegrationTests {
         #expect(await session.install(source: Neon.first))
         #expect(await rig.choose(Neon.id) == .prepared)
         _ = await session.capture()
+        #expect(Self.compiledEffects(of: rig) == ["bundled", "neon first"], "the first frame compiled nothing more")
         let firstKernel = try session.lastPass().kernel
         #expect(Self.effect(of: firstKernel) == "neon first")
 
@@ -114,6 +117,7 @@ struct EffectCatalogIntegrationTests {
 
         #expect(Self.compiledEffects(of: rig) == ["bundled", "neon first", "neon second"])
         _ = await session.capture()
+        #expect(Self.compiledEffects(of: rig) == ["bundled", "neon first", "neon second"], "the second frame compiled nothing more")
         let secondKernel = try session.lastPass().kernel
         #expect(Self.effect(of: secondKernel) == "neon second", "the next frame is drawn with the rewritten source")
         #expect(ObjectIdentifier(secondKernel) != ObjectIdentifier(firstKernel), "...a new library, not the one the first frame used")
