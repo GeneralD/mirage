@@ -251,7 +251,7 @@ let package = Package(
         ),
 
         // ── View (declarative, coverage-ignored, no test target; host only) ──
-        .target(name: "Views", dependencies: dependencies),
+        .target(name: "Views", dependencies: dependencies + ["Presenters"]),
 
         // ── Entry ──
         .target(name: "App", dependencies: dependencies + ["HostDependencyInjection"]),
