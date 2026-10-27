@@ -30,6 +30,17 @@ struct EffectWatchDebouncePropertyTests {
         let consumer = rig.listen(to: rig.subject.changes(of: WatchRig.onePackage), into: heard)
         defer { consumer.cancel() }
 
+        // Every path of the set has exactly one watch, so a fire that reaches another number is a watch that was
+        // not armed (or armed twice), and the wait for its sleep below would hang: fail here, with the seed.
+        func fire(_ path: String, as description: String) -> Bool {
+            let reached = rig.gateway.fire(path)
+            guard reached == 1 else {
+                Issue.record("seed \(seed), \(description): \(path) reached \(reached) watches, the set arms it once")
+                return false
+            }
+            return true
+        }
+
         let events = (0..<Int.random(in: 1...12, using: &generator)).map { _ in
             (
                 path: Self.paths[Int.random(in: 0..<Self.paths.count, using: &generator)],
@@ -42,7 +53,7 @@ struct EffectWatchDebouncePropertyTests {
         var now = Duration.zero
         var expected: [Duration] = []
         for (index, event) in events.enumerated() {
-            rig.gateway.fire(event.path)
+            guard fire(event.path, as: "event \(index)") else { return }
             await rig.clock.sleepers.waitForCount(index + 1)
             due.append(now + Self.quiet)
 
@@ -60,7 +71,7 @@ struct EffectWatchDebouncePropertyTests {
         }
 
         // A last burst after all of them: an element a burst too many would show up in front of it.
-        rig.gateway.fire(Self.paths[0])
+        guard fire(Self.paths[0], as: "the last burst") else { return }
         await rig.clock.sleepers.waitForCount(events.count + 1)
         rig.clock.advance(by: Self.quiet)
         now += Self.quiet
