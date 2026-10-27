@@ -103,6 +103,7 @@ extension LoopbackRig {
         guard await pumpHost(until: { states.count >= 1 }) else {
             Issue.record("the catalog never published its first state")
             run.cancel()
+            observer.cancel()
             return nil
         }
         return CatalogRun(run: run, observer: observer)
@@ -124,12 +125,14 @@ extension LoopbackRig {
         }
         let answers = Collector<EffectSelectionOutcome>()
         let choosing = Task { answers.append(await useCase.select(id)) }
-        let answered = await pumpHost(until: { answers.count == 1 })
-        await choosing.value
-        guard answered else {
+        // Judged before waiting on the task: a `select` that never answers would otherwise hang here until the
+        // suite's time limit and say nothing of why.
+        guard await pumpHost(until: { answers.count == 1 }) else {
             Issue.record("select never answered")
+            choosing.cancel()
             return nil
         }
+        await choosing.value
         return answers.values.first
     }
 
