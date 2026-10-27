@@ -20,10 +20,10 @@ macOS, with effects you can write, drop in, and share without rebuilding the app
 webcam ──▶ mirage (host app) ──▶ Metal effect (.lens, compiled at runtime) ──▶ Camera Extension ──▶ Zoom / Meet / OBS
 ```
 
-- **Effects are `.lens` packages**: a `manifest.json` (name, parameters, inputs) plus an
-  `effect.metal` written in the Metal Shading Language, compiled on the fly with
-  `MTLDevice.makeLibrary(source:)`. Drop a package into the effects folder and it appears in the
-  menu bar; edit the shader and it hot-reloads.
+- **Effects are `.lens` packages**: a `manifest.json` (name, author, description; parameters
+  arrive with MVP-C) plus an `effect.metal` written in the Metal Shading Language, compiled on
+  the fly with `MTLDevice.makeLibrary(source:)` (see [Packaging](#packaging)). Drop a package
+  into the effects folder and it appears in the menu bar; edit the shader and it hot-reloads.
 - **The virtual camera is a CoreMediaIO Camera Extension** (the only mechanism macOS 14+ still
   allows), so it works in every app that lists cameras.
 - **Untrusted shaders can't take the app down**: each effect runs in its own command buffer;
