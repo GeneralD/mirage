@@ -234,7 +234,7 @@ let package = Package(
         .testTarget(
             name: "HostDependencyInjectionTests",
             dependencies: [
-                "HostDependencyInjection", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
+                "HostDependencyInjection", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
                 "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore", "UserDefaultsGateway",
                 "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
             ] + testDependencies
@@ -279,8 +279,11 @@ let package = Package(
         ),
         .testTarget(
             name: "DevHarnessTests",
-            dependencies: ["DevHarness", "FramePipelineUseCase", "HarnessInteractor", "HostDependencyInjection", "VirtualCameraRepository"]
-                + testDependencies
+            dependencies: [
+                "DevHarness", "FramePipelineUseCase", "HarnessInteractor", "HostDependencyInjection", "VirtualCameraRepository",
+                "AppRouter", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
+            ] + testDependencies
         ),
 
         // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──

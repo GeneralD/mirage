@@ -146,8 +146,13 @@ Shared conventions:
   `EffectWatchDataSourceImpl` (#46) resolves `FileWatchGateway`, and each of them has
   a live value, so nothing reaches a Gateway that has none. Every test of
   `HostEffectRegistrationsTests` resolves through `live(_:)` over an in-memory file
-  system, a fixed effects folder and a `FakeFileWatchGateway`: a test never touches
-  the user's own folder or opens a real descriptor.
+  system, a fixed effects folder, a `FakeFileWatchGateway`, an in-memory key-value store,
+  a `FakeWorkspaceGateway` and fresh logs: a test never touches the user's own folder,
+  defaults or Finder, or opens a real descriptor. That suite resolves only the stateless
+  values (the Repositories, DataSources and DataStore); `effectInteractor` and
+  `effectCatalogUseCase` are resolved live by `HarnessLiveWiringTests` alone, because
+  they hold a task and a session and freeze the scope that built them (see the
+  harness bullet below).
 - The effects menu lane (epic #42, D9): `EffectInteractorImpl` owns the one task
   that runs `EffectCatalogUseCase` (`run()` and the forwarding of `observe()` are
   its two structured children) and publishes the state through a
@@ -293,7 +298,8 @@ Shared conventions:
   which drives `CameraControlUseCase` and `FramePipelineUseCase`. Each layer is
   tested against fakes. `HarnessAppDelegate` also owns an `AppRouter`, started beside the
   session, and shows the host's `EffectMenu` as the main menu's Effects item (`NSHostingMenu`,
-  macOS 14.4+); `HarnessLiveWiringTests` resolves none of the catalog's keys. It logs through `DeveloperLog` / `ErrorLog` like
+  macOS 14.4+); `HarnessLiveWiringTests` builds that Router beside the session and drives
+  its Presenter through the real catalog. It logs through `DeveloperLog` / `ErrorLog` like
   every other module, never `print`. `HarnessSession.live()` builds the
   session inside `withDependencies { $0.useDiscardingVirtualCameraSink() }`:
   the host's real graph with one substitution, `DiscardingVirtualCameraSink`
@@ -301,8 +307,12 @@ Shared conventions:
   because the harness has no extension). The host app keeps the real sink, and
   the substitution must wrap the construction, because `@Dependency` captures
   the scope where it is built. `HarnessLiveWiringTests` is the one `.live` test
-  of that route (the live registrations are process-wide singletons: add no
-  second one), and `scripts/check-dev-substitutions.sh` (in `make check`) keeps
+  of that route and the only suite that resolves `effectInteractor` and
+  `effectCatalogUseCase` live (the live registrations are process-wide singletons that
+  keep the first builder's scope: add no second one, and wrap every call that can
+  reach a catalog value in that test's `wired { }`), over fakes at the OS boundary
+  only (camera, IOSurface, Mach, GPU, file system, file events, key-value store,
+  Finder). `scripts/check-dev-substitutions.sh` (in `make check`) keeps
   the sink's name out of everything but the harness, its DI helper and
   `VirtualCameraRepository`.
 - Host absence: the extension detects it by frame gap (watchdog every
