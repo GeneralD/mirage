@@ -136,7 +136,7 @@ extension EffectPackagesKey: DependencyKey {
 }
 
 extension EffectWatchKey: DependencyKey {
-    public static let liveValue: any EffectWatch = NeverChangingWatch()
+    public static let liveValue: any EffectWatch = EffectWatchDataSourceImpl()
 }
 
 extension PreferencesKey: DependencyKey {

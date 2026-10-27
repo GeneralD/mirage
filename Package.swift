@@ -141,7 +141,7 @@ let package = Package(
         // (epic #42, D1 / D3). Its pass-through default, `NoPackages`, gave way to the real one (#45).
         .target(name: "EffectPackageDataSource", dependencies: dependencies),
         .testTarget(name: "EffectPackageDataSourceTests", dependencies: ["EffectPackageDataSource"] + testDependencies),
-        // Host only: file events folded into one change per burst. Holds `NeverChangingWatch` for now.
+        // Host only: file events folded into one change per burst (`EffectWatchDataSourceImpl`, epic #42, D4).
         .target(name: "EffectWatchDataSource", dependencies: dependencies),
         .testTarget(name: "EffectWatchDataSourceTests", dependencies: ["EffectWatchDataSource"] + testDependencies),
 

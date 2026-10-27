@@ -124,9 +124,11 @@ Shared conventions:
   `EmptySettings`, `BundledOnlyEffectCatalog`, `StaticEffectInteractor`, and
   `BundledOnlyCatalog`, which `EffectPackageRepositoryImpl` has replaced) that
   list the bundled effect alone, and the later issues replace each in place
-  (`EffectInteractorImpl` has replaced `StaticEffectInteractor`, #49, and
-  `EffectCatalogUseCaseImpl` has replaced `BundledOnlyEffectCatalog`, #48).
-  Their streams stay open until the consumer lets go.
+  (`EffectInteractorImpl` has replaced `StaticEffectInteractor`, #49,
+  `EffectCatalogUseCaseImpl` has replaced `BundledOnlyEffectCatalog`, #48, and
+  `EffectWatchDataSourceImpl` has replaced `NeverChangingWatch`, #46).
+  Their streams, and `EffectWatchDataSourceImpl`'s, stay open until the consumer
+  lets go.
   `EmptyPreferences` and `EmptySettings` are already replaced (#51):
   `PreferencesDataStoreImpl` keeps the chosen effect as one `<origin>:<key>` string
   (`StoredEffectID`) in the user's defaults through `KeyValueStoreGateway`, ignoring
@@ -138,9 +140,14 @@ Shared conventions:
   the OS API: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and
   `AppDirectoriesProvider` (module `AppDirectories`) are registered in
   `HostDependencyInjection` (#44), and `KeyValueStoreGateway` as
-  `UserDefaultsGateway` (#51), which `PreferencesDataStoreImpl` resolves. No other
-  pass-through resolves a Gateway, so nothing reaches one before the DataSource
-  that replaces it.
+  `UserDefaultsGateway` (#51), which `PreferencesDataStoreImpl` resolves. No
+  pass-through of the catalog remains: `EffectPackageDataSourceImpl` (#45) resolves
+  `FileSystemGateway`, `AppDirectoriesProvider` and `WorkspaceGateway`,
+  `EffectWatchDataSourceImpl` (#46) resolves `FileWatchGateway`, and each of them has
+  a live value, so nothing reaches a Gateway that has none. Every test of
+  `HostEffectRegistrationsTests` resolves through `live(_:)` over an in-memory file
+  system, a fixed effects folder and a `FakeFileWatchGateway`: a test never touches
+  the user's own folder or opens a real descriptor.
 - The effects menu lane (epic #42, D9): `EffectInteractorImpl` owns the one task
   that runs `EffectCatalogUseCase` (`run()` and the forwarding of `observe()` are
   its two structured children) and publishes the state through a
@@ -225,6 +232,16 @@ Shared conventions:
   loop is a `Task` off the frame path, cancelled when the stream ends; a watch
   that ends by itself ends the catalog and logs an error, and the task logs its
   end (whichever side it came from) to the developer log.
+- The watch is `EffectWatchDataSourceImpl` (epic #42, D4), which resolves
+  `fileWatchGateway`, `continuousClock` and `developerLog`. `changes(of:)` arms
+  every directory (`watch(directory:)`, an editor's atomic save) and then every file
+  (`watch(file:)`, an in-place overwrite) before it returns, logs and skips a path
+  that cannot be watched, and folds a burst into one element after a 200 ms quiet
+  period (`quietPeriod`): each event numbers a `clock.sleep` of its own and only the
+  newest event's sleep yields. The stream never ends on its own, even for an empty
+  set; ending it stops every armed watch exactly once and drops the period in
+  progress. The debounce is a DataSource, not a Gateway, because `FileWatchGateway`
+  is thin (no timing, no branch).
 
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
@@ -355,8 +372,8 @@ Shared conventions:
   extension streams the effect's output, and that a source that does not
   compile still streams the camera's own frames.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
-  proof); slate PTS is `base + n × (1/fps)` from one base — never read from a
-  wall clock.
+  proof and for the watch's quiet period); slate PTS is `base + n × (1/fps)` from
+  one base — never read from a wall clock.
 - Host IPC and host loss are tested on `InMemoryFrameTransport` (bootstrap
   table, queue cap, presence ports, dead-name, `killHost()`); client counts on
   `FakeStreamOutput.connectClient/disconnectClient`; wider seed sets via

@@ -7,7 +7,8 @@ import TestSupport
 /// subject reaches `sleep`, and advancing time in that gap is lost.
 ///
 /// Sleeps honour task cancellation the way `ContinuousClock` does, so a test can
-/// prove that cancelling a parked task ends the sleep with `CancellationError`.
+/// prove that cancelling a parked task ends the sleep with `CancellationError`, and
+/// wait for it on `cancelledSleepers` instead of polling `parkedCount`.
 public final class GatedClock: Clock, @unchecked Sendable {
     public struct Instant: InstantProtocol {
         public let offset: Duration
@@ -28,6 +29,11 @@ public final class GatedClock: Clock, @unchecked Sendable {
 
     /// One entry per registered sleep, holding the deadline it asked for.
     public let sleepers = Collector<Duration>()
+
+    /// One entry per parked sleep that was cancelled, holding the deadline it asked for. It
+    /// fires once the sleep has left `parkedCount`, so a test that waited on it can read that
+    /// the sleep is gone. A sleep cancelled before it parked is in neither collector.
+    public let cancelledSleepers = Collector<Duration>()
 
     private let lock = NSLock()
     private var current = Instant(offset: .zero)
@@ -87,6 +93,8 @@ public final class GatedClock: Clock, @unchecked Sendable {
 
     private func cancel(_ id: UInt64) {
         let sleeper = lock.withLock { parked.removeValue(forKey: id) }
-        sleeper?.continuation.resume(throwing: CancellationError())
+        guard let sleeper else { return }
+        cancelledSleepers.append(sleeper.deadline.offset)
+        sleeper.continuation.resume(throwing: CancellationError())
     }
 }

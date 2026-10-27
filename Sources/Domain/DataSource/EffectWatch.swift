@@ -9,8 +9,9 @@ public protocol EffectWatch: Sendable {
     /// One element per burst of changes under `watchSet`, until the stream ends.
     ///
     /// - Everything in `watchSet` is armed before this returns, so a change made
-    ///   after the call is not lost, and a path that cannot be watched is skipped
-    ///   (the next listing arms again).
+    ///   after the call is buffered until someone iterates, not lost. A path that
+    ///   cannot be watched is skipped, which costs that path's watch and nothing
+    ///   else.
     /// - A burst is one element, however many events it was made of.
     /// - The stream never ends on its own, even when nothing could be armed: only the
     ///   consumer ends it. `EffectPackageRepository` takes an end it did not cause as

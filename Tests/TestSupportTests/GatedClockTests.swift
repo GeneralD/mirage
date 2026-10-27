@@ -35,6 +35,7 @@ import Testing
         clock.advance(by: .seconds(1))
         await outcomes.waitForCount(1)
         #expect(clock.parkedCount == 0)
+        #expect(clock.cancelledSleepers.count == 0, "a sleep that was woken was not cancelled")
         await task.value
     }
 
@@ -59,8 +60,20 @@ import Testing
         await outcomes.waitForCount(1)
         expectCancelled(outcomes.last)
         #expect(clock.parkedCount == 0)
+        #expect(clock.cancelledSleepers.values == [.seconds(10)], "the cancelled sleep is reported with the deadline it asked for")
         clock.advance(by: .seconds(10))
         #expect(outcomes.count == 1)
+    }
+
+    @Test func aCancelledSleepIsReportedOnlyOnceItHasLeftTheParkedSet() async {
+        let clock = GatedClock()
+        let outcomes = Outcomes()
+        let task = sleep(clock, for: .seconds(10), into: outcomes)
+        await clock.sleepers.waitForCount(1)
+        task.cancel()
+        await clock.cancelledSleepers.waitForCount(1)
+        #expect(clock.parkedCount == 0, "what the collector announces is already out of the parked set")
+        await task.value
     }
 
     @Test func aSleepCancelledOnEntryThrowsWithoutParking() async {
@@ -80,6 +93,7 @@ import Testing
         expectCancelled(outcomes.last)
         #expect(clock.parkedCount == 0)
         #expect(clock.sleepers.count == 0)
+        #expect(clock.cancelledSleepers.count == 0, "a sleep that never parked is not a cancelled sleeper")
         await task.value
     }
 
