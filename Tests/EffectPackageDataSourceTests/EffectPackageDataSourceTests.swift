@@ -327,6 +327,23 @@ struct EffectPackageDataSourceTests {
 
     // MARK: package(_:)
 
+    @Test("reading one broken package logs nothing: its listing already told, and the same file read again is a repeat")
+    func singleReadLogsNothing() async {
+        let rig = Rig()
+        rig.files.write(Rig.manifest("invalid"), "{")
+        rig.files.write(Rig.shader("invalid"), Rig.validShader)
+        rig.writePackage("locked")
+        rig.files.failRead(of: Rig.shader("locked"), with: CocoaError(.fileReadNoPermission))
+
+        let invalid = await rig.subject.package(.package("invalid"))
+        let locked = await rig.subject.package(.package("locked"))
+
+        #expect(invalid?.isReady == false)
+        #expect(locked?.isReady == false)
+        #expect(rig.developer.messages(in: .effect).isEmpty)
+        #expect(rig.errors.messages(in: .effect).isEmpty)
+    }
+
     @Test("one package is read afresh each time: an in-place save shows in the next answer, and the folder is not listed")
     func packageIsReadAfresh() async {
         let rig = Rig()

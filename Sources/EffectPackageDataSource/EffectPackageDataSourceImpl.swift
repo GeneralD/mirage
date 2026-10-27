@@ -45,10 +45,11 @@ import Foundation
 /// - **`package(_:)`** is the same read for one id, less the thumbnail: `nil` for an id that is not a package's,
 ///   or whose key is not one path component (it comes back from a persisted selection and is
 ///   joined into a path, so `../x` must not leave the folder), or whose directory is not
-///   there. It never makes the folder. It is the read a source is prepared from, so it answers a
-///   ready package without its thumbnail (`nil`): the picture travels with `packages()`, and
-///   reading it here as well would read it again, and log again why it cannot be used, on every
-///   listing and every choice.
+///   there. It never makes the folder and logs nothing: a listing logs each broken package it
+///   shows, and a read of the same files again is not news. It is the read a source is prepared
+///   from, so it answers a ready package without its thumbnail (`nil`): the picture travels with
+///   `packages()`, and reading it here as well would read it again, and log again why it cannot
+///   be used, on every listing and every choice.
 public struct EffectPackageDataSourceImpl: Sendable {
     @Dependency(\.fileSystemGateway) private var fileSystem
     @Dependency(\.appDirectories) private var appDirectories
@@ -71,6 +72,7 @@ extension EffectPackageDataSourceImpl: EffectPackages {
         let reads = names.compactMap(Self.key(ofDirectoryNamed:)).sorted()
             .filter { fileSystem.isDirectory(Self.directory(of: $0, in: folder)) }
             .map { read($0, in: folder, includingThumbnail: true) }
+        for case let .broken(id, problem) in reads.map(\.listing) { report(problem, of: id) }
         return Self.inventory(of: reads, in: folder)
     }
 
@@ -162,7 +164,6 @@ extension EffectPackageDataSourceImpl {
         let id = EffectID(origin: .package, key: key)
         switch Self.contents(manifest: manifestRead, source: sourceRead) {
         case .failure(let problem):
-            report(problem, of: id)
             return PackageRead(listing: .broken(id, problem), directories: [directory], files: files)
         case .success(let (manifest, source)):
             let thumbnail = includingThumbnail ? readThumbnail(manifest.thumbnail, of: id, in: directory) : .nothing
@@ -274,7 +275,9 @@ extension EffectPackageDataSourceImpl {
     }
 
     /// A broken package reaches the menu with its reason; the logs carry it too, the operational
-    /// failures (a file that exists and cannot be read) among the errors.
+    /// failures (a file that exists and cannot be read) among the errors. Only a listing reports:
+    /// it is the read that shows the package, once per listing, where `package(_:)` reads the
+    /// same files again for the answer of one id and a repeat is not news.
     private func report(_ problem: EffectPackageProblem, of id: EffectID) {
         switch problem {
         case .unreadable(let message): errorLog.record(.effect, "package \(id.key): \(message)")
