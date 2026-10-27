@@ -26,8 +26,9 @@ app keeps the real sink. The harness shows nothing about the Camera Extension
 SwiftPM does not see the plist as a link input, and the make target relinks.
 
 The automated twin of this lane is `Tests/FramePathIntegrationTests`
-(`RealEffectRuntimeIntegrationTests`): the same effect runtime and DataSources
-over the fake GPU layer. What only the device adds is the Metal compile, the
+(`RealEffectRuntimeIntegrationTests`, and `EffectCatalogIntegrationTests` for the
+effects menu): the same effect runtime, DataSources and catalog over the fake GPU
+layer and an in-memory effects folder. What only the device adds is the Metal compile, the
 command buffer, the camera and the screen.
 
 Not yet run on a device: the camera prompt is a modal dialog on the user's

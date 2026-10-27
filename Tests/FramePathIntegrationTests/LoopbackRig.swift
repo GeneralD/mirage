@@ -49,6 +49,17 @@ enum HostEffects {
     case real
 }
 
+/// Whether the host also runs the effects menu's catalog.
+enum HostCatalog {
+    /// No catalog: nothing prepares an effect but the runtime's own first `apply` (the bundled one).
+    case none
+    /// `EffectCatalogUseCaseImpl` over `EffectPackageRepositoryImpl`, `EffectPackageDataSourceImpl`,
+    /// `EffectWatchDataSourceImpl`, `SettingsRepositoryImpl` and `PreferencesDataStoreImpl`, on the host's
+    /// runtime, with only the OS boundary faked (`CatalogSide`: the file system, the file events, the
+    /// defaults and Finder). The test writes into the folder, fires the watch and steps the catalog's clock.
+    case real
+}
+
 /// The host process: camera → pipeline (effect stage) → transport and preview, on its own
 /// executor, scheduler, pool and clock.
 struct HostSide {
@@ -78,10 +89,12 @@ struct HostSide {
     /// What the pipeline presents to: `preview`, or the real preview over the fake GPU layer.
     let previewSink: any PreviewSink
     let pipeline: FramePipelineUseCaseImpl
+    /// The effects menu's catalog on the same runtime as the pipeline (`LoopbackRig(catalog: .real)`), or `nil`.
+    let catalog: CatalogSide?
 
     init(
         kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int, preview choice: HostPreview,
-        effects effectsChoice: HostEffects
+        effects effectsChoice: HostEffects, catalog catalogChoice: HostCatalog
     ) {
         effectsKind = effectsChoice
         let executor = executor
@@ -105,7 +118,7 @@ struct HostSide {
         let pool = pool
         // Each layer is built inside the scope of the one below it, so every
         // `@Dependency` captures the real neighbour rather than a default.
-        (previewSink, pipeline) = withDependencies {
+        let (hostSink, hostPipeline, hostRuntime) = withDependencies {
             $0.ioSurfaceGateway = ioSurface
             $0.machBootstrapGateway = kernel.bootstrap(for: .host)
             $0.machMessageGateway = kernel.messaging(for: .host)
@@ -144,10 +157,18 @@ struct HostSide {
                     $0.previewSink = sink
                     $0.effectRuntimeRepository = runtime
                 } operation: {
-                    (sink, FramePipelineUseCaseImpl())
+                    (sink, FramePipelineUseCaseImpl(), runtime)
                 }
             }
         }
+        previewSink = hostSink
+        pipeline = hostPipeline
+        // The catalog drives the very runtime the pipeline applies, so what it prepares is what the next frame is drawn with.
+        catalog =
+            switch catalogChoice {
+            case .none: nil
+            case .real: CatalogSide(over: hostRuntime, errors: errors, developer: developer)
+            }
     }
 }
 
@@ -238,8 +259,11 @@ struct LoopbackRig {
     let host: HostSide
     let ext: ExtensionSide
 
-    init(capacity: Int = 4, frameGap: Duration = .seconds(2), preview: HostPreview = .inMemory, effects: HostEffects = .fake) {
-        host = HostSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview, effects: effects)
+    init(
+        capacity: Int = 4, frameGap: Duration = .seconds(2), preview: HostPreview = .inMemory, effects: HostEffects = .fake,
+        catalog: HostCatalog = .none
+    ) {
+        host = HostSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview, effects: effects, catalog: catalog)
         ext = ExtensionSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, frameGap: frameGap)
     }
 }

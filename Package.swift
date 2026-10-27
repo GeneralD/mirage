@@ -321,6 +321,8 @@ let package = Package(
                 "FrameReceiverDataSource", "StreamOutputDataSource", "PreviewRepository", "PreviewDataSource",
                 "EffectRuntimeRepository", "EffectRuntimeStateDataSource", "ShaderCompilationDataSource", "GPURenderDataSource",
                 "BundledEffectDataSource",
+                "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
+                "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore",
             ]
         ),
     ]

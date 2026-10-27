@@ -136,6 +136,19 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `stopHostExpectingIdleGPU()` asserts that no pass or draw was left pending.
   A broken effect is scripted with `FakeShaderLibraryGateway.failCompile(of:with:)`,
   keyed by the exact assembled source (`ShaderSourceAssembly.assemble`).
+  `LoopbackRig(effects: .real, catalog: .real)` also runs the effects menu's real
+  catalog on that runtime (`HostSide.catalog`, a `CatalogSide`; `EffectCatalogUseCaseImpl`
+  over the real Repository, DataSources and settings chain, with the file system, the
+  file events, the defaults and Finder faked). `startCatalog()` runs it and returns once
+  the first state is published, `choose(_:)` selects, `editFolder(firing:)` fires the
+  watch on a path and lets the quiet period run out, and a test waits for what an edit
+  causes (a state, a compile that finished) by pumping the host's executor
+  (`pumpHost(until:)`), because the runtime's state hops onto it: awaiting a collector
+  alone hangs. The watch sleeps on a `GatedClock` of the catalog's own, not on the
+  host's `TestClock`: the sleep is parked by a task the test cannot see, and a clock that
+  cannot say when it is parked would lose an `advance` that ran before it
+  (`fireWatch(_:)` waits on `sleepers`). A successful hot reload publishes no state (the
+  menu shows the same), so its marker is the compile that finished, not a state.
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
   answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
   `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing

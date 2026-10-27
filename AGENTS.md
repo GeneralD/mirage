@@ -370,7 +370,16 @@ Shared conventions:
   `captureThroughRuntime` (the compile runs on the work runner and the GPU
   completes by hand); `RealEffectRuntimeIntegrationTests` asserts the
   extension streams the effect's output, and that a source that does not
-  compile still streams the camera's own frames.
+  compile still streams the camera's own frames. `LoopbackRig(effects: .real,
+  catalog: .real)` adds the real effects catalog on that runtime (`HostSide.catalog`,
+  a `CatalogSide`: an `InMemoryFileSystemGateway` effects folder, a
+  `FakeFileWatchGateway`, an `InMemoryKeyValueStore`, a `FakeWorkspaceGateway`, and a
+  `GatedClock` of its own for the watch's quiet period, which a test can see parked);
+  `EffectCatalogIntegrationTests` writes a package, fires the watch, steps that clock
+  past 200 ms and judges by the fake GPU's pass graph what the extension is sent: the
+  package appears, choosing it compiles it once, a rewritten source compiles again, a
+  source that does not compile streams the camera's own frame, and a removed package
+  falls back to the bundled effect.
 - Time is `\.continuousClock` + `TestClock` (`GatedClock` for the reconnect
   proof and for the watch's quiet period); slate PTS is `base + n × (1/fps)` from
   one base — never read from a wall clock.
