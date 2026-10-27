@@ -317,7 +317,10 @@ Shared conventions:
   only (camera, IOSurface, Mach, GPU, file system, file events, key-value store,
   Finder). `scripts/check-dev-substitutions.sh` (in `make check`) keeps
   the sink's name out of everything but the harness, its DI helper and
-  `VirtualCameraRepository`.
+  `VirtualCameraRepository`, and `scripts/check-live-owner.sh` (in `make check`)
+  fails when a test file other than that suite names `effectInteractor` or
+  `effectCatalogUseCase` as a key path (an override, `$0.effectInteractor = fake`,
+  resolves nothing and stays free).
 - Host absence: the extension detects it by frame gap (watchdog every
   `frameGap / 4`, counted from the last frame, or from `start` while no host
   has been seen yet, so a host that never launched is lost too) and by dead-name

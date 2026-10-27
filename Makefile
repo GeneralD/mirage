@@ -44,6 +44,7 @@ check:
 	scripts/check-product-name.sh
 	scripts/check-extension-no-metal.sh
 	scripts/check-dev-substitutions.sh
+	scripts/check-live-owner.sh
 
 # The Xcode project, Info.plists and entitlements are gitignored output
 # regenerated from project.yml (the one place bundle IDs live). A no-op until
