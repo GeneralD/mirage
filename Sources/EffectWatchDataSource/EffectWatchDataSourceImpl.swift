@@ -7,10 +7,13 @@ import Domain
 ///
 /// **Arming.** `changes(of:)` arms every directory (`watch(directory:)`, which sees an
 /// editor's atomic save) and then every file (`watch(file:)`, which sees an in-place
-/// overwrite) of the set *before it returns*, so a change made after the call is not lost
-/// and the Repository may arm first and list afterwards. A path that cannot be watched (it
-/// was in the listing and is gone by now) is logged to the developer log and skipped: the
-/// next listing arms again, so it is never fatal. The stream never ends on its own, not even
+/// overwrite) of the set *before it returns*, so the watches are live when the call is over:
+/// the first change after it (for the Repository, the first one after a catalog it has shown)
+/// is buffered until someone iterates the stream, not lost. A path that cannot be watched (it
+/// was in the listing and is gone by now) is logged to the developer log and skipped. That
+/// costs that path's watch and nothing else, since a throw would cost the whole set; nothing
+/// arms the path again or asks for a listing because of it, so the listing stays as it was
+/// until some other armed watch hears an event. The stream never ends on its own, not even
 /// for an empty set or when nothing could be armed, because `EffectPackageRepository` reads
 /// an end it did not cause as the watch being gone.
 ///
@@ -74,7 +77,7 @@ extension EffectWatchDataSourceImpl {
         do {
             return try attempt()
         } catch {
-            developerLog.record(.effect, "could not watch \(kind) \(path), left to the next listing: \(error)")
+            developerLog.record(.effect, "could not watch \(kind) \(path), skipped: \(error)")
             return nil
         }
     }
