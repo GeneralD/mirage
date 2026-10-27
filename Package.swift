@@ -9,10 +9,11 @@ import PackageDescription
 //
 // M0 built the pass-through frame path host → Camera Extension, the
 // installer and the three DI targets; MVP-A added the effect runtime, the
-// preview and the dev harness. MVP-B adds the `.lens` catalog: its seven modules
-// (EffectPackageDataSource … EffectInteractor) start as pass-through defaults that
-// the later MVP-B issues replace in place; the menu-bar UI lane (the Presenters,
-// AppRouter and the Views' EffectMenu) is shown by the host app and the dev harness.
+// preview and the dev harness. The effects catalog (epic #42) added the `.lens`
+// modules (EffectPackageDataSource … EffectInteractor), each of which started as a
+// pass-through default and was replaced in place; the menu-bar UI lane (the
+// Presenters, AppRouter and the Views' EffectMenu) is shown by the host app and the
+// dev harness.
 
 let dependencies: [Target.Dependency] = [
     "Domain",

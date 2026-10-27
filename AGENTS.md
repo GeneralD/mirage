@@ -119,14 +119,14 @@ Shared conventions:
   Both are real now: `PreviewSink` is `PreviewRepositoryImpl` over
   `PreviewDataSource` (which completes frames at once until a view is
   attached), and `EffectRuntimeRepository` is `EffectRuntimeRepositoryImpl`.
-  The MVP-B effect catalog (epic #42) follows the same rule: its seven modules
-  start as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
-  `EmptySettings`, `BundledOnlyEffectCatalog`, `StaticEffectInteractor`, and
-  `BundledOnlyCatalog`, which `EffectPackageRepositoryImpl` has replaced) that
-  list the bundled effect alone, and the later issues replace each in place
-  (`EffectInteractorImpl` has replaced `StaticEffectInteractor`, #49,
-  `EffectCatalogUseCaseImpl` has replaced `BundledOnlyEffectCatalog`, #48, and
-  `EffectWatchDataSourceImpl` has replaced `NeverChangingWatch`, #46).
+  The effects catalog (epic #42) followed the same rule: its seven modules
+  started as pass-throughs (`NoPackages`, `NeverChangingWatch`, `EmptyPreferences`,
+  `EmptySettings`, `BundledOnlyEffectCatalog`, `StaticEffectInteractor` and
+  `BundledOnlyCatalog`) that listed the bundled effect alone, and each was replaced
+  in place (`EffectInteractorImpl` replaced `StaticEffectInteractor`, #49,
+  `EffectCatalogUseCaseImpl` replaced `BundledOnlyEffectCatalog`, #48,
+  `EffectPackageRepositoryImpl` replaced `BundledOnlyCatalog`, #47, and
+  `EffectWatchDataSourceImpl` replaced `NeverChangingWatch`, #46).
   Their streams, and `EffectWatchDataSourceImpl`'s, stay open until the consumer
   lets go.
   `EmptyPreferences` and `EmptySettings` are already replaced (#51):
@@ -181,8 +181,9 @@ Shared conventions:
   `EffectRuntimeStateDataSource` (port `EffectRuntimeState`), confined to
   `FrameExecutor` (no lock, no actor), whose calls hop onto the executor
   themselves. The compile cache is in-process, keyed by
-  `(source, compile options)` and never by the effect's name; device id / OS
-  version and a cache on disk are MVP-B. The newest `prepare` decides what
+  `(source, compile options)` and never by the effect's name; a cache on disk
+  (which would need a device id, an OS version and a `RuntimeEnvironment` port) is
+  deferred to Later, epic #42 D12. The newest `prepare` decides what
   `apply` runs (newest wins, success or failure); a stale compile still answers
   its own caller and fills the cache but never releases a waiting `apply`. An
   `apply` that compiles an effect itself starts the compile on the `WorkRunner`
