@@ -50,7 +50,7 @@ struct AppRouterTests {
         #expect(made.values == [ObjectIdentifier(router.menuBarPresenter)])
     }
 
-    @Test("the default factory builds a Presenter over the Interactor of the scope the Router is made in")
+    @Test("the default factory builds a quiet Presenter over the Interactor of the scope the Router is made in")
     func defaultFactoryUsesTheScopeOfTheConstruction() {
         let interactor = FakeEffectInteractor(state: .fixture([chromatic]))
         let router = withDependencies {
@@ -58,6 +58,10 @@ struct AppRouterTests {
         } operation: {
             AppRouter()
         }
+
+        #expect(interactor.starts.count == 0, "the default factory's Presenter starts nothing before the Router does")
+        #expect(interactor.stops.count == 0)
+        #expect(router.menuBarPresenter.items.isEmpty)
 
         router.start()
 
