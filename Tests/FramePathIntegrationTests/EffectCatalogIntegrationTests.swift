@@ -19,7 +19,8 @@ import Testing
 ///
 /// Nothing here sleeps or reads a clock: the host's executor is pumped by `tickUntil` (the runtime's
 /// state hops onto it), the GPU completes by hand, the quiet period runs out when the test advances
-/// the catalog's `GatedClock` after the sleep is parked, and an edit is waited for by what it
+/// the catalog's `GatedClock` after the sleep is parked (and that it has not run out a millisecond
+/// earlier is read off the clock's `parkedCount`, not waited for), and an edit is waited for by what it
 /// causes (a state, a compile that finished), never by time.
 @MainActor
 @Suite("Effect catalog on the loopback", .timeLimit(.minutes(1)))
@@ -40,11 +41,14 @@ struct EffectCatalogIntegrationTests {
         Neon.write(into: side.fileSystem, source: Neon.first)
         await session.rig.fireWatch(CatalogSide.folder)
         let published = side.states.count
+        // The period is read off the clock, not waited out: the sleep the event started is still parked
+        // one millisecond before 200 ms and gone at 200 ms, whatever the machine's load.
         side.clock.advance(by: .milliseconds(199))
-        let early = await tickUntil(20, tick: { session.rig.host.executor.drain() }, until: { side.states.count > published })
-        #expect(!early, "the catalog lists again only when the files have been quiet for the whole period")
+        #expect(side.clock.parkedCount == 1, "the catalog's quiet period is still running at 199 ms")
+        #expect(side.states.count == published, "the catalog lists again only when the files have been quiet for the whole period")
 
         side.clock.advance(by: .milliseconds(1))
+        #expect(side.clock.parkedCount == 0, "...and it ends at 200 ms")
         #expect(await session.rig.pumpHost(until: { side.states.count > published }))
         let state = try #require(side.states.last)
         let entry = try #require(state.entries.last)
