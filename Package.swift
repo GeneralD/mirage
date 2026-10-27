@@ -99,7 +99,7 @@ let package = Package(
         .target(name: "DispatchExecutorGateway", dependencies: dependencies),
         .testTarget(name: "DispatchExecutorGatewayTests", dependencies: ["DispatchExecutorGateway"] + testDependencies),
         // Host only (with FileWatchGateway, WorkspaceGateway and AppDirectories): the effects folder's
-        // file system. Smoke under a UUID temp directory; nothing above resolves it until EffectPackageDataSource.
+        // file system. Smoke under a UUID temp directory; EffectPackageDataSource is what resolves it.
         .target(name: "FileSystemGateway", dependencies: dependencies),
         .testTarget(name: "FileSystemGatewayTests", dependencies: ["FileSystemGateway"] + testDependencies),
         // Host only: DispatchSource file-system object sources over event-only descriptors. Smoke under a UUID temp directory.
