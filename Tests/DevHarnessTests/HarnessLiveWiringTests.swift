@@ -32,19 +32,23 @@ import Testing
 /// later, lazily, from the registrations, and the menu's Presenter reaches a catalog that lists the
 /// bundled effect, compiles it, keeps the choice and opens the folder.
 ///
-/// There is deliberately ONE test here, and no other `.live` test may be added to this target. The
-/// `liveValue`s in `HostRegistrations` are `static let`s: swift-dependencies builds each on its first
-/// resolution and keeps it for the life of the process, and a test target's suites share that process.
-/// Those that hold state or start a task freeze the scope they were built in: `EffectInteractorImpl`
-/// resolves the catalog and the logs once and starts its supervising `Task`, `EffectCatalogUseCaseImpl`
-/// owns the catalog's session, the runtime's state is confined to the executor, the GPU renderer keeps
-/// its context. A second `.live` test would not get its own fakes; it would be handed this test's
-/// singletons, with their already-captured executor, logs and GPU layer.
+/// There is deliberately ONE test here, and the rule is the bundle's, not this target's: no other test
+/// may resolve the stateful values below live. The `liveValue`s in `HostRegistrations` are `static let`s:
+/// swift-dependencies builds each on its first resolution and keeps it for the life of the process, and
+/// `swift test` runs every test target in that one process, its suites concurrently. Those that hold state
+/// or start a task freeze the scope they were built in: `EffectInteractorImpl` resolves the catalog and
+/// the logs once and starts its supervising `Task`, `EffectCatalogUseCaseImpl` owns the catalog's session,
+/// the runtime's state is confined to the executor, the GPU renderer keeps its context. A second suite
+/// that resolved one of them live would not get its own fakes; it would be handed this test's singletons,
+/// with their already-captured executor, logs and GPU layer.
 ///
 /// **This suite is the only one that resolves `effectInteractor` and `effectCatalogUseCase` live**, so the
-/// first scope that builds them is always this test's. `HostEffectRegistrationsTests`, which also
-/// resolves live, stays on the stateless catalog values (the Repositories, DataSources and DataStore
-/// are structs) and never resolves those two keys.
+/// first scope that builds them is always this test's, and `scripts/check-live-owner.sh` (in `make check`)
+/// fails when another test file names either key as a key path. The other suites that run `.live` are
+/// `HostEffectRegistrationsTests` and `HostFileGatewayRegistrationsTests` (`HostDependencyInjectionTests`):
+/// they resolve only values that hold nothing between calls (the Repositories, DataSources and DataStore
+/// of the catalog, which are structs, and the OS-boundary Gateways) and never those two keys. A new `.live`
+/// suite keeps to that.
 ///
 /// **Every call that can reach a catalog value is made inside `wired { }`.** A stateless live value
 /// keeps the scope of whoever built it first, and which suite that is depends on the order the

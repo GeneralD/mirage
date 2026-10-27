@@ -312,7 +312,8 @@ Shared conventions:
   the scope where it is built. `HarnessLiveWiringTests` is the one `.live` test
   of that route and the only suite that resolves `effectInteractor` and
   `effectCatalogUseCase` live (the live registrations are process-wide singletons that
-  keep the first builder's scope: add no second one, and wrap every call that can
+  keep the first builder's scope, and the whole test bundle is one process: add no
+  second one in any target, and wrap every call that can
   reach a catalog value in that test's `wired { }`), over fakes at the OS boundary
   only (camera, IOSurface, Mach, GPU, file system, file events, key-value store,
   Finder). `scripts/check-dev-substitutions.sh` (in `make check`) keeps
