@@ -255,6 +255,12 @@ Generators live in `Tests/TestSupport/Generators/`. Targets are listed in
 - A live Gateway smoke (real IOSurface, real file system under a UUID temp
   dir, `UserDefaults(suiteName: UUID)`, real `DispatchSource`) asserts `≥ 1`
   event, never "exactly one" — the OS coalesces.
+- The real file system is a Gateway smoke's alone, with one read-only exception:
+  `ExamplePackagesTests` reads the repository's own `Examples/` from disk (found
+  from `#filePath`) and copies the files into an `InMemoryFileSystemGateway`, so
+  the packages the README points to stay held to the format. It writes nothing,
+  and the subject under test never sees the disk. A suite that reads another
+  repository file the same way is named here too.
 - Test doubles shared across layers live in `Tests/TestDoubles`; nothing
   test-only lives under `Sources/`.
 - GPU-touching suites follow `.claude/rules/gpu-testing.md`.

@@ -6,7 +6,8 @@ import Foundation
 ///
 /// - `formatVersion` is checked first, on its own, so a manifest of a format this build does not
 ///   read is reported as that (`unsupportedFormatVersion`) even when the rest of it has a shape
-///   this build would reject. Only version 1 is read.
+///   this build would reject. Only version 1 is read. A `formatVersion` that is a number but not an
+///   integer (1.5, or a whole number beyond `Int`) is `manifestInvalid` and names the key.
 /// - `name` is required and is trimmed; a name that is empty after the trim is invalid. The
 ///   trimmed name is what the menu shows.
 /// - `author` and `description` are optional. A key this build does not know is ignored, so a
@@ -24,12 +25,16 @@ public enum EffectManifestDecoding {
         let data = Data(text.utf8)
         let decoder = JSONDecoder()
         do {
-            let version = try decoder.decode(FormatProbe.self, from: data).formatVersion
-            guard version == supportedFormatVersion else { return .failure(.unsupportedFormatVersion(version)) }
+            switch try decoder.decode(FormatProbe.self, from: data).formatVersion {
+            case .number(let number): return .failure(.manifestInvalid(message: message(forFormatVersion: number)))
+            case .integer(let version) where version != supportedFormatVersion: return .failure(.unsupportedFormatVersion(version))
+            case .integer: break
+            }
             let manifest = try decoder.decode(EffectManifest.self, from: data)
             let name = manifest.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return .failure(.manifestInvalid(message: "\"name\" is empty")) }
-            return .success(EffectManifest(formatVersion: version, name: name, author: manifest.author, description: manifest.description))
+            return .success(
+                EffectManifest(formatVersion: supportedFormatVersion, name: name, author: manifest.author, description: manifest.description))
         } catch {
             return .failure(.manifestInvalid(message: message(for: error)))
         }
@@ -37,7 +42,32 @@ public enum EffectManifestDecoding {
 
     /// Only the key that decides whether the rest is read.
     private struct FormatProbe: Decodable {
-        let formatVersion: Int
+        let formatVersion: FormatVersion
+    }
+
+    /// What `formatVersion` holds: an `Int`, or else any other JSON number. The decoder reports a number
+    /// it cannot read as an `Int` (1.5, 99999999999999999999) as a text that is not JSON, with no coding
+    /// path, so it cannot be told from one; read again as a `Double` the number is there, and the key is
+    /// named by whoever reads the case. A value that is no number at all (text, `null`) fails both
+    /// reads, and the second one's error names the key; a missing key never gets this far. A number
+    /// beyond even a `Double` (1e400) fails both with no path, and stays "not valid JSON".
+    private enum FormatVersion: Decodable {
+        case integer(Int)
+        case number(Double)
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let integer = try? container.decode(Int.self) {
+                self = .integer(integer)
+            } else {
+                self = .number(try container.decode(Double.self))
+            }
+        }
+    }
+
+    /// A whole number that does not fit an `Int` is out of range; anything else is not an integer.
+    private static func message(forFormatVersion number: Double) -> String {
+        number.rounded() == number ? "\"formatVersion\" is out of range" : "\"formatVersion\" is not an integer"
     }
 
     private static func message(for error: any Error) -> String {
@@ -46,7 +76,7 @@ public enum EffectManifestDecoding {
         case .keyNotFound(let key, let context): "missing required key \(quoted(context.codingPath + [key]))"
         case .typeMismatch(_, let context): "\(subject(of: context)) has the wrong type"
         case .valueNotFound(_, let context): "\(subject(of: context)) has no value"
-        case .dataCorrupted(let context): context.codingPath.isEmpty ? "not valid JSON" : "\(subject(of: context)) is not valid"
+        case .dataCorrupted: "not valid JSON"
         @unknown default: "not valid JSON"
         }
     }

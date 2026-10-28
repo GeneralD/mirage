@@ -5,7 +5,8 @@ import Presenters
 /// lint gives the View lane Presenters and Support only), and it never touches the
 /// `EffectInteractor`: the Presenter owns that lifecycle, so `start()` / `stop()` here are the
 /// Presenter's, and the entry lane never calls `effectInteractor.start()` (a second `start()`
-/// is a restart, and the catalog would run twice).
+/// is a restart, and the catalog would run twice; `scripts/check-dependency-keypaths.sh` denies
+/// `App` and `DevHarness` the key).
 ///
 /// The Presenter is built in `init`, not on first read or in `start()`. It captures the
 /// dependencies of the scope it is made in, so a test (or a harness) that wraps the router's

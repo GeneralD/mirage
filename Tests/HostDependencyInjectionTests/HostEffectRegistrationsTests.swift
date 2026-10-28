@@ -18,7 +18,10 @@ import Testing
 /// The Gateways the real implementations resolve and that would touch the machine are faked, in both
 /// tests: the file system and the app directories (`EffectPackageDataSourceImpl` lists and makes
 /// the effects folder), `fileWatchGateway` (`EffectWatchDataSourceImpl` opens a descriptor on it), the
-/// key-value store (the chosen effect) and Finder, and the logs they write to.
+/// key-value store (the chosen effect) and Finder, and the logs they write to. That the fakes are
+/// the ones the default graph reaches, and so that no test touches the user's own folder, defaults
+/// or Finder, is asserted rather than assumed: the default-graph test reads back what the in-memory
+/// file system was asked (the folder made, then listed) and that nothing was logged as an error.
 ///
 /// **Which keys this suite resolves, and which it leaves to `HarnessLiveWiringTests`.** The live values
 /// in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its first resolution
@@ -43,24 +46,9 @@ import Testing
 /// *The effect catalog follows the same rule*).
 @Suite("Host registrations of the effect catalog", .timeLimit(.minutes(1)))
 struct HostEffectRegistrationsTests {
-    private static func live<Value>(_ operation: () async throws -> Value) async rethrows -> Value {
-        try await withDependencies {
-            $0.context = .live
-            $0.fileSystemGateway = InMemoryFileSystemGateway()
-            $0.appDirectories = FixedAppDirectories(effectsDirectory: "/effects")
-            $0.fileWatchGateway = FakeFileWatchGateway()
-            $0.keyValueStoreGateway = InMemoryKeyValueStore()
-            $0.workspaceGateway = FakeWorkspaceGateway()
-            $0.errorLog = RecordingLog()
-            $0.developerLog = RecordingLog()
-        } operation: {
-            try await operation()
-        }
-    }
-
     @Test("each stateless port of the catalog has the live value of its module's implementation")
     func everyStatelessPortHasItsImplementation() async {
-        await Self.live {
+        await Fakes().live {
             @Dependency(\.effectPackageRepository) var effectPackageRepository
             @Dependency(\.settingsRepository) var settingsRepository
             @Dependency(\.effectPackages) var effectPackages
@@ -81,7 +69,8 @@ struct HostEffectRegistrationsTests {
     func defaultGraphChoosesTheBundledEffect() async throws {
         let runtime = FakeEffectRuntimeRepository()
         let states = Collector<EffectCatalogState>()
-        let request = try await Self.live {
+        let fakes = Fakes()
+        let request = try await fakes.live {
             let useCase = withDependencies {
                 $0.effectRuntimeRepository = runtime
             } operation: {
@@ -109,5 +98,39 @@ struct HostEffectRegistrationsTests {
         #expect(state.selection == entry.id)
         #expect(state.outcome == .prepared)
         #expect(request.effect.name == entry.displayName, "what the runtime was handed is the bundled effect the catalog lists")
+
+        // The effects folder is the in-memory one: made once, then listed, and nothing went wrong on the way.
+        #expect(fakes.files.createdDirectories.values == [Fakes.effectsDirectory], "the default graph makes the effects folder, in memory")
+        #expect(fakes.files.isDirectory(Fakes.effectsDirectory))
+        #expect(fakes.files.listings.values.contains(Fakes.effectsDirectory), "the default graph lists the effects folder, in memory")
+        #expect(fakes.errors.entries.count == 0)
+    }
+}
+
+/// The fakes one test hands the live graph in place of the machine's file system, app directories, file events,
+/// key-value store and Finder, and the logs: kept, so a test can read back what the graph asked of them.
+private struct Fakes {
+    static let effectsDirectory = "/effects"
+
+    let files = InMemoryFileSystemGateway()
+    let fileWatch = FakeFileWatchGateway()
+    let store = InMemoryKeyValueStore()
+    let workspace = FakeWorkspaceGateway()
+    let errors = RecordingLog()
+    let developer = RecordingLog()
+
+    func live<Value>(_ operation: () async throws -> Value) async rethrows -> Value {
+        try await withDependencies {
+            $0.context = .live
+            $0.fileSystemGateway = files
+            $0.appDirectories = FixedAppDirectories(effectsDirectory: Self.effectsDirectory)
+            $0.fileWatchGateway = fileWatch
+            $0.keyValueStoreGateway = store
+            $0.workspaceGateway = workspace
+            $0.errorLog = errors
+            $0.developerLog = developer
+        } operation: {
+            try await operation()
+        }
     }
 }

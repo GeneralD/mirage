@@ -80,11 +80,12 @@ Ripple.lens/
   "formatVersion": 1,
   "name": "Ripple",
   "author": "Example Author",
-  "description": "Bands of the frame sway sideways like heat haze, drifting with time."
+  "description": "The frame sways sideways like heat haze, in a smooth wave that drifts with time."
 }
 ```
 
-- `formatVersion` (required): the integer `1`. Any other version is reported as unsupported.
+- `formatVersion` (required): the integer `1`. Any other integer is reported as unsupported; a number
+  that is not an integer (`1.5`) is reported as invalid.
 - `name` (required): what the menu shows. Surrounding whitespace is trimmed; it cannot be empty.
 - `author`, `description` (optional).
 - Keys this version doesn't know are ignored, so a package can carry more than an older build

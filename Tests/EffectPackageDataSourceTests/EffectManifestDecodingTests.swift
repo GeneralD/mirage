@@ -65,6 +65,18 @@ struct EffectManifestDecodingTests {
             text: #"{"formatVersion": 2, "title": {"en": "Glitch"}}"#, expected: .failure(.unsupportedFormatVersion(2))),
         Row(name: "version 0", text: #"{"formatVersion": 0, "name": "Glitch"}"#, expected: .failure(.unsupportedFormatVersion(0))),
         Row(name: "a negative version", text: #"{"formatVersion": -1, "name": "Glitch"}"#, expected: .failure(.unsupportedFormatVersion(-1))),
+        Row(
+            name: "a version that is a number but not an integer is reported by name, not as text that is not JSON",
+            text: #"{"formatVersion": 1.5, "name": "Glitch"}"#, expected: invalid("\"formatVersion\" is not an integer")),
+        Row(
+            name: "and so is one before the other keys are looked at",
+            text: #"{"formatVersion": 1.5, "title": {"en": "Glitch"}}"#, expected: invalid("\"formatVersion\" is not an integer")),
+        Row(
+            name: "a whole version beyond Int is out of range",
+            text: #"{"formatVersion": 99999999999999999999, "name": "Glitch"}"#, expected: invalid("\"formatVersion\" is out of range")),
+        Row(
+            name: "and so is a negative one",
+            text: #"{"formatVersion": -99999999999999999999, "name": "Glitch"}"#, expected: invalid("\"formatVersion\" is out of range")),
 
         // What is invalid.
         Row(name: "an empty name", text: #"{"formatVersion": 1, "name": ""}"#, expected: invalid("\"name\" is empty")),
@@ -79,6 +91,12 @@ struct EffectManifestDecodingTests {
         Row(
             name: "a format version that is text",
             text: #"{"formatVersion": "1", "name": "Glitch"}"#, expected: invalid("\"formatVersion\" has the wrong type")),
+        Row(
+            name: "a format version that is null",
+            text: #"{"formatVersion": null, "name": "Glitch"}"#, expected: invalid("\"formatVersion\" has no value")),
+        Row(
+            name: "a name that is null",
+            text: #"{"formatVersion": 1, "name": null}"#, expected: invalid("\"name\" has no value")),
         Row(
             name: "an author that is not text",
             text: #"{"formatVersion": 1, "name": "Glitch", "author": ["Ada"]}"#, expected: invalid("\"author\" has the wrong type")),
