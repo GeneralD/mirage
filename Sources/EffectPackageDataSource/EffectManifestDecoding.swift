@@ -10,9 +10,12 @@ import Foundation
 ///   integer (1.5, or a whole number beyond `Int`) is `manifestInvalid` and names the key.
 /// - `name` is required and is trimmed; a name that is empty after the trim is invalid. The
 ///   trimmed name is what the menu shows.
-/// - `author` and `description` are optional. A key this build does not know is ignored, so a
-///   newer package can carry more than an older build reads; `parameters` is one of them until
-///   MVP-C interprets it, whatever shape its value has.
+/// - `author`, `description` and `thumbnail` are optional, and kept as written. Whether the
+///   thumbnail's path can be used is `EffectThumbnailReading`'s, and one that cannot costs the
+///   package only its picture; a `thumbnail` that is not a string is the wrong type, as it is for
+///   `author`. A key this build does not know is ignored, so a newer package can carry more than
+///   an older build reads; `parameters` is one of them until MVP-C interprets it, whatever shape
+///   its value has.
 /// - Everything else that is wrong with the text (not JSON, not an object, a required key
 ///   missing, a value of the wrong type) is `manifestInvalid`, with a message that names the key.
 ///   The messages are built from the decoder's coding path and not from its own wording, so they
@@ -34,7 +37,9 @@ public enum EffectManifestDecoding {
             let name = manifest.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return .failure(.manifestInvalid(message: "\"name\" is empty")) }
             return .success(
-                EffectManifest(formatVersion: supportedFormatVersion, name: name, author: manifest.author, description: manifest.description))
+                EffectManifest(
+                    formatVersion: supportedFormatVersion, name: name, author: manifest.author, description: manifest.description,
+                    thumbnail: manifest.thumbnail))
         } catch {
             return .failure(.manifestInvalid(message: message(for: error)))
         }

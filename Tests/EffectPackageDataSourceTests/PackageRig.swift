@@ -39,13 +39,26 @@ struct PackageRig {
     static func manifest(_ key: String) -> String { "\(directory(key))/manifest.json" }
     static func shader(_ key: String) -> String { "\(directory(key))/effect.metal" }
 
+    /// The file at `path` inside the package `key`, as the subject joins it.
+    static func file(_ key: String, _ path: String) -> String { "\(directory(key))/\(path)" }
+
     static let validManifest = #"{"formatVersion": 1, "name": "Glitch"}"#
     static let validShader = "kernel void effect() {}\n"
+    /// Bytes that begin as a PNG and as a JPEG do, and then differ.
+    static let png = Data(EffectThumbnailFormat.png.leadingBytes + Array("IHDR".utf8))
+    static let jpeg = Data(EffectThumbnailFormat.jpeg.leadingBytes + Array("JFIF".utf8))
 
-    /// A package that reads as ready, named `name` in the menu.
-    func writePackage(_ key: String, name: String? = nil, shader: String = PackageRig.validShader) {
-        files.write(Self.manifest(key), #"{"formatVersion": 1, "name": "\#(name ?? key)"}"#)
+    /// A package that reads as ready, named `name` in the menu, its manifest naming `thumbnail` when one is given
+    /// (the image file is the test's to write).
+    func writePackage(_ key: String, name: String? = nil, shader: String = PackageRig.validShader, thumbnail: String? = nil) {
+        files.write(Self.manifest(key), Self.manifestText(name: name ?? key, thumbnail: thumbnail))
         files.write(Self.shader(key), shader)
+    }
+
+    /// A valid manifest as JSON, the thumbnail's path escaped as JSON escapes it whatever it holds.
+    static func manifestText(name: String, thumbnail: String? = nil) -> String {
+        let manifest = EffectManifest(formatVersion: 1, name: name, thumbnail: thumbnail)
+        return (try? JSONEncoder().encode(manifest)).map { String(decoding: $0, as: UTF8.self) } ?? "not encodable"
     }
 }
 

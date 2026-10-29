@@ -3,7 +3,8 @@ import Dependencies
 /// `EffectPackageDataSource`: the `.lens` packages in the effects folder (epic #42,
 /// D1 / D2). It lists the folder, reads and validates each package's `manifest.json`
 /// and `effect.metal`, and reports a package it cannot use as `.broken` with the
-/// reason instead of leaving it out (D3). Everything it needs from the world comes
+/// reason instead of leaving it out (D3); a ready package carries the thumbnail its
+/// manifest names when that can be used (#12). Everything it needs from the world comes
 /// through `FileSystemGateway`, `WorkspaceGateway` and `AppDirectoriesProvider`.
 public protocol EffectPackages: Sendable {
     /// Every package in the effects folder, ready or broken, in no promised order,

@@ -1,4 +1,5 @@
 import Domain
+import Foundation
 
 /// Small builders for the catalog values the suites write over and over, so a test
 /// states what matters (the key, the origin, whether it is broken) and not the rest.
@@ -16,6 +17,24 @@ extension EffectCatalogEntry {
     }
 }
 
+extension EffectThumbnailFormat {
+    /// The bytes a file of this format begins with, for a test that writes one: PNG's signature, and a JPEG's
+    /// start-of-image marker with the first byte of the marker after it.
+    public var leadingBytes: [UInt8] {
+        switch self {
+        case .png: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        case .jpeg: [0xFF, 0xD8, 0xFF, 0xE0]
+        }
+    }
+}
+
+extension EffectThumbnail {
+    /// A thumbnail of `format` whose bytes are the format's leading bytes and then `marker`, so two fixtures are told apart.
+    public static func fixture(_ marker: UInt8 = 1, format: EffectThumbnailFormat = .png) -> EffectThumbnail {
+        EffectThumbnail(data: Data(format.leadingBytes + [marker]), format: format)
+    }
+}
+
 extension EffectCatalogState {
     /// The state of a menu that lists `entries` and has chosen the first of them.
     public static func fixture(_ entries: [EffectCatalogEntry], outcome: EffectSelectionOutcome? = nil) -> EffectCatalogState {
@@ -24,13 +43,16 @@ extension EffectCatalogState {
 }
 
 extension EffectPackage {
-    /// A package whose manifest is valid, names `author` if one is given, and whose source is `source`.
+    /// A package whose manifest is valid, names `author` if one is given, whose source is `source`, and which was read
+    /// with `thumbnail` (its manifest naming `thumbnail.png` for it).
     public static func fixture(
-        _ id: EffectID, name: String? = nil, author: String? = nil, source: String = "kernel void effect() {}"
+        _ id: EffectID, name: String? = nil, author: String? = nil, source: String = "kernel void effect() {}",
+        thumbnail: EffectThumbnail? = nil
     ) -> EffectPackage {
         EffectPackage(
             id: id,
-            manifest: EffectManifest(formatVersion: 1, name: name ?? id.key, author: author),
-            source: EffectSource(name: name ?? id.key, source: source))
+            manifest: EffectManifest(formatVersion: 1, name: name ?? id.key, author: author, thumbnail: thumbnail.map { _ in "thumbnail.png" }),
+            source: EffectSource(name: name ?? id.key, source: source),
+            thumbnail: thumbnail)
     }
 }

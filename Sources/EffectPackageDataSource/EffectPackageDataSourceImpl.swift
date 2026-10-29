@@ -18,12 +18,23 @@ import Foundation
 ///   cannot be found is *missing*, told by the `CocoaError` code and never by a message;
 ///   any other failure to read it (permissions, text that is not UTF-8, a path that is a
 ///   directory) is *unreadable*.
+/// - **The thumbnail** (#12) is read only for a package that is ready, and only when its manifest
+///   names one: `EffectThumbnailReading` decides from the path's text whether it can be read at
+///   all, the file is read through `readData` with that type's bound, and the bytes become the
+///   package's `thumbnail` or are refused. A thumbnail that cannot be used leaves the package ready
+///   without one: a file that is there and cannot be read is logged as an error, any other reason
+///   (a path that is refused, a file that is missing, too large or not an image) as a developer
+///   line. A value of `thumbnail` that is not a string is a manifest of the wrong shape, as it is
+///   for `author`, and the package is broken.
 /// - **What to watch** (`EffectWatchSet`). The folder and the directory of every package,
 ///   ready or broken, as directories; and every `manifest.json` / `effect.metal` that is
 ///   there, as files. A file that is missing is not named (it cannot be watched), but the
 ///   package directory is, so creating it is noticed and the next listing watches it. The
 ///   shader of a package whose manifest is broken is watched as well, so fixing the manifest
-///   in place is noticed either way.
+///   in place is noticed either way. A thumbnail that was read, or that would have been had
+///   it been there, adds its file when it is there, and every directory between the package
+///   directory and the file that is there, so an atomic save in a subdirectory is heard and
+///   so is creating the file or a directory on its way.
 /// - **The folder.** Listing, and opening, make it when it is not there. A folder that cannot
 ///   be made is logged and gives no listing and nothing to watch; one that cannot be listed
 ///   is logged and gives no listing, with the folder still watched, so a later change to it
@@ -98,17 +109,25 @@ extension EffectPackageDataSourceImpl {
     private static func inventory(of reads: [PackageRead], in folder: String) -> EffectPackageInventory {
         EffectPackageInventory(
             listings: reads.map(\.listing),
-            watchSet: EffectWatchSet(directories: [folder] + reads.map(\.directory), files: reads.flatMap(\.files)))
+            watchSet: EffectWatchSet(directories: [folder] + reads.flatMap(\.directories), files: reads.flatMap(\.files)))
     }
 }
 
 // MARK: - One package
 
 extension EffectPackageDataSourceImpl {
-    /// A package as read: what it is, where its directory is and which of its files are there.
+    /// A package as read: what it is, and which of its directories and files to watch.
     private struct PackageRead {
         let listing: EffectPackageListing
-        let directory: String
+        let directories: [String]
+        let files: [String]
+    }
+
+    /// What reading a package's thumbnail gives: the listing with the picture in it (or as it was),
+    /// and the directories and the file to watch for it.
+    private struct ThumbnailRead {
+        let listing: EffectPackageListing
+        let directories: [String]
         let files: [String]
     }
 
@@ -133,10 +152,11 @@ extension EffectPackageDataSourceImpl {
         let id = EffectID(origin: .package, key: key)
         let listing = Self.listing(id, manifest: manifestRead, source: sourceRead)
         report(listing)
+        let thumbnail = readThumbnail(of: listing, in: directory)
         return PackageRead(
-            listing: listing,
-            directory: directory,
-            files: [(manifestPath, manifestRead), (sourcePath, sourceRead)].filter(\.1.exists).map(\.0))
+            listing: thumbnail.listing,
+            directories: [directory] + thumbnail.directories,
+            files: [(manifestPath, manifestRead), (sourcePath, sourceRead)].filter(\.1.exists).map(\.0) + thumbnail.files)
     }
 
     /// The first problem in the documented order, or the package.
@@ -166,6 +186,61 @@ extension EffectPackageDataSourceImpl {
             return .missing
         } catch {
             return .unreadable(.unreadable(message: "\(name) could not be read: \(Self.reason(of: error))"))
+        }
+    }
+
+    /// A ready package with the picture its manifest names, when it can be used. A package that names
+    /// none, or is broken, is as it was and adds nothing to watch.
+    private func readThumbnail(of listing: EffectPackageListing, in directory: String) -> ThumbnailRead {
+        guard case .ready(let package) = listing, let path = package.manifest.thumbnail else {
+            return ThumbnailRead(listing: listing, directories: [], files: [])
+        }
+        switch EffectThumbnailReading.components(of: path) {
+        case .failure(let problem):
+            report(problem, of: package.id, at: path)
+            return ThumbnailRead(listing: listing, directories: [], files: [])
+        case .success(let components):
+            let file = components.reduce(directory, Self.join)
+            let bytes = readBytes(file)
+            let thumbnail = usable(bytes.flatMap(EffectThumbnailReading.thumbnail(from:)), of: package.id, at: path)
+            return ThumbnailRead(
+                listing: .ready(EffectPackage(id: package.id, manifest: package.manifest, source: package.source, thumbnail: thumbnail)),
+                directories: (1..<components.count).map { components.prefix($0).reduce(directory, Self.join) }.filter { fileSystem.isDirectory($0) },
+                files: bytes == .failure(.missing) ? [] : [file])
+        }
+    }
+
+    /// The thumbnail, or `nil` with the reason logged.
+    private func usable(
+        _ thumbnail: Result<EffectThumbnail, EffectThumbnailReading.Problem>, of id: EffectID, at path: String
+    ) -> EffectThumbnail? {
+        switch thumbnail {
+        case .success(let thumbnail):
+            return thumbnail
+        case .failure(let problem):
+            report(problem, of: id, at: path)
+            return nil
+        }
+    }
+
+    private func readBytes(_ path: String) -> Result<Data, EffectThumbnailReading.Problem> {
+        do {
+            return .success(try fileSystem.readData(path, upTo: EffectThumbnailReading.readLength))
+        } catch  where Self.isMissing(error) {
+            return .failure(.missing)
+        } catch {
+            return .failure(.unreadable(Self.reason(of: error)))
+        }
+    }
+
+    /// A thumbnail that cannot be used is logged with the path as written (quoted and escaped, so a
+    /// newline or a NUL in it reads as one), as an error when the file is there and cannot be read.
+    private func report(_ problem: EffectThumbnailReading.Problem, of id: EffectID, at path: String) {
+        let message = "package \(id.key): thumbnail \(String(reflecting: path)) \(problem)"
+        switch problem {
+        case .unreadable: errorLog.record(.effect, message)
+        case .empty, .absolute, .nulCharacter, .outsidePackage, .unsupportedType, .missing, .tooLarge, .notAnImage:
+            developerLog.record(.effect, message)
         }
     }
 
@@ -204,9 +279,9 @@ extension EffectPackageDataSourceImpl {
         directory + "/" + name
     }
 
-    /// The file is not there: `fileReadNoSuchFile`, which the live and the in-memory gateway raise,
-    /// or `fileNoSuchFile`, accepted as well in case an API reports a vanished path with it. Every
-    /// other error, whatever its type, is a file that is there and cannot be read.
+    /// The file is not there: `fileReadNoSuchFile`, which the live and the in-memory gateway raise for
+    /// `readString`, or `fileNoSuchFile`, which they raise for `readData` (`FileHandle` reports a missing
+    /// file with it). Every other error, whatever its type, is a file that is there and cannot be read.
     private static func isMissing(_ error: any Error) -> Bool {
         let code = (error as? CocoaError)?.code
         return code == .fileReadNoSuchFile || code == .fileNoSuchFile
