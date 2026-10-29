@@ -47,7 +47,7 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 | Domain | Foundation, Combine, Dependencies, Entity |
 | UseCase / Repository / DataSource / DataStore / Interactor / Presenters / Support (non-live) | Foundation, Combine, Dependencies, Domain |
 | Gateway live, Support live | the one OS framework the module wraps (+ Foundation, Dependencies, Domain) |
-| Views / AppRouter | AppKit, SwiftUI, MetalKit (only the preview view files use it; the lint allows it module-wide), Dependencies, Domain, Presenters |
+| Views / AppRouter | AppKit, SwiftUI, MetalKit (only the preview view files use it; the lint allows it module-wide), Dependencies, Domain, Presenters; `AppRouter` also takes `Views`, to build the windows it opens |
 | App / ExtensionApp / DevHarness (composition roots) | the above plus the process's DI target (`HostDependencyInjection` / `ExtensionDependencyInjection`), so the `liveValue` registrations are linked into the shell; `App` also takes the `AppRouter` and `Views` modules of the menu bar; `DevHarness` takes only AppKit and SwiftUI from the row above, plus `Views` (`PreviewView`, `EffectMenu`) and `AppRouter` (its Effects menu) |
 | DI targets | everything in their process |
 | Shells | only their SPM products |
