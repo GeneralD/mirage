@@ -85,12 +85,17 @@ struct EffectPickerPresenterTests {
     // MARK: - The placeholder tile
 
     @Test(
-        "a placeholder's monogram is the first letter of each of the name's first two words, upper-cased",
+        "a placeholder's monogram is the first letter or digit of each of the name's first two words that have one, upper-cased",
         arguments: [
             ("Chromatic Grain", "CG"),
             ("glitch", "G"),
             ("  three word name ", "TW"),
             ("émile zola", "ÉZ"),
+            ("[WIP] Ripple", "WR"),
+            ("- Ripple Glitch", "RG"),
+            ("2-Tone Glitch", "2G"),
+            ("ßtraße x", "SX"),
+            ("***", ""),
         ])
     func monogram(name: String, monogram: String) async {
         let rig = PickerRig(state: .fixture([.fixture(.package("p"), displayName: name)]))
@@ -313,6 +318,22 @@ struct EffectPickerPresenterTests {
 
     private func checked(_ menu: MenuBarPresenter) -> [EffectID] {
         menu.items.filter(\.isSelected).map(\.id)
+    }
+
+    @Test("two keys that are the same id, one with a composed accent and one with a combining accent, get the same hue")
+    func hueIgnoresHowAnAccentWasTyped() async {
+        let composed = EffectID.package("Caf\u{E9}")
+        let combining = EffectID.package("Cafe\u{301}")
+        let typedComposed = PickerRig(state: .fixture([.fixture(composed)]))
+        let typedCombining = PickerRig(state: .fixture([.fixture(combining)]))
+
+        await typedComposed.start()
+        await typedCombining.start()
+
+        let hues: [Double] = [typedComposed, typedCombining].compactMap { $0.presenter.cells.first?.artwork.hue }
+        #expect(composed == combining)
+        #expect(composed.key.unicodeScalars.count != combining.key.unicodeScalars.count, "the two keys differ in their bytes")
+        #expect(hues == [hue(of: "package:Caf\u{E9}"), hue(of: "package:Caf\u{E9}")])
     }
 
     private func chosen(_ picker: EffectPickerPresenter) -> [EffectID] {

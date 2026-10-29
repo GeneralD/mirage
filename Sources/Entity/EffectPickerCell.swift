@@ -40,7 +40,8 @@ public enum EffectArtwork: Sendable, Hashable {
 /// The tile a cell draws while there is no thumbnail: the same effect gets the same tile on every
 /// launch and every machine, so it can be recognised by its colour.
 public struct EffectPlaceholder: Sendable, Hashable {
-    /// Up to two letters: the first of each of the name's first two words, upper-cased.
+    /// Up to two characters: the first letter or digit of each of the name's first two words that
+    /// have one, upper-cased.
     public let monogram: String
     /// The tile's hue, in `0..<1`.
     public let hue: Double

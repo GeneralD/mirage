@@ -28,16 +28,23 @@ func placeholder(of entry: EffectCatalogEntry) -> EffectPlaceholder {
     EffectPlaceholder(monogram: monogram(of: entry.displayName), hue: placeholderHue(of: entry.id))
 }
 
-/// The first letter of each of the first two words, upper-cased: `"Chromatic Grain"` is `"CG"`.
+/// The first letter or digit of each of the first two words that have one, upper-cased and one
+/// character each: `"Chromatic Grain"` is `"CG"`, `"[WIP] Ripple"` is `"WR"`.
 func monogram(of name: String) -> String {
-    name.split(whereSeparator: \.isWhitespace).prefix(2).compactMap(\.first).map { $0.uppercased() }.joined()
+    name.split(whereSeparator: \.isWhitespace)
+        .compactMap { word in word.first { $0.isLetter || $0.isNumber } }
+        .prefix(2)
+        .map { String($0.uppercased().prefix(1)) }
+        .joined()
 }
 
-/// A hue in `0..<1`, one of 360, from a 64-bit FNV-1a hash of `<origin>:<key>`. Not `hashValue`,
-/// which Swift seeds afresh in every process: the tile of an effect must not change colour between
-/// launches.
+/// A hue in `0..<1`, one of 360, from a 64-bit FNV-1a hash of `<origin>:<key>` in Unicode's
+/// composed form (NFC), so two keys that are the same `EffectID` get the same hue however their
+/// accents were typed. Not `hashValue`, which Swift seeds afresh in every process: the tile of an
+/// effect must not change colour between launches.
 func placeholderHue(of id: EffectID) -> Double {
-    let hash = "\(id.origin.rawValue):\(id.key)".utf8.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { hash, byte in
+    let text = "\(id.origin.rawValue):\(id.key)".precomposedStringWithCanonicalMapping
+    let hash = text.utf8.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { hash, byte in
         (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
     }
     return Double(hash % 360) / 360
