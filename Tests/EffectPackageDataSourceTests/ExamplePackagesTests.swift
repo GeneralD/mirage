@@ -65,6 +65,11 @@ struct ExamplePackagesTests {
                 (package.thumbnail != nil) == (package.manifest.thumbnail != nil),
                 "\(package.id.key) names a thumbnail that cannot be used: \(rig.developer.messages(in: .effect) + rig.errors.messages(in: .effect))")
         }
+        let ripple = inventory.listings.compactMap { listing -> EffectPackage? in
+            guard case .ready(let package) = listing, package.id == .package("Ripple") else { return nil }
+            return package
+        }.first
+        #expect(ripple?.thumbnail?.format == .png, "Ripple names the thumbnail.png the README shows, and it is read")
         #expect(rig.errors.entries.values.isEmpty)
         #expect(rig.developer.entries.values.isEmpty)
     }
