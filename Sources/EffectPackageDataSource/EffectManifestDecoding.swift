@@ -12,8 +12,8 @@ import Foundation
 ///   trimmed name is what the menu shows.
 /// - `author`, `description` and `thumbnail` are optional, and kept as written. Whether the
 ///   thumbnail's path can be used is `EffectThumbnailReading`'s, and one that cannot costs the
-///   package only its picture; a `thumbnail` that is not a string is the wrong type, as it is for
-///   `author`. A key this build does not know is ignored, so a newer package can carry more than
+///   package only its picture; a `thumbnail` that is neither a string nor `null` is the wrong type,
+///   as it is for `author`. A key this build does not know is ignored, so a newer package can carry more than
 ///   an older build reads; `parameters` is one of them until MVP-C interprets it, whatever shape
 ///   its value has.
 /// - Everything else that is wrong with the text (not JSON, not an object, a required key

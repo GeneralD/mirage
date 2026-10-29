@@ -17,7 +17,7 @@ public struct EffectCatalogEntry: Sendable, Hashable {
     /// The manifest's `author`, for the menu to show beside the name; `nil` for a bundled
     /// effect, for a manifest that names none, and for a package whose manifest cannot be read.
     public let author: String?
-    /// The picture the manifest's `thumbnail` names, for the effect picker's cell (#12); `nil` for
+    /// The picture the manifest's `thumbnail` names, for the effect picker's cell (#12, to come); `nil` for
     /// a bundled effect, for a manifest that names none or names one that cannot be used, and for a
     /// broken package. It is read again with every listing, so an edited picture is a new entry.
     public let thumbnail: EffectThumbnail?

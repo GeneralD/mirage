@@ -79,9 +79,10 @@ Shared conventions:
 - A `.lens` package is a directory `<id>.lens/` in the effects folder
   (`~/Library/Application Support/<host bundle id>/Effects`, the path comes from
   `AppDirectoriesProvider`) holding `manifest.json` (`formatVersion` 1 and
-  `name`; optional `author` / `description` / `thumbnail`, the last a PNG or
-  JPEG inside the package of at most 1 MiB, which costs the package only its
-  picture when it cannot be used; unknown keys, `parameters` included, ignored) and `effect.metal` (entry point `effect`, compiled behind
+  `name`; optional `author` / `description` / `thumbnail`, the last a path
+  to a PNG or JPEG of at most 1 MiB inside the package, which costs the
+  package only its picture when it cannot be used; unknown keys, `parameters`
+  included, ignored) and `effect.metal` (entry point `effect`, compiled behind
   the prelude). The id is the directory name without the suffix.
   `EffectPackageDataSource` reads it through `FileSystemGateway` and lists a
   package it cannot use as `.broken` with the reason instead of leaving it out

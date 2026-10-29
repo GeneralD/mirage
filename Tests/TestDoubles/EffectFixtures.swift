@@ -22,7 +22,7 @@ extension EffectCatalogEntry {
 
 extension EffectThumbnailFormat {
     /// The bytes a file of this format begins with, for a test that writes one: PNG's signature, and a JPEG's
-    /// start-of-image marker with the first byte of the marker after it.
+    /// start-of-image marker followed by an APP0 (JFIF) marker.
     public var leadingBytes: [UInt8] {
         switch self {
         case .png: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]

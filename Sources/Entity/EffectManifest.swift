@@ -10,7 +10,7 @@ public struct EffectManifest: Sendable, Hashable, Codable {
     public let name: String
     public let author: String?
     public let description: String?
-    /// The picture for the effect picker (#12), as written: a path relative to the package
+    /// The picture for the effect picker (#12, to come), as written: a path relative to the package
     /// directory, to a PNG or a JPEG. Whether it can be used is decided when the package is read,
     /// and one that cannot costs the package only its picture (`EffectPackage.thumbnail`).
     public let thumbnail: String?
