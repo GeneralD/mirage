@@ -9,11 +9,14 @@
 # suites happen to run in.
 #
 # This checks the mechanical half: no Tests file but the owner names either key as a key path
-# (`\.effectInteractor`, `\.effectCatalogUseCase`: what `@Dependency(...)` takes). An override,
-# `$0.effectInteractor = fake`, is no key path and stays free, because it resolves nothing. What
-# the grep cannot see, a live `AppRouter()` or `EffectInteractorImpl()` that resolves the key
-# through its own `@Dependency`, stays with review (`docs/ARCHITECTURE.md` -> *The effect catalog
-# follows the same rule*).
+# (`\.effectInteractor`, `\.effectCatalogUseCase`: what `@Dependency(...)` takes), or calls
+# `HarnessMenu.live()`, the harness's own route to a live `AppRouter()` (its Presenter resolves
+# `effectInteractor`). An override, `$0.effectInteractor = fake`, is no key path and stays free,
+# because it resolves nothing. Like the key-path grep, the `live()` grep reads comments too, so
+# a comment in another file must not spell the call. What the greps cannot see, a live
+# `AppRouter()` or `EffectInteractorImpl()` made directly, which resolves the key through its own
+# `@Dependency`, stays with review (`docs/ARCHITECTURE.md` -> *The effect catalog follows the same
+# rule*).
 
 # shellcheck source=scripts/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -27,5 +30,11 @@ while IFS=: read -r file line_no text; do
     [ "$file" = "$OWNER" ] && continue
     fail "$file:$line_no" "only HarnessLiveWiringTests resolves effectInteractor and effectCatalogUseCase (they freeze the scope that built them); override them with \$0.<key> = ... instead: ${text## }"
 done < <(grep -rnE '\\\.(effectInteractor|effectCatalogUseCase)([^A-Za-z0-9_]|$)' Tests --include='*.swift' || true)
+
+while IFS=: read -r file line_no text; do
+    [ -n "$file" ] || continue
+    [ "$file" = "$OWNER" ] && continue
+    fail "$file:$line_no" "only HarnessLiveWiringTests calls HarnessMenu.live() (it builds the live Router, whose Presenter resolves effectInteractor and freezes the scope that built it); build the HarnessMenu over a Router made inside withDependencies instead: ${text## }"
+done < <(grep -rnE 'HarnessMenu\.live([^A-Za-z0-9_]|$)' Tests --include='*.swift' || true)
 
 finish "check-live-owner"

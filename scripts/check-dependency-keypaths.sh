@@ -156,8 +156,9 @@ USED_EXCEPTIONS=""
 # DENIALS — "<module glob> <key> <reason>": a key a module may not resolve although its lane's
 # kinds allow it. A denial that works is never matched by a resolution, so it cannot be told
 # stale by use; instead each entry is checked for what it rests on, after the resolutions: the key
-# is still a declared port, a module still matches the glob, and the lane's kinds do allow the
-# key (otherwise the lane forbids it already and the entry is dead weight).
+# is still a declared port, a module still matches the glob (a `case` pattern over module names:
+# `App`, `Dev*`, `*Presenter`), and the lane of at least one matching module does allow the key
+# (otherwise every lane forbids it already and the entry is dead weight).
 #
 #   App, DevHarness — effectInteractor. The entry lane may resolve Interactors (`cameraInteractor`,
 #                 `harnessInteractor`), but the effects menu's Interactor is started and stopped
@@ -292,20 +293,24 @@ while IFS=' ' read -r glob entry_key _; do
         continue
     fi
     module_found=""
-    # The glob is the pattern, expanded on purpose.
+    bites=""
+    # The glob is the pattern, expanded on purpose. The lane is read from each module it matches,
+    # not from the glob's own text, so a glob such as `Dev*` is judged by what it expands to.
     # shellcheck disable=SC2231
     for dir in Sources/$glob; do
-        [ -d "$dir" ] && module_found=1
+        [ -d "$dir" ] || continue
+        module_found=1
+        case " $(allowed_kinds "$(lane_of "$(module_name "$dir")")") " in
+            *" $kind "*) bites=1 ;;
+        esac
     done
     if [ -z "$module_found" ]; then
         fail "scripts/check-dependency-keypaths.sh:1" "no module matches $glob any more; remove its denial of \\.$entry_key with its reason"
         continue
     fi
-    lane=$(lane_of "$glob")
-    case " $(allowed_kinds "$lane") " in
-        *" $kind "*) ;;
-        *) fail "scripts/check-dependency-keypaths.sh:1" "the $lane lane of $glob does not resolve port kind $kind (\\.$entry_key) anyway; remove the denial with its reason" ;;
-    esac
+    if [ -z "$bites" ]; then
+        fail "scripts/check-dependency-keypaths.sh:1" "no module matching $glob is in a lane that resolves port kind $kind (\\.$entry_key) anyway; remove the denial with its reason"
+    fi
 done <<< "$DENIALS"
 
 finish "check-dependency-keypaths"

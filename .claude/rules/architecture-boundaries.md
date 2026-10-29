@@ -91,7 +91,8 @@ too would restart the catalog (`run()` twice, the first state sent twice). A den
 entry in the script, `<module glob> <key> <reason>`, checked before the lane's kinds and before any
 exception. A denial that works is never matched by a resolution, so the staleness check is static:
 an entry fails when its key is no longer a declared port, when no module matches its glob, or when
-the lane's kinds already keep that module from the key, so the list cannot outlive its reason.
+the lane of every module matching it already keeps it from the key, so the list cannot outlive its
+reason.
 
 ## Protocol API Design
 

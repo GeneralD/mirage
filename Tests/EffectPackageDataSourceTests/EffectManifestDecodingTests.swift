@@ -93,6 +93,27 @@ struct EffectManifestDecodingTests {
         Row(
             name: "and so is a negative one",
             text: #"{"formatVersion": -99999999999999999999, "name": "Glitch"}"#, expected: invalid("\"formatVersion\" is out of range")),
+        Row(
+            name: "a version above 2^53 is read exactly, not rounded to the Double next to it",
+            text: #"{"formatVersion": 9007199254740993, "name": "Glitch"}"#, expected: .failure(.unsupportedFormatVersion(9_007_199_254_740_993))),
+        Row(
+            name: "the largest Int is an unsupported version, not out of range",
+            text: #"{"formatVersion": 9223372036854775807, "name": "Glitch"}"#, expected: .failure(.unsupportedFormatVersion(Int.max))),
+        Row(
+            name: "and so is the smallest",
+            text: #"{"formatVersion": -9223372036854775808, "name": "Glitch"}"#, expected: .failure(.unsupportedFormatVersion(Int.min))),
+        Row(
+            name: "one past the largest Int is out of range",
+            text: #"{"formatVersion": 9223372036854775808, "name": "Glitch"}"#, expected: invalid("\"formatVersion\" is out of range")),
+        Row(
+            name: "1.0 is the integer 1",
+            text: #"{"formatVersion": 1.0, "name": "Glitch"}"#, expected: manifest("Glitch")),
+        Row(
+            name: "and so is 1e0",
+            text: #"{"formatVersion": 1e0, "name": "Glitch"}"#, expected: manifest("Glitch")),
+        Row(
+            name: "a number beyond even a Double has no key to name: it stays text that is not JSON",
+            text: #"{"formatVersion": 1e400, "name": "Glitch"}"#, expected: invalid("not valid JSON")),
 
         // What is invalid.
         Row(name: "an empty name", text: #"{"formatVersion": 1, "name": ""}"#, expected: invalid("\"name\" is empty")),
@@ -126,6 +147,9 @@ struct EffectManifestDecodingTests {
         Row(name: "text that is not JSON", text: "name = Glitch", expected: invalid("not valid JSON")),
         Row(name: "nothing at all", text: "", expected: invalid("not valid JSON")),
         Row(name: "JSON cut short", text: #"{"formatVersion": 1, "name": "Gli"#, expected: invalid("not valid JSON")),
+        Row(
+            name: "a lone surrogate escape inside a value names no key either: the decoder reports it without a path",
+            text: #"{"formatVersion": 1, "name": "\ud800"}"#, expected: invalid("not valid JSON")),
         Row(name: "an array in place of an object", text: "[]", expected: invalid("the manifest has the wrong type")),
         Row(name: "a bare string", text: #""Glitch""#, expected: invalid("the manifest has the wrong type")),
     ]

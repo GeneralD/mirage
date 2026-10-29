@@ -15,13 +15,17 @@ import Testing
 /// catalog (epic #42, D10): no pass-through of the catalog remains. The OS-boundary lives under them
 /// (the file system, the file events, Finder, the app directories, the key-value store) are not
 /// checked here: `HostFileGatewayRegistrationsTests` pins them.
-/// The Gateways the real implementations resolve and that would touch the machine are faked, in both
-/// tests: the file system and the app directories (`EffectPackageDataSourceImpl` lists and makes
+/// The Gateways the real implementations resolve and that would touch the machine are faked, in every
+/// test: the file system and the app directories (`EffectPackageDataSourceImpl` lists and makes
 /// the effects folder), `fileWatchGateway` (`EffectWatchDataSourceImpl` opens a descriptor on it), the
 /// key-value store (the chosen effect) and Finder, and the logs they write to. That the fakes are
-/// the ones the default graph reaches, and so that no test touches the user's own folder, defaults
-/// or Finder, is asserted rather than assumed: the default-graph test reads back what the in-memory
-/// file system was asked (the folder made, then listed) and that nothing was logged as an error.
+/// the ones the default graph reaches is asserted rather than assumed, for each of them but Finder:
+/// the default-graph test reads back what the in-memory file system was asked (the folder made, then
+/// listed), that the watch on the folder was armed on the fake file events with no "could not watch"
+/// line in the developer log, and that nothing was logged as an error; the restore test seeds the
+/// in-memory store with a choice only that store holds and reads the restored selection back. Finder
+/// is overridden too, but nothing here calls `openFolder`: `HarnessLiveWiringTests` drives it to the
+/// fake workspace.
 ///
 /// **Which keys this suite resolves, and which it leaves to `HarnessLiveWiringTests`.** The live values
 /// in `HostRegistrations` are `static let`s: swift-dependencies builds each one on its first resolution
@@ -67,9 +71,62 @@ struct HostEffectRegistrationsTests {
         "the default graph chooses the bundled effect and prepares it: the real UseCase over the live catalog and settings, the runtime held by a fake"
     )
     func defaultGraphChoosesTheBundledEffect() async throws {
+        let fakes = Fakes()
+        let (states, request) = try await runOnce(in: fakes)
+
+        let state = try #require(states.first)
+        let entry = try #require(state.entries.first)
+        #expect(states.count == 1)
+        #expect(state.entries.count == 1)
+        #expect(entry.origin == .bundled)
+        #expect(entry.availability == .ready)
+        #expect(state.selection == entry.id)
+        #expect(state.outcome == .prepared)
+        #expect(request.effect.name == entry.displayName, "what the runtime was handed is the bundled effect the catalog lists")
+
+        // The effects folder is the in-memory one: made once, then listed, and nothing went wrong on the way.
+        #expect(fakes.files.createdDirectories.values == [Fakes.effectsDirectory], "the default graph makes the effects folder, in memory")
+        #expect(fakes.files.isDirectory(Fakes.effectsDirectory))
+        #expect(fakes.files.listings.values.contains(Fakes.effectsDirectory), "the default graph lists the effects folder, in memory")
+        #expect(fakes.errors.entries.count == 0)
+
+        // The watch on it is armed on the fake file events: the live gateway would throw for a folder that is not on this machine,
+        // which the data source logs and skips, so only these two lines tell the fake from the live one.
+        #expect(
+            fakes.fileWatch.watches.values.contains(.init(kind: .directory, path: Fakes.effectsDirectory)),
+            "the default graph arms a directory watch on the effects folder, on the fake file events")
+        #expect(!fakes.developer.contains("could not watch"), "and no watch was skipped")
+        #expect(fakes.store.writes.values.isEmpty, "choosing nothing writes nothing to the key-value store")
+    }
+
+    @Test("the default graph restores the choice the key-value store holds: a package that is in the in-memory folder")
+    func defaultGraphRestoresTheStoredChoice() async throws {
+        // `selectedEffect` and `package:<key>` are persisted names, pinned literally by the DataStore's own suite.
+        let fakes = Fakes(storedValues: ["selectedEffect": "package:glitch"])
+        fakes.files.write("\(Fakes.effectsDirectory)/glitch.lens/manifest.json", #"{"formatVersion": 1, "name": "Glitch"}"#)
+        fakes.files.write("\(Fakes.effectsDirectory)/glitch.lens/effect.metal", Fakes.glitchShader)
+
+        let (states, request) = try await runOnce(in: fakes)
+
+        let state = try #require(states.first)
+        let bundled = try #require(state.entries.first)
+        #expect(states.count == 1)
+        #expect(bundled.origin == .bundled)
+        #expect(state.entries.map(\.id) == [bundled.id, .package("glitch")], "the bundled effect, then the package the folder holds")
+        #expect(state.selection == .package("glitch"), "the choice the in-memory store held is the one restored")
+        #expect(state.outcome == .prepared)
+        #expect(request.effect.name == "Glitch", "what the runtime was handed is the restored package")
+        #expect(request.effect.source == Fakes.glitchShader)
+        #expect(fakes.store.writes.values.isEmpty, "restoring is not choosing: nothing is written back")
+    }
+
+    /// One run of the real UseCase over the live catalog, with the runtime held by a fake: the first `prepare` is answered, the first
+    /// state is waited for, and the run is ended. The states it published and the request it was handed come back.
+    private func runOnce(
+        in fakes: Fakes
+    ) async throws -> (states: [EffectCatalogState], request: FakeEffectRuntimeRepository.PrepareRequest) {
         let runtime = FakeEffectRuntimeRepository()
         let states = Collector<EffectCatalogState>()
-        let fakes = Fakes()
         let request = try await fakes.live {
             let useCase = withDependencies {
                 $0.effectRuntimeRepository = runtime
@@ -88,22 +145,7 @@ struct HostEffectRegistrationsTests {
             await observer.value
             return request
         }
-
-        let state = try #require(states.values.first)
-        let entry = try #require(state.entries.first)
-        #expect(states.count == 1)
-        #expect(state.entries.count == 1)
-        #expect(entry.origin == .bundled)
-        #expect(entry.availability == .ready)
-        #expect(state.selection == entry.id)
-        #expect(state.outcome == .prepared)
-        #expect(request.effect.name == entry.displayName, "what the runtime was handed is the bundled effect the catalog lists")
-
-        // The effects folder is the in-memory one: made once, then listed, and nothing went wrong on the way.
-        #expect(fakes.files.createdDirectories.values == [Fakes.effectsDirectory], "the default graph makes the effects folder, in memory")
-        #expect(fakes.files.isDirectory(Fakes.effectsDirectory))
-        #expect(fakes.files.listings.values.contains(Fakes.effectsDirectory), "the default graph lists the effects folder, in memory")
-        #expect(fakes.errors.entries.count == 0)
+        return (states.values, request)
     }
 }
 
@@ -111,13 +153,19 @@ struct HostEffectRegistrationsTests {
 /// key-value store and Finder, and the logs: kept, so a test can read back what the graph asked of them.
 private struct Fakes {
     static let effectsDirectory = "/effects"
+    static let glitchShader = "kernel void effect() {}\n"
 
     let files = InMemoryFileSystemGateway()
     let fileWatch = FakeFileWatchGateway()
-    let store = InMemoryKeyValueStore()
+    let store: InMemoryKeyValueStore
     let workspace = FakeWorkspaceGateway()
     let errors = RecordingLog()
     let developer = RecordingLog()
+
+    /// `storedValues` is what the in-memory key-value store holds before the graph reads it.
+    init(storedValues: [String: String] = [:]) {
+        store = InMemoryKeyValueStore(storedValues)
+    }
 
     func live<Value>(_ operation: () async throws -> Value) async rethrows -> Value {
         try await withDependencies {
