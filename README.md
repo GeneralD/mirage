@@ -84,8 +84,9 @@ Ripple.lens/
 }
 ```
 
-- `formatVersion` (required): the integer `1`. Any other integer is reported as unsupported; a number
-  that is not an integer (`1.5`) is reported as invalid.
+- `formatVersion` (required): the integer `1`. Any other integer that fits a 64-bit integer is
+  reported as unsupported; a number that is not an integer (`1.5`), or a whole number beyond that
+  range, is reported as invalid.
 - `name` (required): what the menu shows. Surrounding whitespace is trimmed; it cannot be empty.
 - `author`, `description` (optional).
 - Keys this version doesn't know are ignored, so a package can carry more than an older build
