@@ -224,7 +224,7 @@ struct InMemoryFileSystemGatewayTests {
         #expect(try fileSystem.readData("/a/bad", upTo: 8) == Data([0xC3, 0x28]))
     }
 
-    @Test("reading bytes fails as the live gateway's does: a missing path with `FileHandle`'s code, a directory, and a scripted error")
+    @Test("reading bytes fails: a missing path with `FileHandle`'s code, a directory, and a scripted error")
     func readDataFailures() {
         fileSystem.makeDirectory("/a/dir")
         fileSystem.write("/a/locked", bytes: Data([1]))
@@ -235,7 +235,7 @@ struct InMemoryFileSystemGatewayTests {
         let locked = #expect(throws: CocoaError.self) { try fileSystem.readData("/a/locked", upTo: 1) }
 
         #expect(missing?.code == .fileNoSuchFile, "not readString's fileReadNoSuchFile: FileHandle raises this one")
-        #expect(directory?.code == .fileReadUnknown)
+        #expect(directory?.code == .fileReadUnknown, "live's code for a directory is not stable, so no caller relies on this one")
         #expect(locked?.code == .fileReadNoPermission)
     }
 

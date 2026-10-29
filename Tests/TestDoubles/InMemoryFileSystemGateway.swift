@@ -169,7 +169,8 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
     }
 
     /// What reading the file at `path` gives: the scripted error, `missing` for a path that is not
-    /// there, `fileReadUnknown` for a directory, or its bytes.
+    /// there, `fileReadUnknown` for a directory (the live `readData`'s code for one is not stable, and no
+    /// caller relies on it), or its bytes.
     private func content(of path: String, missing: CocoaError.Code) throws -> Data {
         try tree.withLock { tree in
             if let failure = tree.readFailures[path] { throw failure }

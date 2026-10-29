@@ -2,8 +2,8 @@ import Dependencies
 import Foundation
 
 /// Thin pass-through to the file system (live: `FileManager`, a UTF-8 read and a
-/// bounded `FileHandle` read), the
-/// only way the effect packages and the effects folder are touched. Paths are plain
+/// bounded `FileHandle` read), the only way the effect packages and the effects
+/// folder are touched. Paths are plain
 /// strings; nothing here interprets them, decides what a `.lens` package is or
 /// recovers from an error: that is `EffectPackageDataSource`'s, against
 /// `InMemoryFileSystemGateway`.
@@ -20,9 +20,11 @@ public protocol FileSystemGateway: Sendable {
     /// cannot be read or is not valid text.
     func readString(_ path: String) throws -> String
 
-    /// The first `maxLength` bytes of the file at `path`, or all of them when it is shorter
-    /// (none for an empty file): a longer file is read only that far, so a caller that bounds
-    /// what it keeps never holds more. Throws when it does not exist or cannot be read.
+    /// The first `maxLength` bytes (`maxLength` is not negative) of the file at `path`, or all
+    /// of them when it is shorter (none for an empty file): a longer file is read only that far,
+    /// so a caller that bounds what it keeps never holds more. Throws when it does not exist
+    /// (`CocoaError.fileNoSuchFile`) or cannot be read. What it throws for a directory, or for a
+    /// path below a file, is not a code to rely on: ask `isDirectory` first.
     func readData(_ path: String, upTo maxLength: Int) throws -> Data
 
     /// Makes the directory at `path` and any missing parents. A directory that is

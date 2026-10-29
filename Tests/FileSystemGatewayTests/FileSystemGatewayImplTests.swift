@@ -9,7 +9,9 @@ import Testing
 ///
 /// A failure is pinned by its `CocoaError` code, not only by "it throws": `InMemoryFileSystemGateway`
 /// answers with these same codes, and a DataSource that tells a missing path from an unreadable one by
-/// the error is proven against that fake, so the live gateway must agree with it on the shapes.
+/// the error is proven against that fake, so the live gateway must agree with it on the shapes. The one
+/// code that is not pinned is `readData`'s for a directory, which is not stable; the DataSource asks
+/// `isDirectory` instead of reading one.
 @Suite("FileSystemGatewayImpl")
 struct FileSystemGatewayImplTests {
     private let gateway = FileSystemGatewayImpl()
@@ -184,16 +186,41 @@ struct FileSystemGatewayImplTests {
         #expect(error?.code == .fileNoSuchFile)
     }
 
-    @Test("reading the bytes of a directory throws, and not a missing-file error")
+    @Test("reading the bytes of a directory throws")
     func readingDirectoryBytesThrows() throws {
         let scratch = try ScratchDirectory()
         defer { scratch.remove() }
 
-        let error = #expect(throws: (any Error).self) { try gateway.readData(scratch.path, upTo: 8) }
+        // Only that it throws: `FileHandle` has been seen to fail on a directory with `fileNoSuchFile`,
+        // `fileWriteUnknown` and `fileWriteNoPermission`, so the DataSource asks `isDirectory` before it reads.
+        #expect(throws: (any Error).self) { try gateway.readData(scratch.path, upTo: 8) }
+    }
 
-        let code = (error as? CocoaError)?.code
-        #expect(error != nil)
-        #expect(code != .fileReadNoSuchFile && code != .fileNoSuchFile)
+    @Test("reading the bytes of a path below a file throws, and not a missing-file error")
+    func readingBytesBelowAFileThrows() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        try Data([1]).write(to: URL(fileURLWithPath: scratch.appending("images")))
+
+        let error = #expect(throws: CocoaError.self) { try gateway.readData(scratch.appending("images/thumbnail.png"), upTo: 8) }
+
+        // The file cannot be there, yet the code does not say missing: the DataSource asks `isDirectory` about
+        // every directory on a thumbnail's way before it reads.
+        #expect(error?.code != .fileNoSuchFile && error?.code != .fileReadNoSuchFile)
+    }
+
+    @Test("reading the bytes of a file without read permission throws FileHandle's no-permission error")
+    func readingLockedBytesThrows() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let locked = scratch.appending("locked.png")
+        try Data([1]).write(to: URL(fileURLWithPath: locked))
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked)
+
+        let error = #expect(throws: CocoaError.self) { try gateway.readData(locked, upTo: 8) }
+
+        // `fileWriteNoPermission`, not `readString`'s `fileReadNoPermission`: the DataSource words both as permission denied.
+        #expect(error?.code == .fileWriteNoPermission)
     }
 
     // MARK: createDirectory
