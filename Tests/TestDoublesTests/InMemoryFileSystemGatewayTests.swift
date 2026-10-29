@@ -181,10 +181,74 @@ struct InMemoryFileSystemGatewayTests {
         _ = try? fileSystem.contentsOfDirectory("/nope")
         _ = try? fileSystem.readString("/effects/a.lens/manifest.json")
         _ = try? fileSystem.readString("/effects/a.lens/effect.metal")
+        _ = try? fileSystem.readData("/effects/a.lens/thumbnail.png/", upTo: 9)
         try fileSystem.createDirectory("/effects")
 
         #expect(fileSystem.listings.values == ["/effects", "/nope"], "a trailing slash is the same path")
-        #expect(fileSystem.reads.values == ["/effects/a.lens/manifest.json", "/effects/a.lens/effect.metal"])
+        #expect(
+            fileSystem.reads.values == ["/effects/a.lens/manifest.json", "/effects/a.lens/effect.metal", "/effects/a.lens/thumbnail.png"],
+            "a read as bytes is a read")
+        #expect(fileSystem.dataReads.values == [.init(path: "/effects/a.lens/thumbnail.png", maxLength: 9)])
         #expect(fileSystem.createdDirectories.values == ["/effects"])
+    }
+
+    // MARK: Bytes
+
+    @Test("a file holds bytes: text is stored as UTF-8, and bytes read back as written, the first maxLength of them")
+    func bytesReadBack() throws {
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF])
+        fileSystem.write("/effects/a.lens/thumbnail.png", bytes: bytes)
+        fileSystem.write("/effects/a.lens/manifest.json", "色")
+
+        #expect(try fileSystem.readData("/effects/a.lens/thumbnail.png", upTo: 100) == bytes, "a shorter file is read whole")
+        #expect(try fileSystem.readData("/effects/a.lens/thumbnail.png", upTo: 6) == bytes)
+        #expect(try fileSystem.readData("/effects/a.lens/thumbnail.png", upTo: 2) == Data([0x89, 0x50]), "a longer one only that far")
+        #expect(try fileSystem.readData("/effects/a.lens/manifest.json", upTo: 10) == Data("色".utf8))
+        #expect(try fileSystem.contentsOfDirectory("/effects/a.lens") == ["manifest.json", "thumbnail.png"])
+    }
+
+    @Test("an empty file reads as no bytes, and as an empty string")
+    func emptyFile() throws {
+        fileSystem.write("/a/empty", bytes: Data())
+        #expect(try fileSystem.readData("/a/empty", upTo: 4).isEmpty)
+        #expect(try fileSystem.readString("/a/empty").isEmpty)
+    }
+
+    @Test("bytes that are not UTF-8 cannot be read as text, with the code the live gateway raises; as bytes they can")
+    func bytesThatAreNotText() throws {
+        fileSystem.write("/a/bad", bytes: Data([0xC3, 0x28]))
+
+        let error = #expect(throws: CocoaError.self) { try fileSystem.readString("/a/bad") }
+
+        #expect(error?.code == .fileReadCorruptFile)
+        #expect(try fileSystem.readData("/a/bad", upTo: 8) == Data([0xC3, 0x28]))
+    }
+
+    @Test("reading bytes fails as the live gateway's does: a missing path with `FileHandle`'s code, a directory, and a scripted error")
+    func readDataFailures() {
+        fileSystem.makeDirectory("/a/dir")
+        fileSystem.write("/a/locked", bytes: Data([1]))
+        fileSystem.failRead(of: "/a/locked", with: CocoaError(.fileReadNoPermission))
+
+        let missing = #expect(throws: CocoaError.self) { try fileSystem.readData("/a/nope", upTo: 1) }
+        let directory = #expect(throws: CocoaError.self) { try fileSystem.readData("/a/dir", upTo: 1) }
+        let locked = #expect(throws: CocoaError.self) { try fileSystem.readData("/a/locked", upTo: 1) }
+
+        #expect(missing?.code == .fileNoSuchFile, "not readString's fileReadNoSuchFile: FileHandle raises this one")
+        #expect(directory?.code == .fileReadUnknown)
+        #expect(locked?.code == .fileReadNoPermission)
+    }
+
+    @Test("bytes cannot be written over a directory or below a file: reported, and the tree is left as it was")
+    func bytesFollowTheTreeRules() throws {
+        fileSystem.makeDirectory("/a/dir")
+        fileSystem.write("/a/file", "x")
+
+        withKnownIssue("a directory cannot be written as a file") { fileSystem.write("/a/dir", bytes: Data([1])) }
+        withKnownIssue("a file has nothing under it") { fileSystem.write("/a/file/child", bytes: Data([1])) }
+
+        #expect(fileSystem.isDirectory("/a/dir"))
+        #expect(try fileSystem.readString("/a/file") == "x")
+        #expect(try fileSystem.contentsOfDirectory("/a") == ["dir", "file"])
     }
 }

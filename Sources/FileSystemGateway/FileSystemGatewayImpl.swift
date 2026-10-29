@@ -1,4 +1,4 @@
-/// Live `FileSystemGateway`: one `FileManager` / `String` call per method. Wraps Foundation.
+/// Live `FileSystemGateway`: one `FileManager` / `String` / `FileHandle` call per method. Wraps Foundation.
 /// Thin by rule: what a `.lens` package is, and what to do when a read fails, are
 /// `EffectPackageDataSource`'s, proven against `InMemoryFileSystemGateway`.
 import Domain
@@ -19,6 +19,14 @@ public struct FileSystemGatewayImpl: FileSystemGateway {
 
     public func readString(_ path: String) throws -> String {
         try String(contentsOfFile: path, encoding: .utf8)
+    }
+
+    /// `read(upToCount:)` stops at `maxLength`, so a larger file is never read whole; it answers `nil` for a
+    /// file that has nothing to read, which is no bytes here, settled by the expression as `isDirectory` settles its own.
+    public func readData(_ path: String, upTo maxLength: Int) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+        defer { try? handle.close() }
+        return try handle.read(upToCount: maxLength) ?? Data()
     }
 
     public func createDirectory(_ path: String) throws {

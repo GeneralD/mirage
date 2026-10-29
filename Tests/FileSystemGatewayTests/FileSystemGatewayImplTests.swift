@@ -133,11 +133,67 @@ struct FileSystemGatewayImplTests {
         defer { scratch.remove() }
         try Data([0xC3, 0x28]).write(to: URL(fileURLWithPath: scratch.appending("bad")))
 
-        // The fake holds Strings, so it cannot be given such a file (a test scripts one with `failRead`); this is what the
-        // live gateway raises for it, and it is not a missing-file error.
+        // This is what the live gateway raises for such a file, and it is not a missing-file error; the fake raises the
+        // same code for bytes written with `write(_:bytes:)` that are not UTF-8.
         let error = #expect(throws: CocoaError.self) { try gateway.readString(scratch.appending("bad")) }
 
         #expect(error?.code == .fileReadCorruptFile)
+    }
+
+    // MARK: readData
+
+    @Test("bytes read back as written, whatever they are, when the file is shorter than the bound")
+    func readsBytes() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF, 0xC3, 0x28])
+        try bytes.write(to: URL(fileURLWithPath: scratch.appending("thumbnail.png")))
+
+        #expect(try gateway.readData(scratch.appending("thumbnail.png"), upTo: 1_000) == bytes)
+        #expect(try gateway.readData(scratch.appending("thumbnail.png"), upTo: bytes.count) == bytes)
+    }
+
+    @Test("a file longer than the bound is read only that far")
+    func readsOnlyUpToTheBound() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let bytes = Data((0..<200_000).map { UInt8(truncatingIfNeeded: $0) })
+        try bytes.write(to: URL(fileURLWithPath: scratch.appending("large")))
+
+        #expect(try gateway.readData(scratch.appending("large"), upTo: 100_001) == bytes.prefix(100_001))
+    }
+
+    @Test("an empty file reads as no bytes")
+    func readsEmptyFileAsNoBytes() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        try Data().write(to: URL(fileURLWithPath: scratch.appending("empty")))
+
+        #expect(try gateway.readData(scratch.appending("empty"), upTo: 8).isEmpty)
+    }
+
+    @Test("reading the bytes of a path that does not exist throws FileHandle's no-such-file error, not readString's")
+    func readingMissingBytesThrows() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+
+        let error = #expect(throws: CocoaError.self) { try gateway.readData(scratch.appending("missing"), upTo: 8) }
+
+        // `FileHandle` reports the missing file as `fileNoSuchFile` where `String(contentsOfFile:)` says
+        // `fileReadNoSuchFile`; the DataSource takes either as missing, and the fake raises this one for `readData`.
+        #expect(error?.code == .fileNoSuchFile)
+    }
+
+    @Test("reading the bytes of a directory throws, and not a missing-file error")
+    func readingDirectoryBytesThrows() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+
+        let error = #expect(throws: (any Error).self) { try gateway.readData(scratch.path, upTo: 8) }
+
+        let code = (error as? CocoaError)?.code
+        #expect(error != nil)
+        #expect(code != .fileReadNoSuchFile && code != .fileNoSuchFile)
     }
 
     // MARK: createDirectory

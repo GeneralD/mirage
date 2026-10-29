@@ -1,6 +1,7 @@
 import Dependencies
 import Domain
 import EffectPackageDataSource
+import Foundation
 import TestDoubles
 
 /// The subject over an in-memory effects folder: the tree the test builds, the workspace that
@@ -57,6 +58,7 @@ struct ReversingFileSystemGateway: FileSystemGateway {
     func contentsOfDirectory(_ path: String) throws -> [String] { try base.contentsOfDirectory(path).reversed() }
     func isDirectory(_ path: String) -> Bool { base.isDirectory(path) }
     func readString(_ path: String) throws -> String { try base.readString(path) }
+    func readData(_ path: String, upTo maxLength: Int) throws -> Data { try base.readData(path, upTo: maxLength) }
     func createDirectory(_ path: String) throws { try base.createDirectory(path) }
 }
 
