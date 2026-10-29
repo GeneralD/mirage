@@ -9,11 +9,14 @@ extension EffectID {
 }
 
 extension EffectCatalogEntry {
-    /// An entry for `id`, shown as `displayName` (the key when omitted), `.ready` unless told otherwise, by no author unless one is given.
+    /// An entry for `id`, shown as `displayName` (the key when omitted), `.ready` unless told otherwise, by no author and with
+    /// no thumbnail unless one is given.
     public static func fixture(
-        _ id: EffectID, displayName: String? = nil, availability: EffectAvailability = .ready, author: String? = nil
+        _ id: EffectID, displayName: String? = nil, availability: EffectAvailability = .ready, author: String? = nil,
+        thumbnail: EffectThumbnail? = nil
     ) -> EffectCatalogEntry {
-        EffectCatalogEntry(id: id, displayName: displayName ?? id.key, origin: id.origin, availability: availability, author: author)
+        EffectCatalogEntry(
+            id: id, displayName: displayName ?? id.key, origin: id.origin, availability: availability, author: author, thumbnail: thumbnail)
     }
 }
 
