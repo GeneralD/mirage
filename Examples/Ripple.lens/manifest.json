@@ -2,5 +2,6 @@
   "formatVersion": 1,
   "name": "Ripple",
   "author": "Example Author",
-  "description": "The frame sways sideways like heat haze, in a smooth wave that drifts with time."
+  "description": "The frame sways sideways like heat haze, in a smooth wave that drifts with time.",
+  "thumbnail": "thumbnail.png"
 }
