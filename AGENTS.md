@@ -173,7 +173,8 @@ Shared conventions:
   is applying the last one), and owns the Interactor's `start()` / `stop()` (whoever wires the Presenter calls
   only its `start()` / `stop()`, never `effectInteractor.start()` (`App` and `DevHarness` are denied the key): a second
   `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the menu's
-  and the picker's Presenters in `init` and calls only the menu's `start()` / `stop()`: the host (`HostAppDelegate`) and the dev harness
+  and the picker's Presenters in `init`; its `start()` / `stop()` are the menu Presenter's (`stop()` closes the picker
+  first), and it starts the picker's Presenter only while the picker's window is open: the host (`HostAppDelegate`) and the dev harness
   (`HarnessMenu`, called by `HarnessAppDelegate`) start and stop the Router and nothing below it. `EffectMenu` (`Views`) draws the Presenter for
   the host's `MenuBarExtra(.menu)` and the harness's `NSHostingMenu` and decides nothing (a `Toggle` per row, the
   Presenter's flags and words); the host stays out of the Dock through `LSUIElement` in `project.yml`. *Browse Effects…*

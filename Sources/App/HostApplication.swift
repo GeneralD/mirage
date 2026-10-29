@@ -4,7 +4,8 @@ import SwiftUI
 import Views
 
 /// The host process entry point behind `Apps/Host/main.swift` (`HostApplication.main()`): a
-/// menu-bar application with no window, whose one scene is the effects menu. Staying out of
+/// menu-bar application whose one scene is the effects menu; its only window is the effect picker
+/// that menu opens, through the Router rather than as a scene. Staying out of
 /// the Dock is `LSUIElement` in the host's Info.plist (`project.yml`), not an activation
 /// policy set at launch, which would show the Dock icon until it ran.
 ///
