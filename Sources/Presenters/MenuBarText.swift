@@ -57,7 +57,9 @@ enum MenuBarText {
         }
     }
 
-    private static func detail(of entry: EffectCatalogEntry) -> String? {
+    /// A row's second line: a ready package's author, or why a broken package cannot be chosen.
+    /// The picker's cells say the same under their names.
+    static func detail(of entry: EffectCatalogEntry) -> String? {
         switch entry.availability {
         case .ready: entry.author
         case .broken(let problem): reason(problem)

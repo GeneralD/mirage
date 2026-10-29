@@ -327,30 +327,3 @@ private func startedPresenter(over interactor: SpyEffectInteractor) async -> Men
     await settle(presenter.$items) { !$0.isEmpty }
     return presenter
 }
-
-/// A `FakeEffectInteractor` that also counts its `state` subscriptions that were cancelled,
-/// which is how a test proves that a Presenter let go of the publisher.
-private final class SpyEffectInteractor: EffectInteractor, Sendable {
-    let inner: FakeEffectInteractor
-    /// One entry per `state` subscription that was cancelled.
-    let cancellations = Collector<Void>()
-
-    init(_ inner: FakeEffectInteractor) {
-        self.inner = inner
-    }
-
-    var state: AnyPublisher<EffectCatalogState, Never> {
-        let cancellations = cancellations
-        return inner.state.handleEvents(receiveCancel: { cancellations.append(()) }).eraseToAnyPublisher()
-    }
-
-    func publish(_ state: EffectCatalogState) { inner.publish(state) }
-    func start() { inner.start() }
-    func stop() { inner.stop() }
-    func select(_ id: EffectID) { inner.select(id) }
-    func openEffectsFolder() { inner.openEffectsFolder() }
-
-    var starts: Collector<Void> { inner.starts }
-    var selections: Collector<EffectID> { inner.selections }
-    var folderOpens: Collector<Void> { inner.folderOpens }
-}
