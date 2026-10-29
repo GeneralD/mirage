@@ -16,7 +16,7 @@ import Views
 /// dependencies of the scope it is made in), and no test here resolves the Interactor live or builds a
 /// Presenter outside such a scope (the override is `$0.effectInteractor = fake`): the live values of
 /// the catalog belong to `HarnessLiveWiringTests` (`scripts/check-live-owner.sh`), which also takes the
-/// default route, `HarnessMenu.live()`.
+/// default route, the menu's own `live()` factory.
 @MainActor
 @Suite("HarnessMenu", .timeLimit(.minutes(1)))
 struct HarnessMenuTests {

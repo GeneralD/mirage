@@ -50,7 +50,8 @@ public enum EffectManifestDecoding {
     /// path, so it cannot be told from one; read again as a `Double` the number is there, and the key is
     /// named by whoever reads the case. A value that is no number at all (text, `null`) fails both
     /// reads, and the second one's error names the key; a missing key never gets this far. A number
-    /// beyond even a `Double` (1e400) fails both with no path, and stays "not valid JSON".
+    /// beyond even a `Double` (1e400) fails the second read too, with no path, and stays "not valid
+    /// JSON". The rows of `EffectManifestDecodingTests` pin each of these.
     private enum FormatVersion: Decodable {
         case integer(Int)
         case number(Double)
@@ -70,6 +71,10 @@ public enum EffectManifestDecoding {
         number.rounded() == number ? "\"formatVersion\" is out of range" : "\"formatVersion\" is not an integer"
     }
 
+    /// `.dataCorrupted` has no key to name, so it is always "not valid JSON": the decoder reports a bad
+    /// escape met while a value is read (a lone surrogate in `name`) with an empty coding path, as it
+    /// does a truncated text or a number beyond a `Double`, and the manifest has no decoding strategy
+    /// that could raise it with a path of its own.
     private static func message(for error: any Error) -> String {
         guard let error = error as? DecodingError else { return "not valid JSON" }
         return switch error {
