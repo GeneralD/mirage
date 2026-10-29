@@ -9,7 +9,8 @@ import Views
 /// One window whose content is `PreviewView`, sized to the 1280 × 720 frame it
 /// shows (resize it and the preview's black bars appear), the main menu, the session
 /// and the menu's Router started once the window is up and stopped on termination.
-/// Closing the window quits. Importing `HostDependencyInjection` links the host's
+/// Closing that window quits, even while the effect picker the Effects menu opens is still
+/// up (the picker is a second window, so "the last window closed" would not cover it). Importing `HostDependencyInjection` links the host's
 /// live values, as `App` does.
 ///
 /// What remains here needs a running application: the window, the activation, and
@@ -31,6 +32,7 @@ final class HarnessAppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.mainMenu = menu.mainMenu
         window.title = "Dev Harness"
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.contentView = NSHostingView(rootView: PreviewView { [session] target in session.attach(target) })
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -44,7 +46,10 @@ final class HarnessAppDelegate: NSObject, NSApplicationDelegate {
         session.stop()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+}
+
+extension HarnessAppDelegate: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        NSApplication.shared.terminate(nil)
     }
 }

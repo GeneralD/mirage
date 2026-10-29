@@ -40,7 +40,8 @@ allowed_for() {
         Entity)                                  echo "Foundation" ;;
         Domain)                                  echo "Foundation Combine Dependencies Entity" ;;
         *DependencyInjection)                    echo "*" ;;
-        Views|AppRouter)              echo "$COMMON $UI_FRAMEWORKS" ;;
+        Views)                        echo "$COMMON $UI_FRAMEWORKS" ;;
+        AppRouter)                    echo "$COMMON $UI_FRAMEWORKS Views" ;;  # the wireframe builds the windows it opens
         App)                          echo "$COMMON $UI_FRAMEWORKS HostDependencyInjection AppRouter Views" ;;
         DevHarness)                   echo "$COMMON AppKit SwiftUI Views AppRouter HostDependencyInjection" ;;
         ExtensionApp)                 echo "$COMMON $UI_FRAMEWORKS ExtensionDependencyInjection" ;;

@@ -22,6 +22,9 @@ public final class MenuBarPresenter: ObservableObject {
     /// One line about the chosen effect when the last attempt to run it failed
     /// (`"<name>: compile failed"`); `nil` when it is running or nothing was attempted.
     @Published public private(set) var status: String?
+    /// Where *Browse Effects…* goes: the Router that built this Presenter, which opens the picker.
+    /// Weak, because the Router owns the Presenter; until a Router takes it the item does nothing.
+    public weak var router: (any MenuBarRouting)?
 
     @Dependency(\.effectInteractor) private var interactor
     /// What a started Presenter holds; `nil` when it was never started or has been stopped.
@@ -53,6 +56,11 @@ public final class MenuBarPresenter: ObservableObject {
 
     public func openEffectsFolder() {
         interactor.openEffectsFolder()
+    }
+
+    /// *Browse Effects…*: asks the Router for the picker's window.
+    public func browseEffects() {
+        router?.openEffectPicker()
     }
 
     private func apply(_ state: EffectCatalogState) {
