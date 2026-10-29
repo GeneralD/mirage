@@ -5,7 +5,6 @@ import Presenters
 import TestDoubles
 import TestSupport
 import Testing
-import Views
 
 /// The Router's half of the effect picker (#12): the window it opens from the menu's *Browse Effects…*,
 /// the picker's Presenter it starts and stops with that window, and the window's end, from the title bar

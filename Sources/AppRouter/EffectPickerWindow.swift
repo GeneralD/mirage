@@ -1,14 +1,17 @@
 import AppKit
 import Presenters
 import SwiftUI
+import Views
 
-/// The effect picker's window (#12): an `NSWindow` whose content is `EffectPickerView`, and the
+/// The effect picker's window (#12): it hosts `EffectPickerView` in an `NSWindow` and does the
 /// three things `AppRouter` does with it, which are to show it, close it and hear that it closed.
-/// AppKit glue, untested by design and free of decisions (`Views` is coverage-ignored): when the
-/// window opens or closes, and what its closing ends, are the Router's.
+/// AppKit glue, free of decisions: when the window opens or closes, and what its closing ends, are
+/// the Router's. It lives with the Router rather than in `Views`, which holds declarations only;
+/// `AppRouterPickerTests` makes one and closes it without showing it.
 ///
-/// It is its window's delegate, so a close from the title bar or ⌘W reaches `onClose` as one from
-/// `close()` does. It owns the window, so the window is not released when it closes.
+/// It is its window's delegate, so a close from the title bar, or from anything that sends
+/// `performClose:` or `close()`, reaches `onClose` as one from `close()` does. It owns the window,
+/// so the window is not released when it closes.
 @MainActor
 public final class EffectPickerWindow: NSObject {
     private let window: NSWindow

@@ -206,7 +206,7 @@ let package = Package(
 
         // ── Router (builds the Presenters, starts / stops the menu, opens / closes the picker window; View lane; host only) ──
         .target(name: "AppRouter", dependencies: dependencies + ["Presenters", "Views"]),
-        .testTarget(name: "AppRouterTests", dependencies: ["AppRouter", "Presenters", "Views"] + testDependencies),
+        .testTarget(name: "AppRouterTests", dependencies: ["AppRouter", "Presenters"] + testDependencies),
 
         // ── DependencyInjection (liveValue registrations, and dev-only substitutions that only assign one value) ──
         .target(

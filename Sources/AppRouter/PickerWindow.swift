@@ -1,5 +1,3 @@
-import Views
-
 /// The effect picker's window as `AppRouter` drives it (#12): shown when the menu asks for the
 /// picker, closed when the Router stops. The window reports a close through the `onClose` it was
 /// made with, whoever closed it, with itself as the argument, so the Router can tell its open

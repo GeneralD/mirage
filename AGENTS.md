@@ -178,7 +178,7 @@ Shared conventions:
   the host's `MenuBarExtra(.menu)` and the harness's `NSHostingMenu` and decides nothing (a `Toggle` per row, the
   Presenter's flags and words); the host stays out of the Dock through `LSUIElement` in `project.yml`. *Browse Effects…*
   goes through the Presenter's weak `router` to `AppRouter`, which opens the effect picker's window (at most one, made
-  by an injected `makePickerWindow`) and starts `EffectPickerPresenter` while it is open; that Presenter maps the same
+  by an injected `makePickerWindow`; the live one, `EffectPickerWindow`, is AppKit glue in `AppRouter`, not `Views`) and starts `EffectPickerPresenter` while it is open; that Presenter maps the same
   `state` to cells and only observes (it never starts or stops the Interactor), and the grid's `EffectPickerGeometry`
   is a pure type in `Presenters` because `Views` is coverage-ignored. Details: the *Key Design Decisions* entries in
   `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*, *Effect picker*).
