@@ -1,4 +1,3 @@
-import AppRouter
 import Clocks
 import Dependencies
 import Domain
