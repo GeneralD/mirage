@@ -44,7 +44,8 @@ import Testing
 ///
 /// **This suite is the only one that resolves `effectInteractor` and `effectCatalogUseCase` live**, so the
 /// first scope that builds them is always this test's, and `scripts/check-live-owner.sh` (in `make check`)
-/// fails when another test file names either key as a key path. The other suites that run `.live` are
+/// fails when another test file names either key as a key path or calls `HarnessMenu.live()`, which
+/// builds the live Router. The other suites that run `.live` are
 /// `HostEffectRegistrationsTests` and `HostFileGatewayRegistrationsTests` (`HostDependencyInjectionTests`):
 /// they resolve only values that hold nothing between calls (the Repositories, DataSources and DataStore
 /// of the catalog, which are structs, and the OS-boundary Gateways) and never those two keys. A new `.live`
