@@ -13,9 +13,9 @@ import Foundation
 /// - `author`, `description` and `thumbnail` are optional, and kept as written. Whether the
 ///   thumbnail's path can be used is `EffectThumbnailReading`'s, and one that cannot costs the
 ///   package only its picture; a `thumbnail` that is neither a string nor `null` is the wrong type,
-///   as it is for `author`. A key this build does not know is ignored, so a newer package can carry more than
-///   an older build reads; `parameters` is one of them until MVP-C interprets it, whatever shape
-///   its value has.
+///   as it is for `author`. A key this build does not know is ignored, so a newer package can
+///   carry more than an older build reads; `parameters` is one of them until MVP-C interprets it,
+///   whatever shape its value has.
 /// - Everything else that is wrong with the text (not JSON, not an object, a required key
 ///   missing, a value of the wrong type) is `manifestInvalid`, with a message that names the key.
 ///   The messages are built from the decoder's coding path and not from its own wording, so they

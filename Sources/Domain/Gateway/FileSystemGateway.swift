@@ -3,10 +3,9 @@ import Foundation
 
 /// Thin pass-through to the file system (live: `FileManager`, a UTF-8 read and a
 /// bounded `FileHandle` read), the only way the effect packages and the effects
-/// folder are touched. Paths are plain
-/// strings; nothing here interprets them, decides what a `.lens` package is or
-/// recovers from an error: that is `EffectPackageDataSource`'s, against
-/// `InMemoryFileSystemGateway`.
+/// folder are touched. Paths are plain strings; nothing here interprets them,
+/// decides what a `.lens` package is or recovers from an error: that is
+/// `EffectPackageDataSource`'s, against `InMemoryFileSystemGateway`.
 public protocol FileSystemGateway: Sendable {
     /// The names (not the paths) of what is in the directory at `path`, in no
     /// particular order. Throws when `path` does not exist, is not a directory or
@@ -26,8 +25,10 @@ public protocol FileSystemGateway: Sendable {
     /// The first `maxLength` bytes (`maxLength` is not negative) of the file at `path`, or all
     /// of them when it is shorter (none for an empty file): a longer file is read only that far,
     /// so a caller that bounds what it keeps never holds more. Throws when it does not exist
-    /// (`CocoaError.fileNoSuchFile`) or cannot be read. What it throws for a directory, or for a
-    /// path below a file, is not a code to rely on: ask `isDirectory` first.
+    /// or cannot be read. A file that does not exist throws a `CocoaError` with the code
+    /// `.fileNoSuchFile` (`FileHandle`'s, not the `.fileReadNoSuchFile` of `readString`). What
+    /// it throws for a directory, or for a path below a file, is not a code to rely on: ask
+    /// `isDirectory` first.
     func readData(_ path: String, upTo maxLength: Int) throws -> Data
 
     /// Makes the directory at `path` and any missing parents. A directory that is
