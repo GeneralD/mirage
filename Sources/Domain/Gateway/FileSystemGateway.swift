@@ -9,14 +9,17 @@ import Foundation
 public protocol FileSystemGateway: Sendable {
     /// The names (not the paths) of what is in the directory at `path`, in no
     /// particular order. Throws when `path` does not exist, is not a directory or
-    /// cannot be read.
+    /// cannot be read. A path that does not exist throws a `CocoaError` with the code
+    /// `.fileReadNoSuchFile`, which is how `EffectPackageDataSource` tells "missing"
+    /// from "unreadable"; any other error is read as unreadable.
     func contentsOfDirectory(_ path: String) throws -> [String]
 
     /// `true` only when `path` exists and is a directory.
     func isDirectory(_ path: String) -> Bool
 
     /// The UTF-8 contents of the file at `path`. Throws when it does not exist,
-    /// cannot be read or is not valid text.
+    /// cannot be read or is not valid text. A file that does not exist throws a
+    /// `CocoaError` with the code `.fileReadNoSuchFile`, as `contentsOfDirectory` does.
     func readString(_ path: String) throws -> String
 
     /// Makes the directory at `path` and any missing parents. A directory that is

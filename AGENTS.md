@@ -329,7 +329,7 @@ Shared conventions:
   `VirtualCameraRepository`, and `scripts/check-live-owner.sh` (in `make check`)
   fails when a test file other than that suite names `effectInteractor` or
   `effectCatalogUseCase` as a key path (an override, `$0.effectInteractor = fake`,
-  resolves nothing and stays free).
+  resolves nothing and stays free) or calls `HarnessMenu.live()`.
 - Host absence: the extension detects it by frame gap (watchdog every
   `frameGap / 4`, counted from the last frame, or from `start` while no host
   has been seen yet, so a host that never launched is lost too) and by dead-name

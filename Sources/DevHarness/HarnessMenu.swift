@@ -13,7 +13,7 @@ import Views
 /// Choosing an effect there is what the host's menu bar does, so the effect switch and the hot
 /// reload can be tried in the harness without the extension. `start()` and `stop()` are the
 /// Router's, called beside the session's as `HostAppDelegate` calls them; this resolves nothing
-/// itself (`scripts/check-dependency-keypaths.sh` denies the entry lane `\.effectInteractor`).
+/// itself (`scripts/check-dependency-keypaths.sh` denies `App` and `DevHarness` `\.effectInteractor`).
 ///
 /// The Router is built outside the session's substitution on purpose: the effects menu resolves
 /// nothing the discarding sink touches. `live()` is that construction, and the one place a Router

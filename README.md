@@ -84,8 +84,9 @@ Ripple.lens/
 }
 ```
 
-- `formatVersion` (required): the integer `1`. Any other integer is reported as unsupported; a number
-  that is not an integer (`1.5`) is reported as invalid.
+- `formatVersion` (required): the integer `1`. Any other integer that fits a 64-bit integer is
+  reported as unsupported; a number that is not an integer (`1.5`), or a whole number beyond that
+  range, is reported as invalid.
 - `name` (required): what the menu shows. Surrounding whitespace is trimmed; it cannot be empty.
 - `author`, `description` (optional).
 - Keys this version doesn't know are ignored, so a package can carry more than an older build
@@ -102,7 +103,9 @@ A package that can't be used is not left out. The menu lists it as a disabled it
 reason, so a mistake shows up where you made it: no `manifest.json`, a manifest that isn't valid
 JSON or lacks a required key, an unsupported `formatVersion`, no `effect.metal`, or a file the
 app can't read (permissions, or text that isn't UTF-8). Fix the file and the item comes back to
-life. A shader that doesn't compile is a different failure, reported when the effect is chosen.
+life. The reason is the item's second line, which macOS 14 may not draw: the disabled item is
+still listed, and the reason is then only in the app's log. A shader that doesn't compile is a
+different failure, reported when the effect is chosen.
 
 [`Examples/Ripple.lens`](Examples/Ripple.lens) is a complete package to start from.
 
