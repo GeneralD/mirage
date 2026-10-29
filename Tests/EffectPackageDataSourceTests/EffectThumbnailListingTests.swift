@@ -129,9 +129,17 @@ struct EffectThumbnailListingTests {
             path: "images/thumbnail.png", arrange: { $0.makeDirectory(Rig.file("p", "images")) },
             reason: "is missing", sink: .developer, read: true, watchedDirectories: [Rig.file("p", "images")], watchedFiles: []),
         Unusable(
-            name: "a directory on its way that is missing is not watched: the package directory hears it made",
+            name: "a directory on its way that is missing makes the file missing, unread; the package directory hears it made",
             path: "images/thumbnail.png", arrange: { _ in },
-            reason: "is missing", sink: .developer, read: true, watchedDirectories: [], watchedFiles: []),
+            reason: "is missing", sink: .developer, read: false, watchedDirectories: [], watchedFiles: []),
+        Unusable(
+            name: "a file where a directory on its way should be makes the file missing, unread, whatever code a read would raise",
+            path: "images/small/thumbnail.png",
+            arrange: {
+                $0.makeDirectory(Rig.file("p", "images"))
+                $0.write(Rig.file("p", "images/small"), "a file")
+            },
+            reason: "is missing", sink: .developer, read: false, watchedDirectories: [Rig.file("p", "images")], watchedFiles: []),
         Unusable(
             name: "a file is missing by readString's no-such-file code too, not only by FileHandle's",
             path: "thumbnail.png",
@@ -157,18 +165,28 @@ struct EffectThumbnailListingTests {
             path: "thumbnail.png", arrange: { $0.write(Rig.file("p", "thumbnail.png"), bytes: Data()) },
             reason: "is not a PNG or JPEG image", sink: .developer, read: true, watchedDirectories: [], watchedFiles: [thumbnail]),
         Unusable(
-            name: "a file that is there and cannot be read for lack of permission is an error",
+            name: "a file that is there and cannot be read for lack of permission is an error, by the code FileHandle raises",
             path: "thumbnail.png",
             arrange: {
                 $0.write(Rig.file("p", "thumbnail.png"), bytes: Rig.png)
-                $0.failRead(of: Rig.file("p", "thumbnail.png"), with: CocoaError(.fileReadNoPermission))
+                $0.failRead(of: Rig.file("p", "thumbnail.png"), with: CocoaError(.fileWriteNoPermission))
             },
             reason: "could not be read: permission denied", sink: .error, read: true, watchedDirectories: [], watchedFiles: [thumbnail]),
         Unusable(
-            name: "a directory where the file should be is an error",
-            path: "thumbnail.png", arrange: { $0.makeDirectory(Rig.file("p", "thumbnail.png")) },
+            name: "a file that is there and cannot be read for another reason is an error with the code",
+            path: "thumbnail.png",
+            arrange: {
+                $0.write(Rig.file("p", "thumbnail.png"), bytes: Rig.png)
+                $0.failRead(of: Rig.file("p", "thumbnail.png"), with: CocoaError(.fileReadUnknown))
+            },
             reason: "could not be read: Cocoa error \(CocoaError.Code.fileReadUnknown.rawValue)", sink: .error, read: true,
             watchedDirectories: [], watchedFiles: [thumbnail]),
+        Unusable(
+            name: "a directory where the file should be is refused unread, and only the directory it is in is watched",
+            path: "images/thumbnail.png",
+            arrange: { $0.makeDirectory(Rig.file("p", "images/thumbnail.png")) },
+            reason: "is a directory, not a file", sink: .developer, read: false, watchedDirectories: [Rig.file("p", "images")],
+            watchedFiles: []),
         Unusable(
             name: "a read that fails with an error that is not a Cocoa error",
             path: "thumbnail.png", arrange: { $0.failRead(of: Rig.file("p", "thumbnail.png"), with: UnexpectedFailure()) },
@@ -255,7 +273,7 @@ struct EffectThumbnailListingTests {
         rig.files.write(Rig.file("p", "thumbnail.png"), bytes: Rig.png)
         let appeared = await rig.subject.packages()
         rig.files.write(Rig.file("p", "thumbnail.png"), bytes: Rig.jpeg)
-        let edited = await rig.subject.package(.package("p"))
+        let edited = await rig.subject.packages()
         rig.files.remove(Rig.file("p", "thumbnail.png"))
         let removed = await rig.subject.packages()
 
@@ -263,8 +281,27 @@ struct EffectThumbnailListingTests {
         #expect(absent.watchSet.files == [Rig.manifest("p"), Rig.shader("p")])
         #expect(appeared.listings.map(\.thumbnail) == [EffectThumbnail(data: Rig.png, format: .png)])
         #expect(appeared.watchSet.files == [Rig.manifest("p"), Rig.shader("p"), Rig.file("p", "thumbnail.png")], "watched from then on")
-        #expect(edited?.thumbnail == EffectThumbnail(data: Rig.jpeg, format: .jpeg), "`package(_:)` reads it as the listing does")
+        #expect(edited.listings.map(\.thumbnail) == [EffectThumbnail(data: Rig.jpeg, format: .jpeg)])
         #expect(removed.listings.map(\.thumbnail) == [nil])
+    }
+
+    @Test("`package(_:)`, the read a source is prepared from, answers without the picture: it reads none, and logs nothing for one")
+    func onePackageLeavesThePictureOut() async {
+        let rig = Rig()
+        rig.writePackage("p", thumbnail: "thumbnail.png")
+        rig.files.write(Rig.file("p", "thumbnail.png"), bytes: Rig.png)
+        rig.writePackage("q", thumbnail: "thumbnail.png")
+        rig.files.failRead(of: Rig.file("q", "thumbnail.png"), with: CocoaError(.fileWriteNoPermission))
+
+        let p = await rig.subject.package(.package("p"))
+        let q = await rig.subject.package(.package("q"))
+
+        #expect(p == .ready(Self.package(thumbnail: "thumbnail.png")))
+        #expect(q.map { if case .ready = $0 { true } else { false } } == true)
+        #expect(q?.thumbnail == nil)
+        #expect(rig.files.dataReads.values.isEmpty)
+        #expect(rig.errors.entries.values.isEmpty)
+        #expect(rig.developer.entries.values.isEmpty)
     }
 }
 

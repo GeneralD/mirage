@@ -13,7 +13,8 @@ public protocol EffectPackages: Sendable {
     func packages() async -> EffectPackageInventory
 
     /// One package read afresh, `nil` when the folder has none under that id. The
-    /// source a `prepare` compiles comes from here, so a hot reload sees the edit.
+    /// source a `prepare` compiles comes from here, so a hot reload sees the edit. A
+    /// ready package comes without its thumbnail, which travels with `packages()`.
     func package(_ id: EffectID) async -> EffectPackageListing?
 
     /// Shows the effects folder to the user (Finder), making it first when it is not there.

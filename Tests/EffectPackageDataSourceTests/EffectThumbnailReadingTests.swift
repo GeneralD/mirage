@@ -119,7 +119,8 @@ struct EffectThumbnailReadingTests {
             (.outsidePackage, "has a `..` component, which could leave the package"),
             (.unsupportedType, "is not a .png, .jpg or .jpeg file"),
             (.missing, "is missing"),
-            (.unreadable("permission denied"), "could not be read: permission denied"),
+            (.directory, "is a directory, not a file"),
+            (.unreadable(reason: "permission denied"), "could not be read: permission denied"),
             (.tooLarge, "is larger than 1048576 bytes"),
             (.notAnImage, "is not a PNG or JPEG image"),
         ]
