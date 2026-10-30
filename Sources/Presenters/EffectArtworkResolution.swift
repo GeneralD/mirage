@@ -14,7 +14,7 @@ extension EffectArtworkResolution: Equatable where Image: Equatable {}
 extension EffectArtworkResolution: Sendable where Image: Sendable {}
 
 /// Decides what a cell draws for `artwork`. A thumbnail is handed to `decode`, which answers `nil`
-/// for bytes it cannot turn into a picture: the data half of the catalog checked a thumbnail's size
+/// for bytes it cannot turn into a picture: the package DataSource checked a thumbnail's size
 /// and signature only, so a failed decode is expected, and it is answered with the tile the artwork
 /// carries, never with an empty cell. A placeholder is never decoded.
 public func resolveArtwork<Image>(
