@@ -1,19 +1,20 @@
 import Domain
 import SwiftUI
 
-/// One cell of the effect picker: the tile, the name, the second line, an accent border on the
-/// chosen effect, and the cell's `help` when the pointer rests on it. The whole cell is the button,
-/// so a click on the tile, the words or the space between them chooses the effect; a disabled cell
-/// is dimmed and takes no click.
+/// One cell of the effect picker: the artwork (the thumbnail, or a tile), the name, the second line,
+/// an accent border on the chosen effect, and the cell's `help` when the pointer rests on it. The
+/// whole cell is the button, so a click on the artwork, the words or the space between them
+/// chooses the effect; a disabled cell is dimmed and takes no click.
 struct EffectPickerCellView: View {
     let cell: EffectPickerCell
     let width: Double
+    let decode: (EffectThumbnail) -> CGImage?
     let choose: () -> Void
 
     var body: some View {
         Button(action: choose) {
             VStack(alignment: .leading, spacing: 4) {
-                EffectArtworkView(artwork: cell.artwork)
+                EffectArtworkView(artwork: cell.artwork, decode: decode)
                     .frame(width: width, height: width)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay {

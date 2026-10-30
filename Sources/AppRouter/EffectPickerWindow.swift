@@ -7,7 +7,8 @@ import Views
 /// three things `AppRouter` does with it, which are to show it, close it and hear that it closed.
 /// AppKit glue, free of decisions: when the window opens or closes, and what its closing ends, are
 /// the Router's. It lives with the Router rather than in `Views`, which holds declarations only;
-/// `AppRouterPickerTests` makes one and closes it without showing it.
+/// `AppRouterPickerTests` makes one and closes it without showing it. It hands the view
+/// `EffectThumbnailDecoding`, the one call that makes a picture of a thumbnail's bytes.
 ///
 /// It is its window's delegate, so a close from the title bar, or from anything that sends
 /// `performClose:` or `close()`, reaches `onClose` as one from `close()` does. It owns the window,
@@ -27,7 +28,8 @@ public final class EffectPickerWindow: NSObject {
         super.init()
         window.title = "Effects"
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: EffectPickerView(presenter: presenter))
+        window.contentView = NSHostingView(
+            rootView: EffectPickerView(presenter: presenter, decode: EffectThumbnailDecoding.image(of:)))
         window.delegate = self
         window.center()
     }
