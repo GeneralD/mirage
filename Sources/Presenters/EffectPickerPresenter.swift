@@ -4,8 +4,8 @@ import Domain
 
 /// The effect picker's display state (#12): the grid's cells, the search above them and the
 /// menu's line about how the last attempt to run the chosen effect went. It turns
-/// `EffectInteractor.state` into `@Published` values a View draws; the words, flags and placeholder
-/// tiles are pure functions (`EffectPickerText.swift`), and drawing them is not its job.
+/// `EffectInteractor.state` into `@Published` values a View draws; the words, flags and artwork
+/// are pure functions (`EffectPickerText.swift`), and drawing them is not its job.
 ///
 /// It reads the same Interactor as `MenuBarPresenter`, so what the picker shows as chosen is what
 /// the menu checks, and a choice made in either shows in both. It only observes: the Interactor's

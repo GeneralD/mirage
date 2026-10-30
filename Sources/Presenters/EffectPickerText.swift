@@ -1,10 +1,10 @@
 import Domain
 import Foundation
 
-// The words, flags and placeholder tiles of the effect picker, as pure functions of the catalog's
-// state and the search, so that `EffectPickerPresenter` only moves them into its `@Published`
-// values. The second line and the status are the menu's (`MenuBarText`), so the two never word
-// the same thing differently.
+// The words, flags and artwork of the effect picker, as pure functions of the catalog's state and
+// the search, so that `EffectPickerPresenter` only moves them into its `@Published` values. The
+// second line and the status are the menu's (`MenuBarText`), so the two never word the same thing
+// differently.
 
 /// The cells for `state` whose name or author contains the search, in the catalog's order. A
 /// search that is empty once trimmed matches every entry.
@@ -23,7 +23,17 @@ func pickerEmptyMessage(of state: EffectCatalogState, matching query: String) ->
     return "No effects match “\(term)”"
 }
 
-/// The tile a cell draws while the catalog carries no thumbnail.
+/// What a cell draws above its name: the thumbnail the catalog carries for the entry, with the
+/// entry's own tile to fall back on when the bytes do not decode, or that tile alone when the
+/// entry has no thumbnail (a bundled effect, a package whose manifest names none or names one that
+/// cannot be used, and a broken package: the catalog gives those none).
+func artwork(of entry: EffectCatalogEntry) -> EffectArtwork {
+    let tile = placeholder(of: entry)
+    return entry.thumbnail.map { .image($0, fallback: tile) } ?? .placeholder(tile)
+}
+
+/// The tile a cell draws when it has no picture to show: the entry has no thumbnail, or its
+/// thumbnail does not decode.
 func placeholder(of entry: EffectCatalogEntry) -> EffectPlaceholder {
     EffectPlaceholder(monogram: monogram(of: entry.displayName), hue: placeholderHue(of: entry.id))
 }
@@ -58,7 +68,7 @@ private func pickerCell(of entry: EffectCatalogEntry, selection: EffectID) -> Ef
         isSelected: entry.id == selection,
         isEnabled: entry.availability == .ready,
         help: help(of: entry),
-        artwork: .placeholder(placeholder(of: entry)))
+        artwork: artwork(of: entry))
 }
 
 /// The whole of what the cell can only abbreviate: the name and the author, or the name and why

@@ -122,6 +122,65 @@ struct EffectPickerPresenterTests {
         #expect(hues == hashed)
     }
 
+    // MARK: - Artwork
+
+    @Test("an effect whose entry carries a thumbnail gets the picture, in either format, with its own tile to fall back on")
+    func artworkWithAPicture() async {
+        let png = EffectThumbnail.fixture(1, format: .png)
+        let jpeg = EffectThumbnail.fixture(2, format: .jpeg)
+        let glow = EffectCatalogEntry.fixture(.package("glow"), displayName: "Glow", thumbnail: png)
+        let mist = EffectCatalogEntry.fixture(.package("mist"), displayName: "Mist Veil", thumbnail: jpeg)
+        let rig = PickerRig(state: .fixture([glow, mist]))
+
+        await rig.start()
+
+        #expect(
+            rig.presenter.cells.map(\.artwork) == [
+                .image(png, fallback: EffectPlaceholder(monogram: "G", hue: hue(of: "package:glow"))),
+                .image(jpeg, fallback: EffectPlaceholder(monogram: "MV", hue: hue(of: "package:mist"))),
+            ])
+    }
+
+    @Test("an effect without a thumbnail, the bundled one included, gets the tile alone")
+    func artworkWithoutAPicture() async {
+        let plain = EffectCatalogEntry.fixture(.package("plain"), displayName: "Plain", author: "Ada")
+        let rig = PickerRig(state: .fixture([chromatic, plain]))
+
+        await rig.start()
+
+        #expect(
+            rig.presenter.cells.map(\.artwork) == [
+                .placeholder(EffectPlaceholder(monogram: "CG", hue: hue(of: "bundled:Chromatic Grain"))),
+                .placeholder(EffectPlaceholder(monogram: "P", hue: hue(of: "package:plain"))),
+            ])
+    }
+
+    @Test("a package that failed to load gets the tile alone: the catalog gives it no thumbnail, and its cell is dimmed")
+    func artworkOfABrokenPackage() async {
+        let rig = PickerRig(state: .fixture([chromatic, broken]))
+
+        await rig.start()
+
+        #expect(rig.presenter.cells.map(\.artwork).last == .placeholder(EffectPlaceholder(monogram: "O", hue: hue(of: "package:old"))))
+        #expect(rig.presenter.cells.map(\.isEnabled) == [true, false])
+    }
+
+    @Test("a picture that is replaced replaces the cell's artwork, and the tile it falls back on stays the same")
+    func replacedPictureReplacesTheArtwork() async {
+        let before = EffectThumbnail.fixture(1)
+        let after = EffectThumbnail.fixture(2)
+        let tile = EffectPlaceholder(monogram: "G", hue: hue(of: "package:glow"))
+        let rig = PickerRig(state: .fixture([.fixture(.package("glow"), displayName: "Glow", thumbnail: before)]))
+        await rig.start()
+        #expect(rig.presenter.cells.map(\.artwork) == [.image(before, fallback: tile)])
+
+        rig.interactor.publish(.fixture([.fixture(.package("glow"), displayName: "Glow", thumbnail: after)]))
+        await settle(rig.presenter.$cells) { $0.map(\.artwork) == [.image(after, fallback: tile)] }
+
+        rig.interactor.publish(.fixture([.fixture(.package("glow"), displayName: "Glow")]))
+        await settle(rig.presenter.$cells) { $0.map(\.artwork) == [.placeholder(tile)] }
+    }
+
     // MARK: - Search
 
     @Test(
