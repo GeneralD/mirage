@@ -13,9 +13,9 @@ macOS, with effects you can write, drop in, and share without rebuilding the app
 > **Pre-alpha.** The architecture is settled (see `docs/ARCHITECTURE.md`). The frame path, the
 > bundled effect and the preview run today in the dev harness (`swift run dev-harness`, below).
 > Runtime `.lens` loading and hot reload are built into it and covered end to end by the loopback
-> tests, and the Effects menu's Presenter by a live-wiring test; how the menu looks and how fast
-> any of it reacts on a device have not been checked yet. The virtual camera itself still awaits
-> its first run on a device through the Camera Extension.
+> tests, and the Effects menu's Presenter by a live-wiring test; how the menu and the effect
+> picker look and how fast any of it reacts on a device have not been checked yet. The virtual
+> camera itself still awaits its first run on a device through the Camera Extension.
 
 ## How it works
 
@@ -26,7 +26,8 @@ webcam ──▶ mirage (host app) ──▶ Metal effect (.lens, compiled at ru
 - **Effects are `.lens` packages**: a `manifest.json` (name, author, description, an optional
   thumbnail; parameters arrive with MVP-C) plus an `effect.metal` written in the Metal Shading
   Language, compiled on the fly with `MTLDevice.makeLibrary(source:)` (see [Packaging](#packaging)). Drop a package
-  into the effects folder and it appears in the menu bar; edit the shader and it hot-reloads.
+  into the effects folder and it appears in the menu bar and in the effect picker (*Browse Effects…*,
+  a grid of thumbnails); edit the shader and it hot-reloads.
 - **The virtual camera is a CoreMediaIO Camera Extension** (the only mechanism macOS 14+ still
   allows), so it works in every app that lists cameras.
 - **Untrusted shaders can't take the app down**: each effect runs in its own command buffer;
@@ -90,14 +91,17 @@ Ripple.lens/
   reported as unsupported; a number that is not an integer (`1.5`), or a whole number beyond that
   range, is reported as invalid.
 - `name` (required): what the menu shows. Surrounding whitespace is trimmed; it cannot be empty.
-- `author`, `description` (optional).
-- `thumbnail` (optional): a picture for the effect picker (coming with #12; the menu does not show
-  it yet), a PNG or JPEG file inside the package, given by its path relative to the package
+- `author`, `description` (optional): the effect picker's hover shows them, the description on a line
+  after the author (without the whitespace around it, and cut at 280 characters).
+- `thumbnail` (optional): a picture for the effect picker's cell (the menu does not show it), a
+  PNG or JPEG file inside the package, given by its path relative to the package
   (`thumbnail.png`, `images/thumb.jpg`) and at most 1 MiB. A path that is absolute or has a `..`
   segment (`../thumb.png`, even `images/../thumb.png`), a file that is missing, a directory, larger
   than 1 MiB, not named `.png` / `.jpg` / `.jpeg` or not really a PNG or JPEG costs the effect only
   its picture: it still loads, and the reason goes to the app's log (at debug level; a file that is
-  there and cannot be read is an error).
+  there and cannot be read is an error). A picture that does not decode, or has more than
+  2048 × 2048 pixels in all (about 4 megapixels), is drawn like a missing one: the effect's coloured
+  tile with its initials. The cell is a few hundred points wide, so 512 × 512 is plenty.
 - Keys this version doesn't know are ignored, so a package can carry more than an older build
   reads. A `parameters` list is read past for now; the parameter UI is MVP-C.
 - `effect.metal` is the kernel described above, entry point `effect`, and nothing else: no
@@ -143,6 +147,7 @@ Conventions for contributors and AI agents: [`AGENTS.md`](AGENTS.md), [`.claude/
 | M0 | Pass-through frame visible in Zoom via the real Camera Extension |
 | MVP-A | One bundled effect end to end: camera → GPU → preview in the dev harness and the loopback (the extension path is M0's) |
 | MVP-B (landed, epic #42) | Runtime `.lens` loading, hot reload, menu switching; timings on a device still to be measured |
+| Effect picker (landed, #12) | Thumbnail grid opened from the menu (*Browse Effects…*): search, the chosen effect marked, the manifest's picture or a coloured tile; the live camera preview above it is #68, and how it looks on a device is still to be checked |
 | MVP-C | Parameter UI generated from the manifest |
 | MVP-D | Pass-through on failure, auto-disable |
 | Later | Face landmarks / person segmentation inputs, GLSL (Shadertoy) import, URL/Git import, gallery |

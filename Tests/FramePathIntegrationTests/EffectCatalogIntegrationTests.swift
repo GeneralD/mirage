@@ -55,6 +55,7 @@ struct EffectCatalogIntegrationTests {
         #expect(state.entries.map(\.id) == [Self.bundledID, Neon.id], "the bundled effect first, then the package")
         #expect(entry.displayName == "Neon")
         #expect(entry.author == "Example Author")
+        #expect(entry.description == "Tubes that hum", "the manifest's description travels with the entry for the picker's hover")
         #expect(entry.availability == .ready)
         #expect(entry.origin == .package)
         #expect(state.selection == Self.bundledID, "listing a package chooses nothing")
@@ -282,7 +283,7 @@ extension EffectCatalogIntegrationTests {
         static let directory = "\(CatalogSide.folder)/neon.lens"
         static let manifestPath = "\(directory)/manifest.json"
         static let sourcePath = "\(directory)/effect.metal"
-        static let manifest = #"{"formatVersion": 1, "name": "Neon", "author": "Example Author"}"#
+        static let manifest = #"{"formatVersion": 1, "name": "Neon", "author": "Example Author", "description": "Tubes that hum"}"#
         static let thumbnailPath = "\(directory)/thumbnail.png"
         static let manifestWithThumbnail = #"{"formatVersion": 1, "name": "Neon", "author": "Example Author", "thumbnail": "thumbnail.png"}"#
         static let first = "// Neon, first version\nkernel void effect() {}"

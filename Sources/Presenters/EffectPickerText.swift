@@ -1,10 +1,10 @@
 import Domain
 import Foundation
 
-// The words, flags and placeholder tiles of the effect picker, as pure functions of the catalog's
-// state and the search, so that `EffectPickerPresenter` only moves them into its `@Published`
-// values. The second line and the status are the menu's (`MenuBarText`), so the two never word
-// the same thing differently.
+// The words, flags and artwork of the effect picker, as pure functions of the catalog's state and
+// the search, so that `EffectPickerPresenter` only moves them into its `@Published` values. The
+// second line and the status are the menu's (`MenuBarText`), so the two never word the same thing
+// differently.
 
 /// The cells for `state` whose name or author contains the search, in the catalog's order. A
 /// search that is empty once trimmed matches every entry.
@@ -23,7 +23,17 @@ func pickerEmptyMessage(of state: EffectCatalogState, matching query: String) ->
     return "No effects match “\(term)”"
 }
 
-/// The tile a cell draws while the catalog carries no thumbnail.
+/// What a cell draws above its name: the thumbnail the catalog carries for the entry, with the
+/// entry's own tile to fall back on when the bytes do not decode, or that tile alone when the
+/// entry has no thumbnail (a bundled effect, a package whose manifest names none or names one that
+/// cannot be used, and a broken package: the catalog gives those none).
+func artwork(of entry: EffectCatalogEntry) -> EffectArtwork {
+    let tile = placeholder(of: entry)
+    return entry.thumbnail.map { .image($0, fallback: tile) } ?? .placeholder(tile)
+}
+
+/// The tile a cell draws when it has no picture to show: the entry has no thumbnail, or its
+/// thumbnail does not decode.
 func placeholder(of entry: EffectCatalogEntry) -> EffectPlaceholder {
     EffectPlaceholder(monogram: monogram(of: entry.displayName), hue: placeholderHue(of: entry.id))
 }
@@ -58,17 +68,32 @@ private func pickerCell(of entry: EffectCatalogEntry, selection: EffectID) -> Ef
         isSelected: entry.id == selection,
         isEnabled: entry.availability == .ready,
         help: help(of: entry),
-        artwork: .placeholder(placeholder(of: entry)))
+        artwork: artwork(of: entry))
 }
 
-/// The whole of what the cell can only abbreviate: the name and the author, or the name and why
-/// it cannot be chosen.
+/// What the cell can only abbreviate: for an effect that can be chosen, its name and author, and
+/// the manifest's description on a line of its own after them; for a broken package, the name and
+/// why it cannot be chosen.
 private func help(of entry: EffectCatalogEntry) -> String {
-    switch (entry.availability, entry.author) {
-    case (.ready, let author?): "\(entry.displayName) by \(author)"
-    case (.ready, nil): entry.displayName
-    case (.broken(let problem), _): "\(entry.displayName) cannot be chosen: \(MenuBarText.reason(problem))"
+    switch entry.availability {
+    case .ready:
+        let name = entry.author.map { "\(entry.displayName) by \($0)" } ?? entry.displayName
+        return [name, helpDescription(of: entry)].compactMap(\.self).joined(separator: "\n")
+    case .broken(let problem):
+        return "\(entry.displayName) cannot be chosen: \(MenuBarText.reason(problem))"
     }
+}
+
+/// The most characters of a description that a hover shows: a longer one is cut, so that a manifest
+/// cannot make a tooltip the size of a file.
+private let helpDescriptionLimit = 280
+
+/// The entry's description for the hover: without the whitespace around it, cut at
+/// `helpDescriptionLimit` characters with an ellipsis, and `nil` when it says nothing (the manifest
+/// names none, or a blank one).
+private func helpDescription(of entry: EffectCatalogEntry) -> String? {
+    guard let text = entry.description?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+    return text.count > helpDescriptionLimit ? String(text.prefix(helpDescriptionLimit)) + "…" : text
 }
 
 /// The search as it is matched: without the whitespace around it.

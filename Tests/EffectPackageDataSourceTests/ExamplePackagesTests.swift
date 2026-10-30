@@ -70,6 +70,7 @@ struct ExamplePackagesTests {
             return package
         }.first
         #expect(ripple?.thumbnail?.format == .png, "Ripple names the thumbnail.png the README shows, and it is read")
+        #expect(ripple?.manifest.description?.isEmpty == false, "Ripple carries the description the README shows, which the picker's hover adds")
         #expect(rig.errors.entries.values.isEmpty)
         #expect(rig.developer.entries.values.isEmpty)
     }

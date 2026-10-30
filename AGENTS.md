@@ -79,9 +79,10 @@ Shared conventions:
 - A `.lens` package is a directory `<id>.lens/` in the effects folder
   (`~/Library/Application Support/<host bundle id>/Effects`, the path comes from
   `AppDirectoriesProvider`) holding `manifest.json` (`formatVersion` 1 and
-  `name`; optional `author` / `description` / `thumbnail`, the last a path
-  to a PNG or JPEG of at most 1 MiB inside the package, which costs the
-  package only its picture when it cannot be used; unknown keys, `parameters`
+  `name`; optional `author` / `description` / `thumbnail`, the picker's hover
+  shows the description after the author, and the last is a path to a PNG or
+  JPEG of at most 1 MiB inside the package, which costs the package only its
+  picture when it cannot be used (the picker then draws the effect's tile); unknown keys, `parameters`
   included, ignored) and `effect.metal` (entry point `effect`, compiled behind
   the prelude). The id is the directory name without the suffix.
   `EffectPackageDataSource` reads it through `FileSystemGateway` and lists a
@@ -183,7 +184,8 @@ Shared conventions:
   goes through the Presenter's weak `router` to `AppRouter`, which opens the effect picker's window (at most one, made
   by an injected `makePickerWindow`; the live one, `EffectPickerWindow`, is AppKit glue in `AppRouter`, not `Views`) and starts `EffectPickerPresenter` while it is open; that Presenter maps the same
   `state` to cells and only observes (it never starts or stops the Interactor), and the grid's `EffectPickerGeometry`
-  is a pure type in `Presenters` because `Views` is coverage-ignored. Details: the *Key Design Decisions* entries in
+  and the choice between a decoded thumbnail and the effect's tile (`resolveArtwork`) are pure and in `Presenters` because
+  `Views` is coverage-ignored; the live decode (`EffectThumbnailDecoding`) is in `AppRouter` and reaches the view as a closure. Details: the *Key Design Decisions* entries in
   `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*, *Effect picker*).
 
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only

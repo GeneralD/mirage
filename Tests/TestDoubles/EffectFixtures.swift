@@ -10,13 +10,14 @@ extension EffectID {
 
 extension EffectCatalogEntry {
     /// An entry for `id`, shown as `displayName` (the key when omitted), `.ready` unless told otherwise, by no author and with
-    /// no thumbnail unless one is given.
+    /// no thumbnail or description unless one is given.
     public static func fixture(
         _ id: EffectID, displayName: String? = nil, availability: EffectAvailability = .ready, author: String? = nil,
-        thumbnail: EffectThumbnail? = nil
+        thumbnail: EffectThumbnail? = nil, description: String? = nil
     ) -> EffectCatalogEntry {
         EffectCatalogEntry(
-            id: id, displayName: displayName ?? id.key, origin: id.origin, availability: availability, author: author, thumbnail: thumbnail)
+            id: id, displayName: displayName ?? id.key, origin: id.origin, availability: availability, author: author, thumbnail: thumbnail,
+            description: description)
     }
 }
 
@@ -46,15 +47,17 @@ extension EffectCatalogState {
 }
 
 extension EffectPackage {
-    /// A package whose manifest is valid, names `author` if one is given, whose source is `source`, and which was read
+    /// A package whose manifest is valid, names `author` and `description` if given, whose source is `source`, and which was read
     /// with `thumbnail` (its manifest naming `thumbnail.png` for it).
     public static func fixture(
         _ id: EffectID, name: String? = nil, author: String? = nil, source: String = "kernel void effect() {}",
-        thumbnail: EffectThumbnail? = nil
+        thumbnail: EffectThumbnail? = nil, description: String? = nil
     ) -> EffectPackage {
         EffectPackage(
             id: id,
-            manifest: EffectManifest(formatVersion: 1, name: name ?? id.key, author: author, thumbnail: thumbnail.map { _ in "thumbnail.png" }),
+            manifest: EffectManifest(
+                formatVersion: 1, name: name ?? id.key, author: author, description: description,
+                thumbnail: thumbnail.map { _ in "thumbnail.png" }),
             source: EffectSource(name: name ?? id.key, source: source),
             thumbnail: thumbnail)
     }

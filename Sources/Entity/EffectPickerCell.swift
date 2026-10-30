@@ -30,15 +30,20 @@ public struct EffectPickerCell: Sendable, Hashable, Identifiable {
     }
 }
 
-/// What a picker cell draws above its name. Every cell draws a placeholder until the catalog
-/// carries a package's thumbnail (#12); the image joins this enum as a case of its own then.
+/// What a picker cell draws above its name: the picture its package's manifest names, or a
+/// placeholder tile when there is none (#12).
 public enum EffectArtwork: Sendable, Hashable {
-    /// A tile of one hue with the effect's initials on it.
+    /// A tile of one hue with the effect's initials on it: what an effect without a thumbnail draws.
     case placeholder(EffectPlaceholder)
+    /// The package's thumbnail. The bytes passed the catalog's checks (size, signature) but are not
+    /// known to decode, so the case carries the tile the cell draws instead when they do not:
+    /// the one the effect would have had without a picture.
+    case image(EffectThumbnail, fallback: EffectPlaceholder)
 }
 
-/// The tile a cell draws while there is no thumbnail: the same effect gets the same tile on every
-/// launch and every machine, so it can be recognised by its colour.
+/// The tile a cell draws when it has no picture to show: the effect has no thumbnail, or the one it
+/// has does not decode. The same effect gets the same tile on every launch and every machine, so it
+/// can be recognised by its colour.
 public struct EffectPlaceholder: Sendable, Hashable {
     /// Up to two characters: the first letter or digit of each of the name's first two words that
     /// have one, upper-cased.

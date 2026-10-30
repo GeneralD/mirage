@@ -111,9 +111,10 @@ struct EffectPackageRepositoryTests {
         ])
 
     private static func ready(
-        _ key: String, named name: String? = nil, by author: String? = nil, source: String = "kernel void effect() {}"
+        _ key: String, named name: String? = nil, by author: String? = nil, source: String = "kernel void effect() {}",
+        describedAs description: String? = nil
     ) -> EffectPackageListing {
-        .ready(.fixture(.package(key), name: name, author: author, source: source))
+        .ready(.fixture(.package(key), name: name, author: author, source: source, description: description))
     }
 
     private static func inventory(_ listings: [EffectPackageListing], watching set: EffectWatchSet = glowSet) -> EffectPackageInventory {
@@ -160,6 +161,42 @@ struct EffectPackageRepositoryTests {
                 .fixture(.package("glow"), displayName: "Glow", author: "Ada"),
                 .fixture(.package("mist"), displayName: "Mist"),
             ])
+    }
+
+    @Test(
+        "a package shows its manifest's description as written; one whose manifest names none, a broken package and the bundled effect have none"
+    )
+    func descriptionComesFromTheManifest() async {
+        let rig = Rig(
+            inventory: Self.inventory([
+                Self.ready("glow", named: "Glow", by: "Ada", describedAs: "  Soft light\nwith a halo.  "),
+                Self.ready("mist", named: "Mist"),
+                .broken(.package("torn"), .sourceMissing),
+            ]))
+
+        #expect(
+            await firstCatalog(of: rig.subject) == [
+                Self.bundledEntry,
+                .fixture(.package("glow"), displayName: "Glow", author: "Ada", description: "  Soft light\nwith a halo.  "),
+                .fixture(.package("mist"), displayName: "Mist"),
+                .fixture(.package("torn"), availability: .broken(.sourceMissing)),
+            ])
+    }
+
+    @Test("a change that edits only a package's description lists a catalog with the new one")
+    func editedDescriptionIsANewCatalog() async {
+        let rig = Rig(inventory: Self.inventory([Self.ready("glow", named: "Glow", describedAs: "before")]))
+        let seen = Collector<[EffectCatalogEntry]>()
+        let consumer = listen(to: rig.subject.catalog(), into: seen)
+        await seen.waitForCount(1)
+
+        rig.packages.script(Self.inventory([Self.ready("glow", named: "Glow", describedAs: "after")]))
+        #expect(rig.watch.fire())
+        await seen.waitForCount(2)
+        await end(consumer)
+
+        #expect(seen.values.map { $0.last?.description } == ["before", "after"])
+        #expect(seen.values[0] != seen.values[1], "the two catalogs differ by the description alone")
     }
 
     @Test("an empty folder is the bundled effect alone")
