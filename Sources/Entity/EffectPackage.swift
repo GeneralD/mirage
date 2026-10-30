@@ -1,14 +1,20 @@
-/// A `.lens` package that was read: who it is, what its manifest says and the shader
-/// source, in the form the runtime takes (`EffectRuntimeRepository.prepare`).
+/// A `.lens` package that was read: who it is, what its manifest says, the shader
+/// source, in the form the runtime takes (`EffectRuntimeRepository.prepare`), and the
+/// picture the manifest names.
 public struct EffectPackage: Sendable, Hashable {
     public let id: EffectID
     public let manifest: EffectManifest
     public let source: EffectSource
+    /// The file the manifest's `thumbnail` names, read and checked; `nil` when it names none or
+    /// names one that cannot be used (the reason is logged, and the package is ready all the same),
+    /// and in the package `EffectPackages.package(_:)` answers, which leaves the picture out.
+    public let thumbnail: EffectThumbnail?
 
-    public init(id: EffectID, manifest: EffectManifest, source: EffectSource) {
+    public init(id: EffectID, manifest: EffectManifest, source: EffectSource, thumbnail: EffectThumbnail? = nil) {
         self.id = id
         self.manifest = manifest
         self.source = source
+        self.thumbnail = thumbnail
     }
 }
 
@@ -44,8 +50,9 @@ public enum EffectPackageListing: Sendable, Hashable {
 
 /// What to watch so that a change to the folder's packages is noticed. The folder and
 /// each package's directory are watched as directories (an editor's atomic save
-/// renames the file, which only the directory sees); the manifest and the shader as
-/// files (an in-place overwrite changes no directory entry). Epic #42, D4.
+/// renames the file, which only the directory sees), and so is every directory that is there
+/// between a package's directory and its thumbnail; the manifest, the shader and the thumbnail as
+/// files (an in-place overwrite changes no directory entry). Epic #42, D4; #12.
 public struct EffectWatchSet: Sendable, Hashable {
     public let directories: [String]
     public let files: [String]

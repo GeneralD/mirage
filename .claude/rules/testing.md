@@ -196,12 +196,14 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   `work.finished.waitForCount(n)` instead of polling.
 - The effect-catalog fakes (epic #42) follow the same manual-completion rule and are
   under contract test in `Tests/TestDoublesTests`. `InMemoryFileSystemGateway` is a
-  mutable tree: `write(_:_:)` / `remove(_:)` / `makeDirectory(_:)` change it between
-  two reads, `failRead(of:with:)` / `failCreateDirectory(of:with:)` script an error per
-  path, listings come back sorted, a missing path throws `CocoaError`, a hook that would
+  mutable tree: `write(_:_:)` / `write(_:bytes:)` / `remove(_:)` / `makeDirectory(_:)`
+  change it between two reads (a file holds bytes; text that is not UTF-8 fails
+  `readString` as live), `failRead(of:with:)` / `failCreateDirectory(of:with:)` script an
+  error per path, listings come back sorted, a missing path throws `CocoaError` (the
+  code the live call raises: `fileNoSuchFile` from `readData`), a hook that would
   make a path both a file and a directory (`write` over a directory, `write` or
   `makeDirectory` below a file) is reported and leaves the tree as it was, and
-  `listings` / `reads` / `createdDirectories` are `Collector`s. `FakeFileWatchGateway.fire(path)`
+  `listings` / `reads` / `dataReads` / `createdDirectories` are `Collector`s. `FakeFileWatchGateway.fire(path)`
   runs the `onChange` of every live watch on that path and returns how many ran;
   `isBalanced` is every watch stopped exactly once (`doubleStopCount` counts the
   second `stop()` of a handle). `EffectWatchDataSourceImpl` is written as

@@ -34,7 +34,8 @@ struct EffectManifestRoundTripTests {
             formatVersion: EffectManifestDecoding.supportedFormatVersion,
             name: name(&generator),
             author: optionalText(&generator),
-            description: optionalText(&generator))
+            description: optionalText(&generator),
+            thumbnail: optionalText(&generator))
     }
 
     @Test("encoding a manifest and decoding it again gives the manifest back", arguments: Seeds.range(0..<64))
@@ -50,8 +51,8 @@ struct EffectManifestRoundTripTests {
     func paddingIsTrimmed(seed: UInt64) throws {
         let manifest = Self.manifest(seed: seed)
         let padded = EffectManifest(
-            formatVersion: manifest.formatVersion, name: " \t\n" + manifest.name + "\n \t", author: manifest.author, description: manifest.description
-        )
+            formatVersion: manifest.formatVersion, name: " \t\n" + manifest.name + "\n \t", author: manifest.author,
+            description: manifest.description, thumbnail: manifest.thumbnail)
 
         let json = String(decoding: try JSONEncoder().encode(padded), as: UTF8.self)
 

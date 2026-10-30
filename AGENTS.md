@@ -79,7 +79,9 @@ Shared conventions:
 - A `.lens` package is a directory `<id>.lens/` in the effects folder
   (`~/Library/Application Support/<host bundle id>/Effects`, the path comes from
   `AppDirectoriesProvider`) holding `manifest.json` (`formatVersion` 1 and
-  `name`; optional `author` / `description`; unknown keys, `parameters`
+  `name`; optional `author` / `description` / `thumbnail`, the last a path
+  to a PNG or JPEG of at most 1 MiB inside the package, which costs the
+  package only its picture when it cannot be used; unknown keys, `parameters`
   included, ignored) and `effect.metal` (entry point `effect`, compiled behind
   the prelude). The id is the directory name without the suffix.
   `EffectPackageDataSource` reads it through `FileSystemGateway` and lists a
@@ -412,7 +414,7 @@ Shared conventions:
   last one is not published, so a hot reload that works is proven by the next listing
   (a sentinel through the same pipeline), not by a state of its own.
 - The catalog fakes are driven by the test: `InMemoryFileSystemGateway`
-  (`write` / `remove` between reads, `failRead(of:with:)`), `FakeFileWatchGateway.fire(path)`
+  (`write` / `write(_:bytes:)` / `remove` between reads, `failRead(of:with:)`), `FakeFileWatchGateway.fire(path)`
   (`isBalanced` is the watch/stop invariant), `FakeEffectWatch.fire()` / `fire(request:)`,
   `FakeEffectPackages.script(_:)`, `FakeEffectPackageRepository.publish(_:)` /
   `script(_:for:)`, `FakeEffectCatalogUseCase.publish(_:)` and

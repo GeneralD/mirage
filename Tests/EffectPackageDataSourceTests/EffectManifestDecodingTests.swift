@@ -13,9 +13,9 @@ struct EffectManifestDecodingTests {
     }
 
     private static func manifest(
-        _ name: String, author: String? = nil, description: String? = nil
+        _ name: String, author: String? = nil, description: String? = nil, thumbnail: String? = nil
     ) -> Result<EffectManifest, EffectPackageProblem> {
-        .success(EffectManifest(formatVersion: 1, name: name, author: author, description: description))
+        .success(EffectManifest(formatVersion: 1, name: name, author: author, description: description, thumbnail: thumbnail))
     }
 
     struct Row: Sendable, CustomTestStringConvertible {
@@ -45,8 +45,24 @@ struct EffectManifestDecodingTests {
             text: #"{"formatVersion": 1, "name": " \t Glitch\n"}"#, expected: manifest("Glitch")),
         Row(
             name: "keys this build does not know are ignored, whatever they hold",
-            text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": "t.png", "inputs": ["camera"], "x": {"y": null}}"#,
+            text: #"{"formatVersion": 1, "name": "Glitch", "preview": "p.gif", "inputs": ["camera"], "x": {"y": null}}"#,
             expected: manifest("Glitch")),
+        Row(
+            name: "a thumbnail is kept as written, case and subdirectory included",
+            text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": "images/Thumb.PNG"}"#,
+            expected: manifest("Glitch", thumbnail: "images/Thumb.PNG")),
+        Row(
+            name: "a thumbnail is not trimmed: whitespace can be part of a file name",
+            text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": " t.png "}"#, expected: manifest("Glitch", thumbnail: " t.png ")),
+        Row(
+            name: "a thumbnail's path is not judged here: one that leaves the package, or an empty one, decodes as written",
+            text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": "../t.png"}"#, expected: manifest("Glitch", thumbnail: "../t.png")),
+        Row(
+            name: "an empty thumbnail decodes as written, to be refused when the package is read",
+            text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": ""}"#, expected: manifest("Glitch", thumbnail: "")),
+        Row(
+            name: "a thumbnail that is null is no thumbnail",
+            text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": null}"#, expected: manifest("Glitch")),
         Row(
             name: "`parameters` is read past and not interpreted",
             text: #"{"formatVersion": 1, "name": "Glitch", "parameters": [{"id": "amount", "type": "float", "default": 0.5}]}"#,
@@ -121,6 +137,13 @@ struct EffectManifestDecodingTests {
         Row(
             name: "an author that is not text",
             text: #"{"formatVersion": 1, "name": "Glitch", "author": ["Ada"]}"#, expected: invalid("\"author\" has the wrong type")),
+        Row(
+            name: "a thumbnail that is not text, as for the author",
+            text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": 5}"#, expected: invalid("\"thumbnail\" has the wrong type")),
+        Row(
+            name: "a thumbnail that is an object",
+            text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": {"path": "t.png"}}"#,
+            expected: invalid("\"thumbnail\" has the wrong type")),
         Row(name: "text that is not JSON", text: "name = Glitch", expected: invalid("not valid JSON")),
         Row(name: "nothing at all", text: "", expected: invalid("not valid JSON")),
         Row(name: "JSON cut short", text: #"{"formatVersion": 1, "name": "Gli"#, expected: invalid("not valid JSON")),

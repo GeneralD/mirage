@@ -216,6 +216,35 @@ struct EffectCatalogIntegrationTests {
         #expect(rig.host.errors.entries.count == 0)
         #expect(rig.host.textures.isBalanced)
     }
+
+    // MARK: 6. A thumbnail edited in place reaches the catalog, and costs no compile
+
+    @Test("a package's thumbnail is in its entry, and rewriting the file in place lists the new picture without compiling anything")
+    func anEditedThumbnailReachesTheCatalog() async throws {
+        let session = try await Session.start()
+        let side = session.side
+        let first = EffectThumbnail.fixture(1)
+        let second = EffectThumbnail.fixture(2, format: .jpeg)
+        side.fileSystem.write(Neon.manifestPath, Neon.manifestWithThumbnail)
+        side.fileSystem.write(Neon.sourcePath, Neon.first)
+        side.fileSystem.write(Neon.thumbnailPath, bytes: first.data)
+        await session.rig.editFolder(firing: CatalogSide.folder)
+        #expect(await session.rig.pumpHost(until: { side.states.last?.entries.last?.thumbnail == first }), "the package is listed with its picture")
+
+        // An in-place save: only the thumbnail file's own watch hears it, so this also proves that it is watched.
+        side.fileSystem.write(Neon.thumbnailPath, bytes: second.data)
+        await session.rig.editFolder(firing: Neon.thumbnailPath)
+        #expect(await session.rig.pumpHost(until: { side.states.last?.entries.last?.thumbnail == second }), "the new picture is listed")
+
+        let entry = try #require(side.states.last?.entries.last)
+        #expect(entry.id == Neon.id)
+        #expect(entry.availability == .ready)
+        #expect(side.states.last?.selection == Self.bundledID, "listing a picture chooses nothing")
+        #expect(Self.compiledEffects(of: session.rig) == ["bundled"], "and compiles nothing")
+
+        try await session.finish()
+        #expect(session.rig.host.errors.entries.count == 0)
+    }
 }
 
 // MARK: - Fixtures and helpers
@@ -254,6 +283,8 @@ extension EffectCatalogIntegrationTests {
         static let manifestPath = "\(directory)/manifest.json"
         static let sourcePath = "\(directory)/effect.metal"
         static let manifest = #"{"formatVersion": 1, "name": "Neon", "author": "Example Author"}"#
+        static let thumbnailPath = "\(directory)/thumbnail.png"
+        static let manifestWithThumbnail = #"{"formatVersion": 1, "name": "Neon", "author": "Example Author", "thumbnail": "thumbnail.png"}"#
         static let first = "// Neon, first version\nkernel void effect() {}"
         static let second = "// Neon, second version\nkernel void effect() {}"
         static let broken = "// Neon, with a typo\nkernel void effect() { oops }"
