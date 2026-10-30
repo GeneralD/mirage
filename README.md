@@ -23,9 +23,9 @@ macOS, with effects you can write, drop in, and share without rebuilding the app
 webcam ──▶ mirage (host app) ──▶ Metal effect (.lens, compiled at runtime) ──▶ Camera Extension ──▶ Zoom / Meet / OBS
 ```
 
-- **Effects are `.lens` packages**: a `manifest.json` (name, author, description; parameters
-  arrive with MVP-C) plus an `effect.metal` written in the Metal Shading Language, compiled on
-  the fly with `MTLDevice.makeLibrary(source:)` (see [Packaging](#packaging)). Drop a package
+- **Effects are `.lens` packages**: a `manifest.json` (name, author, description, an optional
+  thumbnail; parameters arrive with MVP-C) plus an `effect.metal` written in the Metal Shading
+  Language, compiled on the fly with `MTLDevice.makeLibrary(source:)` (see [Packaging](#packaging)). Drop a package
   into the effects folder and it appears in the menu bar; edit the shader and it hot-reloads.
 - **The virtual camera is a CoreMediaIO Camera Extension** (the only mechanism macOS 14+ still
   allows), so it works in every app that lists cameras.
@@ -66,13 +66,14 @@ This is the contract `effect.metal` is compiled against.
 
 ### Packaging
 
-An effect is a **folder named `<id>.lens`** holding two files. The folder name without `.lens` is
-the effect's id, so it stays the same however you edit the files:
+An effect is a **folder named `<id>.lens`** holding two files, and a thumbnail if you want one. The
+folder name without `.lens` is the effect's id, so it stays the same however you edit the files:
 
 ```text
 Ripple.lens/
 ├── manifest.json
-└── effect.metal
+├── effect.metal
+└── thumbnail.png
 ```
 
 ```json
@@ -80,7 +81,8 @@ Ripple.lens/
   "formatVersion": 1,
   "name": "Ripple",
   "author": "Example Author",
-  "description": "The frame sways sideways like heat haze, in a smooth wave that drifts with time."
+  "description": "The frame sways sideways like heat haze, in a smooth wave that drifts with time.",
+  "thumbnail": "thumbnail.png"
 }
 ```
 
@@ -89,6 +91,13 @@ Ripple.lens/
   range, is reported as invalid.
 - `name` (required): what the menu shows. Surrounding whitespace is trimmed; it cannot be empty.
 - `author`, `description` (optional).
+- `thumbnail` (optional): a picture for the effect picker (coming with #12; the menu does not show
+  it yet), a PNG or JPEG file inside the package, given by its path relative to the package
+  (`thumbnail.png`, `images/thumb.jpg`) and at most 1 MiB. A path that is absolute or has a `..`
+  segment (`../thumb.png`, even `images/../thumb.png`), a file that is missing, a directory, larger
+  than 1 MiB, not named `.png` / `.jpg` / `.jpeg` or not really a PNG or JPEG costs the effect only
+  its picture: it still loads, and the reason goes to the app's log (at debug level; a file that is
+  there and cannot be read is an error).
 - Keys this version doesn't know are ignored, so a package can carry more than an older build
   reads. A `parameters` list is read past for now; the parameter UI is MVP-C.
 - `effect.metal` is the kernel described above, entry point `effect`, and nothing else: no
