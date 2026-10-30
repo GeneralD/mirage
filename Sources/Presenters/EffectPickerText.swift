@@ -71,14 +71,29 @@ private func pickerCell(of entry: EffectCatalogEntry, selection: EffectID) -> Ef
         artwork: artwork(of: entry))
 }
 
-/// The whole of what the cell can only abbreviate: the name and the author, or the name and why
-/// it cannot be chosen.
+/// What the cell can only abbreviate: for an effect that can be chosen, its name and author, and
+/// the manifest's description on a line of its own after them; for a broken package, the name and
+/// why it cannot be chosen.
 private func help(of entry: EffectCatalogEntry) -> String {
-    switch (entry.availability, entry.author) {
-    case (.ready, let author?): "\(entry.displayName) by \(author)"
-    case (.ready, nil): entry.displayName
-    case (.broken(let problem), _): "\(entry.displayName) cannot be chosen: \(MenuBarText.reason(problem))"
+    switch entry.availability {
+    case .ready:
+        let name = entry.author.map { "\(entry.displayName) by \($0)" } ?? entry.displayName
+        return [name, helpDescription(of: entry)].compactMap(\.self).joined(separator: "\n")
+    case .broken(let problem):
+        return "\(entry.displayName) cannot be chosen: \(MenuBarText.reason(problem))"
     }
+}
+
+/// The most characters of a description that a hover shows: a longer one is cut, so that a manifest
+/// cannot make a tooltip the size of a file.
+private let helpDescriptionLimit = 280
+
+/// The entry's description for the hover: without the whitespace around it, cut at
+/// `helpDescriptionLimit` characters with an ellipsis, and `nil` when it says nothing (the manifest
+/// names none, or a blank one).
+private func helpDescription(of entry: EffectCatalogEntry) -> String? {
+    guard let text = entry.description?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+    return text.count > helpDescriptionLimit ? String(text.prefix(helpDescriptionLimit)) + "…" : text
 }
 
 /// The search as it is matched: without the whitespace around it.

@@ -52,6 +52,58 @@ struct EffectPickerPresenterTests {
             ])
     }
 
+    @Test("hovering adds the manifest's description on a line of its own, after the name and the author")
+    func helpAddsTheDescription() async {
+        let withAuthor = EffectCatalogEntry.fixture(.package("glitch"), displayName: "Glitch", author: "Ada", description: "Tears the frame")
+        let withoutAuthor = EffectCatalogEntry.fixture(.package("grain"), displayName: "Grain", description: "Moving film grain")
+        let rig = PickerRig(state: .fixture([withAuthor, withoutAuthor]))
+
+        await rig.start()
+
+        #expect(rig.presenter.cells.map(\.help) == ["Glitch by Ada\nTears the frame", "Grain\nMoving film grain"])
+    }
+
+    @Test(
+        "a description that says nothing adds no line, and one that says something loses the whitespace around it, not the lines inside it",
+        arguments: [
+            (nil as String?, "Glitch by Ada"),
+            ("", "Glitch by Ada"),
+            ("   \n\t ", "Glitch by Ada"),
+            ("  Tears the frame \n", "Glitch by Ada\nTears the frame"),
+            ("Tears\nthe frame", "Glitch by Ada\nTears\nthe frame"),
+        ])
+    func helpDescriptionIsTrimmed(description: String?, help: String) async {
+        let entry = EffectCatalogEntry.fixture(.package("glitch"), displayName: "Glitch", author: "Ada", description: description)
+        let rig = PickerRig(state: .fixture([entry]))
+
+        await rig.start()
+
+        #expect(rig.presenter.cells.map(\.help) == [help])
+    }
+
+    @Test("a description longer than 280 characters is cut there and ends in an ellipsis; one of exactly 280 is shown whole")
+    func helpDescriptionIsCapped() async {
+        let whole = String(repeating: "あ", count: 280)
+        let cut = EffectCatalogEntry.fixture(.package("long"), displayName: "Long", description: whole + "い")
+        let exact = EffectCatalogEntry.fixture(.package("exact"), displayName: "Exact", description: whole)
+        let rig = PickerRig(state: .fixture([cut, exact]))
+
+        await rig.start()
+
+        #expect(rig.presenter.cells.map(\.help) == ["Long\n\(whole)…", "Exact\n\(whole)"])
+    }
+
+    @Test("a package that cannot be chosen says why and nothing else, whatever description its entry carries")
+    func brokenHelpIgnoresTheDescription() async {
+        let entry = EffectCatalogEntry.fixture(
+            .package("old"), displayName: "old", availability: .broken(.sourceMissing), description: "should not be shown")
+        let rig = PickerRig(state: .fixture([entry]))
+
+        await rig.start()
+
+        #expect(rig.presenter.cells.map(\.help) == ["old cannot be chosen: effect.metal is missing"])
+    }
+
     @Test("the status line is the menu's: one line about the chosen effect when it failed to run")
     func statusIsTheMenus() async {
         let state = EffectCatalogState(entries: [chromatic, glitch], selection: .package("glitch"), outcome: .failed(.compileFailed))

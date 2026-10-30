@@ -17,14 +17,18 @@ public struct EffectCatalogEntry: Sendable, Hashable {
     /// The manifest's `author`, for the menu to show beside the name; `nil` for a bundled
     /// effect, for a manifest that names none, and for a package whose manifest cannot be read.
     public let author: String?
-    /// The picture the manifest's `thumbnail` names, for the effect picker's cell (#12, to come); `nil` for
+    /// The picture the manifest's `thumbnail` names, for the effect picker's cell (#12); `nil` for
     /// a bundled effect, for a manifest that names none or names one that cannot be used, and for a
     /// broken package. It is read again with every listing, so an edited picture is a new entry.
     public let thumbnail: EffectThumbnail?
+    /// The manifest's `description`, as written, for the picker's hover text (#12); `nil` for a
+    /// bundled effect, for a manifest that names none, and for a broken package. Whether it says
+    /// anything (a blank one does not) and how much of it a hover shows are the Presenter's.
+    public let description: String?
 
     public init(
         id: EffectID, displayName: String, origin: EffectOrigin, availability: EffectAvailability, author: String? = nil,
-        thumbnail: EffectThumbnail? = nil
+        thumbnail: EffectThumbnail? = nil, description: String? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -32,6 +36,7 @@ public struct EffectCatalogEntry: Sendable, Hashable {
         self.availability = availability
         self.author = author
         self.thumbnail = thumbnail
+        self.description = description
     }
 }
 
