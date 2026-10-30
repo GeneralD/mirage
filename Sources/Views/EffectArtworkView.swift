@@ -2,14 +2,13 @@ import Domain
 import SwiftUI
 
 /// What a picker cell draws above its name. A placeholder is a gradient of its hue with the
-/// effect's initials on it; a thumbnail becomes a case of `EffectArtwork`, and an arm here, once
-/// the catalog carries one (#12).
+/// effect's initials on it. A thumbnail is drawn as a placeholder until the image arm lands (#12).
 struct EffectArtworkView: View {
     let artwork: EffectArtwork
 
     var body: some View {
         switch artwork {
-        case .placeholder(let placeholder):
+        case .placeholder(let placeholder), .image(_, let placeholder):
             ZStack {
                 LinearGradient(
                     colors: [

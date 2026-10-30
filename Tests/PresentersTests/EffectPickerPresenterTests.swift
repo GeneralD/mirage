@@ -348,10 +348,10 @@ struct EffectPickerPresenterTests {
 }
 
 extension EffectArtwork {
-    /// The hue of a placeholder tile: what the hue test reads off every cell.
+    /// The hue of a placeholder tile (the fallback tile of an image): what the hue test reads off every cell.
     fileprivate var hue: Double {
         switch self {
-        case .placeholder(let placeholder): placeholder.hue
+        case .placeholder(let placeholder), .image(_, let placeholder): placeholder.hue
         }
     }
 }
