@@ -179,6 +179,32 @@ struct MenuBarPresenterTests {
         #expect(rig.interactor.folderOpens.count == 1)
     }
 
+    @Test("Browse Effects… goes to the router, asks nothing of the Interactor, and does nothing without a router")
+    func browseEffectsGoesToTheRouter() {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+        rig.presenter.browseEffects()
+
+        let router = RecordingRouter()
+        rig.presenter.router = router
+        rig.presenter.browseEffects()
+        rig.presenter.browseEffects()
+
+        #expect(router.pickerOpens == 2)
+        #expect(rig.interactor.starts.count == 0)
+        #expect(rig.interactor.selections.values.isEmpty)
+    }
+
+    @Test("the Presenter does not keep its router alive: the Router owns the Presenter")
+    func routerIsHeldWeakly() {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+        var router: RecordingRouter? = RecordingRouter()
+        rig.presenter.router = router
+
+        router = nil
+
+        #expect(rig.presenter.router == nil)
+    }
+
     // MARK: - Lifecycle
 
     @Test("start starts the Interactor once, however many times it is called")
@@ -328,29 +354,14 @@ private func startedPresenter(over interactor: SpyEffectInteractor) async -> Men
     return presenter
 }
 
-/// A `FakeEffectInteractor` that also counts its `state` subscriptions that were cancelled,
-/// which is how a test proves that a Presenter let go of the publisher.
-private final class SpyEffectInteractor: EffectInteractor, Sendable {
-    let inner: FakeEffectInteractor
-    /// One entry per `state` subscription that was cancelled.
-    let cancellations = Collector<Void>()
+/// A `MenuBarRouting` that counts what the menu asked of it.
+@MainActor
+private final class RecordingRouter {
+    private(set) var pickerOpens = 0
+}
 
-    init(_ inner: FakeEffectInteractor) {
-        self.inner = inner
+extension RecordingRouter: MenuBarRouting {
+    func openEffectPicker() {
+        pickerOpens += 1
     }
-
-    var state: AnyPublisher<EffectCatalogState, Never> {
-        let cancellations = cancellations
-        return inner.state.handleEvents(receiveCancel: { cancellations.append(()) }).eraseToAnyPublisher()
-    }
-
-    func publish(_ state: EffectCatalogState) { inner.publish(state) }
-    func start() { inner.start() }
-    func stop() { inner.stop() }
-    func select(_ id: EffectID) { inner.select(id) }
-    func openEffectsFolder() { inner.openEffectsFolder() }
-
-    var starts: Collector<Void> { inner.starts }
-    var selections: Collector<EffectID> { inner.selections }
-    var folderOpens: Collector<Void> { inner.folderOpens }
 }

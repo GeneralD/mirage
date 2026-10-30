@@ -46,7 +46,8 @@ port, or value types. `actor` is acceptable only for off-path, low-rate state
 ## View File Organization — `XxxView.swift` Holds Only the Struct
 
 As in lyra: the SwiftUI `View` struct alone. Geometry goes to
-`XxxGeometry.swift` (pure, tested); irreducible drawing goes to
+`XxxGeometry.swift` (pure, tested; in `Presenters`, since `Views` is
+coverage-ignored: `EffectPickerGeometry`); irreducible drawing goes to
 `XxxRenderer.swift` (`@MainActor`, thin, untested by design). The Presenter
 decides values; the View maps values to pixels.
 

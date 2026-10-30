@@ -29,6 +29,11 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
         router.stop()
         cameraInteractor.shutDown()
     }
+
+    /// The effect picker is the host's only window, and closing it leaves the menu-bar app running.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
 }
 
 /// Owns the one unstructured task of the host process (the launch sequence)

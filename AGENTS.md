@@ -174,12 +174,17 @@ Shared conventions:
   and never `publisher.values` (an `AsyncPublisher` drops states sent while it
   is applying the last one), and owns the Interactor's `start()` / `stop()` (whoever wires the Presenter calls
   only its `start()` / `stop()`, never `effectInteractor.start()` (`App` and `DevHarness` are denied the key): a second
-  `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the one
-  Presenter in `init` and calls only its `start()` / `stop()`: the host (`HostAppDelegate`) and the dev harness
+  `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the menu's
+  and the picker's Presenters in `init`; its `start()` / `stop()` are the menu Presenter's (`stop()` closes the picker
+  first), and it starts the picker's Presenter only while the picker's window is open: the host (`HostAppDelegate`) and the dev harness
   (`HarnessMenu`, called by `HarnessAppDelegate`) start and stop the Router and nothing below it. `EffectMenu` (`Views`) draws the Presenter for
   the host's `MenuBarExtra(.menu)` and the harness's `NSHostingMenu` and decides nothing (a `Toggle` per row, the
-  Presenter's flags and words); the host stays out of the Dock through `LSUIElement` in `project.yml`. Details: the
-  *Key Design Decisions* entries in `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*).
+  Presenter's flags and words); the host stays out of the Dock through `LSUIElement` in `project.yml`. *Browse Effects…*
+  goes through the Presenter's weak `router` to `AppRouter`, which opens the effect picker's window (at most one, made
+  by an injected `makePickerWindow`; the live one, `EffectPickerWindow`, is AppKit glue in `AppRouter`, not `Views`) and starts `EffectPickerPresenter` while it is open; that Presenter maps the same
+  `state` to cells and only observes (it never starts or stops the Interactor), and the grid's `EffectPickerGeometry`
+  is a pure type in `Presenters` because `Views` is coverage-ignored. Details: the *Key Design Decisions* entries in
+  `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*, *Effect picker*).
 
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
   orchestrates (compile through `ShaderCompiler`, render through
