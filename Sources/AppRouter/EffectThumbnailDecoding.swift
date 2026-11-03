@@ -20,12 +20,15 @@ enum EffectThumbnailDecoding {
     /// how it behaves and not a documented promise.
     static let maxPixels = 2048 * 2048
 
-    /// The thumbnail as an image, or `nil` when it has no pixels to draw: its bytes are not a
+    /// The thumbnail as an image, or `nil` when it has no pixels to draw (the limit is checked as
+    /// `width <= maxPixels / height`, never as a product, which a header claiming huge sides would overflow): its bytes are not a
     /// complete picture header, they decode to nothing, or it is over `maxPixels`. Not
     /// `NSImage(data:)`, which answers an image with no size for bytes that carry only a
     /// signature, and that would draw an empty cell.
     static func image(of thumbnail: EffectThumbnail) -> CGImage? {
-        guard let bitmap = NSBitmapImageRep(data: thumbnail.data), bitmap.pixelsWide * bitmap.pixelsHigh <= maxPixels else { return nil }
+        guard let bitmap = NSBitmapImageRep(data: thumbnail.data), bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0,
+            bitmap.pixelsWide <= maxPixels / bitmap.pixelsHigh
+        else { return nil }
         return bitmap.cgImage
     }
 }
