@@ -125,6 +125,22 @@ struct EffectPickerPresenterTests {
         #expect(help.unicodeScalars.count == "Flood\n".unicodeScalars.count + 280 + 1)
     }
 
+    @Test("a description that is replaced, or removed, replaces the hover and nothing else of the cell")
+    func replacedDescriptionReplacesTheHover() async {
+        func entry(_ description: String?) -> EffectCatalogEntry {
+            .fixture(.package("glow"), displayName: "Glow", author: "Ada", description: description)
+        }
+        let rig = PickerRig(state: .fixture([entry("before")]))
+        await rig.start()
+        #expect(rig.presenter.cells.map(\.help) == ["Glow by Ada\nbefore"])
+
+        rig.interactor.publish(.fixture([entry("after")]))
+        await settle(rig.presenter.$cells) { $0.map(\.help) == ["Glow by Ada\nafter"] }
+
+        rig.interactor.publish(.fixture([entry(nil)]))
+        await settle(rig.presenter.$cells) { $0.map(\.help) == ["Glow by Ada"] }
+    }
+
     @Test("a package that cannot be chosen says why and nothing else, whatever description its entry carries")
     func brokenHelpIgnoresTheDescription() async {
         let entry = EffectCatalogEntry.fixture(
@@ -239,9 +255,12 @@ struct EffectPickerPresenterTests {
             ])
     }
 
-    @Test("a package that failed to load gets the tile alone: the catalog gives it no thumbnail, and its cell is dimmed")
+    @Test("a package that failed to load gets the tile alone, whatever thumbnail its entry carries, and its cell is dimmed")
     func artworkOfABrokenPackage() async {
-        let rig = PickerRig(state: .fixture([chromatic, broken]))
+        let carrying = EffectCatalogEntry.fixture(
+            .package("old"), displayName: "old", availability: .broken(.manifestInvalid(message: "no name")),
+            thumbnail: .fixture(1))
+        let rig = PickerRig(state: .fixture([chromatic, carrying]))
 
         await rig.start()
 

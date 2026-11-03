@@ -23,13 +23,16 @@ func pickerEmptyMessage(of state: EffectCatalogState, matching query: String) ->
     return "No effects match “\(term)”"
 }
 
-/// What a cell draws above its name: the thumbnail the catalog carries for the entry, with the
-/// entry's own tile to fall back on when the bytes do not decode, or that tile alone when the
-/// entry has no thumbnail (a bundled effect, a package whose manifest names none or names one that
-/// cannot be used, and a broken package: the catalog gives those none).
+/// What a cell draws above its name: the thumbnail the catalog carries for a package that can be
+/// chosen, with the entry's own tile to fall back on when the bytes do not decode, or that tile
+/// alone when there is none to draw: the entry has no thumbnail (a bundled effect, a package whose
+/// manifest names none or names one that cannot be used), or it is a broken package, whose
+/// manifest is not trusted for its picture any more than for its name. The catalog gives a broken
+/// package none, and this does not rely on that, as `help(of:)` does not rely on it for a description.
 func artwork(of entry: EffectCatalogEntry) -> EffectArtwork {
     let tile = placeholder(of: entry)
-    return entry.thumbnail.map { .image($0, fallback: tile) } ?? .placeholder(tile)
+    guard entry.availability == .ready, let thumbnail = entry.thumbnail else { return .placeholder(tile) }
+    return .image(thumbnail, fallback: tile)
 }
 
 /// The tile a cell draws when it has no picture to show: the entry has no thumbnail, or its
