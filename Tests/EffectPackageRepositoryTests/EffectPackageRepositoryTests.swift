@@ -413,6 +413,7 @@ struct EffectPackageRepositoryTests {
             .manifestInvalid(message: "not valid JSON"),
             .manifestInvalid(message: "the name is empty"),
             .sourceMissing,
+            .unsupportedFormatVersion(2),
         ]
         for (index, problem) in steps.enumerated() {
             rig.packages.script(Self.inventory([.broken(.package("glow"), problem)]))
@@ -428,16 +429,21 @@ struct EffectPackageRepositoryTests {
                 #"package glow is broken: manifestInvalid(message: "not valid JSON")"#,
                 #"package glow is broken: manifestInvalid(message: "the name is empty")"#,
                 "package glow is broken: sourceMissing",
+                "package glow is broken: unsupportedFormatVersion(2)",
             ])
     }
 
-    @Test("a package that leaves the folder is forgotten without a line, and one that comes back broken is logged again")
+    @Test(
+        "a package that leaves the folder is forgotten without a line; so is one an empty listing hides, as an unlistable folder gives, and it is logged again when it comes back broken"
+    )
     func departureForgetsTheProblem() async {
         let rig = Rig(inventory: Self.inventory([.broken(.package("glow"), .sourceMissing)]))
         let seen = Collector<[EffectCatalogEntry]>()
         let consumer = listen(to: rig.subject.catalog(), into: seen)
         await seen.waitForCount(1)
 
+        // The DataSource answers an unlistable folder with the same empty inventory as an empty folder, so the
+        // Repository cannot tell the two apart: the listing it gets forgets the broken package like a departure.
         rig.packages.script(Self.inventory([]))
         #expect(rig.watch.fire())
         await seen.waitForCount(2)
@@ -448,6 +454,57 @@ struct EffectPackageRepositoryTests {
         await rig.waitForEnd()
 
         #expect(Self.transitions(rig.developer) == ["package glow is broken: sourceMissing", "package glow is broken: sourceMissing"])
+    }
+
+    @Test("two broken packages are remembered one by one: a change of problem in one logs that one, and the other stays silent")
+    func twoBrokenPackagesAreRememberedApart() async {
+        let rig = Rig(inventory: Self.inventory([.broken(.package("glow"), .manifestMissing), .broken(.package("mist"), .sourceMissing)]))
+        let seen = Collector<[EffectCatalogEntry]>()
+        let consumer = listen(to: rig.subject.catalog(), into: seen)
+        await seen.waitForCount(1)
+
+        rig.packages.script(
+            Self.inventory([
+                .broken(.package("glow"), .manifestMissing),
+                .broken(.package("mist"), .manifestInvalid(message: "name is missing")),
+            ]))
+        #expect(rig.watch.fire())
+        await seen.waitForCount(2)
+        await end(consumer)
+        await rig.waitForEnd()
+
+        #expect(
+            Self.transitions(rig.developer) == [
+                "package glow is broken: manifestMissing",
+                "package mist is broken: sourceMissing",
+                #"package mist is broken: manifestInvalid(message: "name is missing")"#,
+            ],
+            "the first listing logs both; the second logs only the one whose problem changed, and not glow, which stayed as it was")
+        #expect(rig.errors.entries.count == 0)
+    }
+
+    @Test("each catalog stream remembers on its own: a second stream over the same broken package logs it once more")
+    func eachStreamRemembersOnItsOwn() async {
+        let rig = Rig(inventory: Self.inventory([.broken(.package("glow"), .manifestMissing)]))
+        let first = Collector<[EffectCatalogEntry]>()
+        let firstConsumer = listen(to: rig.subject.catalog(), into: first)
+        await first.waitForCount(1)
+        await end(firstConsumer)
+        await rig.waitForEnd()
+
+        let second = Collector<[EffectCatalogEntry]>()
+        let secondConsumer = listen(to: rig.subject.catalog(), into: second)
+        await second.waitForCount(1)
+        // A line is written before the catalog it precedes is shown, so the second stream's line is in the log by now.
+        #expect(
+            Self.transitions(rig.developer) == [
+                "package glow is broken: manifestMissing",
+                "package glow is broken: manifestMissing",
+            ],
+            "a new stream starts with nothing remembered, as a new run of the menu does")
+        await end(secondConsumer)
+        await rig.watch.terminations.waitForCount(2)
+        #expect(rig.errors.entries.count == 0)
     }
 
     @Test("asking for the source of a broken package logs nothing: the listing that showed it already did")
