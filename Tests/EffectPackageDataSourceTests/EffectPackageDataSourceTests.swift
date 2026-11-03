@@ -309,7 +309,7 @@ struct EffectPackageDataSourceTests {
 
     // MARK: Logs
 
-    @Test("a broken package is a developer line, one that exists and cannot be read an error, and a ready one neither")
+    @Test("a listing logs no broken package and no ready one: the catalog logs a broken package when it changes, not on each listing")
     func logs() async {
         let rig = Rig()
         rig.writePackage("ready")
@@ -318,14 +318,43 @@ struct EffectPackageDataSourceTests {
         rig.writePackage("locked")
         rig.files.failRead(of: Rig.shader("locked"), with: CocoaError(.fileReadNoPermission))
 
-        _ = await rig.subject.packages()
+        let inventory = await rig.subject.packages()
 
-        #expect(
-            rig.developer.messages(in: .effect) == [#"package invalid is broken: manifestInvalid(message: "not valid JSON")"#])
-        #expect(rig.errors.messages(in: .effect) == ["package locked: effect.metal could not be read: permission denied"])
+        #expect(inventory.listings.map(\.isReady) == [false, false, true], "in id order: invalid, locked, ready")
+        #expect(rig.developer.entries.values.isEmpty)
+        #expect(rig.errors.entries.values.isEmpty)
     }
 
     // MARK: package(_:)
+
+    @Test("reading one broken package logs nothing: its listing already told, and the same file read again is a repeat")
+    func singleReadLogsNothing() async {
+        let rig = Rig()
+        rig.files.write(Rig.manifest("invalid"), "{")
+        rig.files.write(Rig.shader("invalid"), Rig.validShader)
+        rig.writePackage("locked")
+        rig.files.failRead(of: Rig.shader("locked"), with: CocoaError(.fileReadNoPermission))
+
+        let invalid = await rig.subject.package(.package("invalid"))
+        let locked = await rig.subject.package(.package("locked"))
+
+        #expect(invalid?.isReady == false)
+        #expect(locked?.isReady == false)
+        #expect(rig.developer.messages(in: .effect).isEmpty)
+        #expect(rig.errors.messages(in: .effect).isEmpty)
+    }
+
+    @Test("asking for one broken package again and again adds no line, as its first answer added none")
+    func repeatedReadsLogNothing() async {
+        let rig = Rig()
+        rig.files.write(Rig.manifest("invalid"), "{")
+        rig.files.write(Rig.shader("invalid"), Rig.validShader)
+
+        for _ in 0..<3 { _ = await rig.subject.package(.package("invalid")) }
+
+        #expect(rig.developer.entries.values.isEmpty)
+        #expect(rig.errors.entries.values.isEmpty)
+    }
 
     @Test("one package is read afresh each time: an in-place save shows in the next answer, and the folder is not listed")
     func packageIsReadAfresh() async {

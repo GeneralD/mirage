@@ -9,10 +9,15 @@ import Testing
 @Suite("EffectManifest round trip", .timeLimit(.minutes(1)))
 struct EffectManifestRoundTripTests {
     /// Characters that need escaping in JSON, that are not ASCII, that are two scalars wide and
-    /// that only a careless decoder would trim or split.
+    /// that only a careless decoder would trim or split, the no-break space and the ideographic
+    /// space (whitespace that is not ASCII) among them.
     private static let alphabet: [Character] = [
-        "a", "Z", "7", " ", "-", "_", "é", "日", "本", "🎞", "👩‍💻", "\"", "\\", "/", "\n", "\t", "{", "}", "[", ",", ":", "\u{7f}",
+        "a", "Z", "7", " ", "-", "_", "é", "日", "本", "🎞", "👩‍💻", "\"", "\\", "/", "\n", "\t", "{", "}", "[", ",", ":", "\u{7f}", "\u{a0}",
+        "\u{3000}",
     ]
+
+    /// Whitespace around a name: ASCII, a no-break space and an ideographic space.
+    private static let padding = " \t\n\u{a0}\u{3000}"
 
     private static func text(_ generator: inout SeededGenerator, length: ClosedRange<Int>) -> String {
         String((0..<Int.random(in: length, using: &generator)).map { _ in alphabet.randomElement(using: &generator) ?? "a" })
@@ -51,7 +56,7 @@ struct EffectManifestRoundTripTests {
     func paddingIsTrimmed(seed: UInt64) throws {
         let manifest = Self.manifest(seed: seed)
         let padded = EffectManifest(
-            formatVersion: manifest.formatVersion, name: " \t\n" + manifest.name + "\n \t", author: manifest.author,
+            formatVersion: manifest.formatVersion, name: Self.padding + manifest.name + String(Self.padding.reversed()), author: manifest.author,
             description: manifest.description, thumbnail: manifest.thumbnail)
 
         let json = String(decoding: try JSONEncoder().encode(padded), as: UTF8.self)

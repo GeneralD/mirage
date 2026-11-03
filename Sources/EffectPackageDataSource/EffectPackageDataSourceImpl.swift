@@ -45,10 +45,11 @@ import Foundation
 /// - **`package(_:)`** is the same read for one id, less the thumbnail: `nil` for an id that is not a package's,
 ///   or whose key is not one path component (it comes back from a persisted selection and is
 ///   joined into a path, so `../x` must not leave the folder), or whose directory is not
-///   there. It never makes the folder. It is the read a source is prepared from, so it answers a
-///   ready package without its thumbnail (`nil`): the picture travels with `packages()`, and
-///   reading it here as well would read it again, and log again why it cannot be used, on every
-///   listing and every choice.
+///   there. It never makes the folder and logs nothing: the catalog logs a broken package when it
+///   changes (`EffectPackageRepository`), and a read of the same files again is not news. It is the read a source is prepared
+///   from, so it answers a ready package without its thumbnail (`nil`): the picture travels with
+///   `packages()`, and reading it here as well would read it again, and log again why it cannot
+///   be used, on every listing and every choice.
 public struct EffectPackageDataSourceImpl: Sendable {
     @Dependency(\.fileSystemGateway) private var fileSystem
     @Dependency(\.appDirectories) private var appDirectories
@@ -162,7 +163,6 @@ extension EffectPackageDataSourceImpl {
         let id = EffectID(origin: .package, key: key)
         switch Self.contents(manifest: manifestRead, source: sourceRead) {
         case .failure(let problem):
-            report(problem, of: id)
             return PackageRead(listing: .broken(id, problem), directories: [directory], files: files)
         case .success(let (manifest, source)):
             let thumbnail = includingThumbnail ? readThumbnail(manifest.thumbnail, of: id, in: directory) : .nothing
@@ -270,16 +270,6 @@ extension EffectPackageDataSourceImpl {
         case .unreadable: errorLog.record(.effect, message)
         case .empty, .absolute, .nulCharacter, .outsidePackage, .unsupportedType, .missing, .directory, .tooLarge, .notAnImage:
             developerLog.record(.effect, message)
-        }
-    }
-
-    /// A broken package reaches the menu with its reason; the logs carry it too, the operational
-    /// failures (a file that exists and cannot be read) among the errors.
-    private func report(_ problem: EffectPackageProblem, of id: EffectID) {
-        switch problem {
-        case .unreadable(let message): errorLog.record(.effect, "package \(id.key): \(message)")
-        case .manifestMissing, .manifestInvalid, .unsupportedFormatVersion, .sourceMissing:
-            developerLog.record(.effect, "package \(id.key) is broken: \(problem)")
         }
     }
 }

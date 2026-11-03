@@ -44,6 +44,9 @@ struct EffectManifestDecodingTests {
             name: "the name is trimmed: it is what the menu shows",
             text: #"{"formatVersion": 1, "name": " \t Glitch\n"}"#, expected: manifest("Glitch")),
         Row(
+            name: "the trim takes whitespace that is not ASCII too: a no-break space and an ideographic space",
+            text: #"{"formatVersion": 1, "name": " 　Glitch　 "}"#, expected: manifest("Glitch")),
+        Row(
             name: "keys this build does not know are ignored, whatever they hold",
             text: #"{"formatVersion": 1, "name": "Glitch", "preview": "p.gif", "inputs": ["camera"], "x": {"y": null}}"#,
             expected: manifest("Glitch")),

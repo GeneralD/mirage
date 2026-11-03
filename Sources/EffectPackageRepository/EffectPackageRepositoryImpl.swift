@@ -4,8 +4,9 @@ import Foundation
 
 /// The effect catalog: the bundled effect and the `.lens` packages in the effects
 /// folder, assembled into one list that lists itself again after every change (epic
-/// #42, D3 / D4). It holds no state: a listing is made from what `EffectPackages`
-/// answers now, shown, and watched until something changes, and then made again.
+/// #42, D3 / D4). It holds no state of its own: a listing is made from what `EffectPackages`
+/// answers now, shown, and watched until something changes, and then made again. The one
+/// thing a catalog remembers is what it logged about broken packages (*The log* below).
 ///
 /// **`catalog()`** is eager. Making the stream starts a task of its own, off the frame
 /// path, that lists the folder, arms the watch the inventory asks for
@@ -31,6 +32,19 @@ import Foundation
 /// does not consult the locale, so the menu reads the same on every machine. A broken
 /// package is listed under its folder name, as `.broken`, among the others.
 ///
+/// **The log** says a broken package when it changes, not on every listing that shows it. Each
+/// catalog stream remembers the problem every broken package had in its last listing, in its own
+/// task: a package that was not broken then, or whose problem is not equal to the one it had
+/// (its kind, or the reason it carries), is logged once, as an error when a file exists and cannot
+/// be read and as a developer line otherwise; one that was broken and is ready now is logged once
+/// as readable again; a package that stays as it was is not logged again, and one that left the
+/// folder is forgotten without a line. A listing with no packages in it forgets them all the same
+/// way, and that includes a folder that cannot be listed, which gives an empty listing too (the
+/// DataSource logs why): the Repository cannot tell the two apart, so a broken package it hid is
+/// logged again when the folder lists. A new stream starts with nothing remembered, so each run of
+/// the menu logs what it finds once. `source(of:)` logs nothing, and neither does the DataSource
+/// for a broken package.
+///
 /// **`source(of:)`** reads afresh on every call and caches nothing: a hot reload is the
 /// UseCase comparing what this answers now with what it answered last. The bundled
 /// effect's id answers `BundledEffects.defaultEffect`; another bundled id is
@@ -51,7 +65,8 @@ extension EffectPackageRepositoryImpl: EffectPackageRepository {
     public func catalog() -> AsyncStream<[EffectCatalogEntry]> {
         let (stream, continuation) = AsyncStream<[EffectCatalogEntry]>.makeStream()
         let keepingCurrent = Task { [self] in
-            while await listAndWatch(into: continuation) {}
+            var broken: [EffectID: EffectPackageProblem] = [:]
+            while let listed = await listAndWatch(into: continuation, after: broken) { broken = listed }
             developerLog.record(.effect, "catalog ended")
             continuation.finish()
         }
@@ -79,25 +94,59 @@ extension EffectPackageRepositoryImpl: EffectPackageRepository {
 }
 
 extension EffectPackageRepositoryImpl {
-    /// One round: list the folder, arm the watch for what was listed, show the catalog,
-    /// and wait for the watch to hear something. `true` when it did (list again);
-    /// `false` when there is nothing more to do: the consumer let go, or the watch ended
-    /// by itself — which its contract never does, so the catalog would silently stop
-    /// being kept current if this went on listening, and its stream ends instead.
+    /// One round: list the folder, arm the watch for what was listed, log what changed about the
+    /// broken packages since `broken` (the last round's), show the catalog, and wait for the watch
+    /// to hear something. The answer is the broken packages of this listing when the watch did (list
+    /// again, with them to compare against); `nil` when there is nothing more to do: the consumer let
+    /// go, or the watch ended by itself — which its contract never does, so the catalog would silently
+    /// stop being kept current if this went on listening, and its stream ends instead.
     /// The watch is let go before this returns, so the next round starts without one.
-    private func listAndWatch(into continuation: AsyncStream<[EffectCatalogEntry]>.Continuation) async -> Bool {
+    private func listAndWatch(
+        into continuation: AsyncStream<[EffectCatalogEntry]>.Continuation, after broken: [EffectID: EffectPackageProblem]
+    ) async -> [EffectID: EffectPackageProblem]? {
         let inventory = await effectPackages.packages()
-        guard !Task.isCancelled else { return false }
+        guard !Task.isCancelled else { return nil }
         let changes = effectWatch.changes(of: inventory.watchSet)
+        let listed = logChanges(in: inventory.listings, since: broken)
         let packages = inventory.listings.map(Self.entry(of:)).sorted(by: Self.inMenuOrder)
         let entries = [Self.entry(of: bundledEffects.defaultEffect)] + packages
         developerLog.record(.effect, "catalog listed: \(entries.count) entries, \(packages.filter { $0.availability != .ready }.count) broken")
         continuation.yield(entries)
-        for await _ in changes { return true }
+        for await _ in changes { return listed }
         if !Task.isCancelled {
             errorLog.record(.effect, "effect watch ended on its own: the catalog is no longer kept current")
         }
-        return false
+        return nil
+    }
+
+    /// Logs the transitions of the broken packages between the last listing and this one (see *The log*
+    /// above), and answers this listing's broken packages, the memory the next round compares with.
+    private func logChanges(
+        in listings: [EffectPackageListing], since broken: [EffectID: EffectPackageProblem]
+    ) -> [EffectID: EffectPackageProblem] {
+        for listing in listings {
+            switch listing {
+            case .broken(let id, let problem) where broken[id] != problem:
+                report(problem, of: id)
+            case .ready(let package) where broken[package.id] != nil:
+                developerLog.record(.effect, "package \(package.id.key) is readable again")
+            case .broken, .ready:
+                break
+            }
+        }
+        return listings.reduce(into: [EffectID: EffectPackageProblem]()) { memory, listing in
+            if case .broken(let id, let problem) = listing { memory[id] = problem }
+        }
+    }
+
+    /// A broken package's reason: an operational failure (a file that exists and cannot be read) is an
+    /// error, every other reason a developer line.
+    private func report(_ problem: EffectPackageProblem, of id: EffectID) {
+        switch problem {
+        case .unreadable(let message): errorLog.record(.effect, "package \(id.key): \(message)")
+        case .manifestMissing, .manifestInvalid, .unsupportedFormatVersion, .sourceMissing:
+            developerLog.record(.effect, "package \(id.key) is broken: \(problem)")
+        }
     }
 
     private static func id(of effect: EffectSource) -> EffectID {

@@ -306,7 +306,7 @@ Shared conventions:
   by `make generate` (gitignored), never hand-written. The one exception is
   `Tools/DevHarness/Info.plist`, linked into the `dev-harness` SwiftPM
   executable with `-sectcreate` (xcodegen never builds it); it carries no
-  product name, and `make check` scans `Tools/` for one.
+  product name, and `make check` scans `Tools/` and `Examples/` for one.
 - `DevHarness` keeps `main.swift` to AppKit's launch and `HarnessSession` to
   the lifecycle and the view wiring; the session resolves only `HarnessInteractor`,
   which drives `CameraControlUseCase` and `FramePipelineUseCase`. Each layer is

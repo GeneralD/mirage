@@ -1,5 +1,6 @@
 import BundledEffectDataSource
 import Domain
+import Foundation
 import ShaderCompilationDataSource
 import TestDoubles
 import TestSupport
@@ -246,6 +247,34 @@ struct EffectCatalogIntegrationTests {
         try await session.finish()
         #expect(session.rig.host.errors.entries.count == 0)
     }
+
+    // MARK: 7. A broken package is logged once, however often the folder changes after it
+
+    @Test("a package whose manifest cannot be read is logged as an error once, through ten changes to it")
+    func aBrokenPackageIsLoggedOnceThroughTenChanges() async throws {
+        let session = try await Session.start()
+        let rig = session.rig
+        let side = session.side
+        // The manifest is there and cannot be read, so the package is broken with an error, which no developer line repeats.
+        side.fileSystem.write(Neon.manifestPath, Neon.manifest)
+        side.fileSystem.write(Neon.sourcePath, Neon.first)
+        side.fileSystem.failRead(of: Neon.manifestPath, with: CocoaError(.fileReadNoPermission))
+        await rig.editFolder(firing: CatalogSide.folder)
+        #expect(await rig.pumpHost(until: { session.listingsMade == 2 }), "the new folder is listed with the package broken")
+
+        for count in 3...12 {
+            await rig.editFolder(firing: Neon.manifestPath)
+            #expect(await rig.pumpHost(until: { session.listingsMade == count }), "change \(count - 2) is listed")
+        }
+
+        #expect(
+            rig.host.errors.messages(in: .effect) == ["package neon: manifest.json could not be read: permission denied"],
+            "one error line for the package, however many times it was listed")
+        #expect(rig.host.developer.messages(in: .effect).allSatisfy { !$0.contains("is broken") }, "an error is not a developer line")
+
+        try await session.finish()
+        #expect(rig.host.errors.entries.count == 1)
+    }
 }
 
 // MARK: - Fixtures and helpers
@@ -346,6 +375,12 @@ extension EffectCatalogIntegrationTests {
             Neon.write(into: side.fileSystem, source: source)
             await rig.editFolder(firing: CatalogSide.folder)
             return await rig.pumpHost(until: { side.states.contains { $0.entries.contains { $0.id == Neon.id } } })
+        }
+
+        /// The listings the Repository has made so far: each one is logged just before its catalog is shown.
+        @MainActor
+        var listingsMade: Int {
+            rig.host.developer.messages(in: .effect).filter { $0.hasPrefix("catalog listed") }.count
         }
 
         /// Returns once the effect named `name` has compiled `count` times (the runtime logs each).
