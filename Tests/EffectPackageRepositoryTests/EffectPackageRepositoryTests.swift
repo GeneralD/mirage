@@ -121,6 +121,11 @@ struct EffectPackageRepositoryTests {
         EffectPackageInventory(listings: listings, watchSet: set)
     }
 
+    /// What the developer log says about the broken packages: every line but the Repository's own catalog lines.
+    private static func transitions(_ log: RecordingLog) -> [String] {
+        log.messages(in: .effect).filter { !$0.hasPrefix("catalog") }
+    }
+
     /// A task that records every catalog the stream shows.
     private func listen(to stream: AsyncStream<[EffectCatalogEntry]>, into seen: Collector<[EffectCatalogEntry]>) -> Task<Void, Never> {
         Task { for await entries in stream { seen.append(entries) } }
@@ -325,7 +330,7 @@ struct EffectPackageRepositoryTests {
             ])
     }
 
-    @Test("each listing is logged for the developer with its size and how many packages are broken, and none is an error")
+    @Test("each listing is logged for the developer with its size and how many packages are broken, a broken package where it changes, and no error")
     func listingsAreLogged() async {
         let rig = Rig(inventory: Self.inventory([Self.ready("glow"), .broken(.package("mist"), .manifestMissing)]))
         let seen = Collector<[EffectCatalogEntry]>()
@@ -338,8 +343,122 @@ struct EffectPackageRepositoryTests {
         await rig.waitForEnd()
 
         #expect(
-            rig.developer.messages(in: .effect) == ["catalog listed: 3 entries, 1 broken", "catalog listed: 3 entries, 0 broken", "catalog ended"])
+            rig.developer.messages(in: .effect) == [
+                "package mist is broken: manifestMissing", "catalog listed: 3 entries, 1 broken",
+                "package mist is readable again", "catalog listed: 3 entries, 0 broken",
+                "catalog ended",
+            ],
+            "a broken package is logged where it changes, before the listing it appears in")
         #expect(rig.errors.entries.count == 0, "a listing is not an error")
+    }
+
+    // MARK: - Logging a broken package on a change
+
+    @Test("ten changes that leave a broken package as it was log its error once, at the listing that first showed it")
+    func unchangedBrokenPackageIsLoggedOnce() async {
+        let unreadable = EffectPackageProblem.unreadable(message: "effect.metal could not be read: permission denied")
+        let rig = Rig(inventory: Self.inventory([.broken(.package("locked"), unreadable), Self.ready("glow")]))
+        let seen = Collector<[EffectCatalogEntry]>()
+        let consumer = listen(to: rig.subject.catalog(), into: seen)
+        await seen.waitForCount(1)
+
+        for count in 2...11 {
+            #expect(rig.watch.fire())
+            await seen.waitForCount(count)
+        }
+        await end(consumer)
+        await rig.waitForEnd()
+
+        #expect(seen.count == 11)
+        #expect(rig.errors.messages(in: .effect) == ["package locked: effect.metal could not be read: permission denied"])
+        #expect(Self.transitions(rig.developer).isEmpty, "an error is not a developer line, and nothing else changed")
+    }
+
+    @Test("a broken package that becomes ready and broken again is logged at each transition, and not while it stays broken")
+    func transitionsAreLogged() async {
+        let rig = Rig(inventory: Self.inventory([.broken(.package("glow"), .manifestMissing)]))
+        let seen = Collector<[EffectCatalogEntry]>()
+        let consumer = listen(to: rig.subject.catalog(), into: seen)
+        await seen.waitForCount(1)
+
+        rig.packages.script(Self.inventory([Self.ready("glow", named: "Glow")]))
+        #expect(rig.watch.fire())
+        await seen.waitForCount(2)
+        rig.packages.script(Self.inventory([.broken(.package("glow"), .manifestMissing)]))
+        #expect(rig.watch.fire())
+        await seen.waitForCount(3)
+        #expect(rig.watch.fire())
+        await seen.waitForCount(4)
+        await end(consumer)
+        await rig.waitForEnd()
+
+        #expect(
+            Self.transitions(rig.developer) == [
+                "package glow is broken: manifestMissing",
+                "package glow is readable again",
+                "package glow is broken: manifestMissing",
+            ])
+        #expect(rig.errors.entries.count == 0)
+    }
+
+    @Test("a change of problem is logged once more, and so is a change of the reason it carries; the same problem never is")
+    func changedProblemIsLoggedOnce() async {
+        let rig = Rig(inventory: Self.inventory([.broken(.package("glow"), .manifestMissing)]))
+        let seen = Collector<[EffectCatalogEntry]>()
+        let consumer = listen(to: rig.subject.catalog(), into: seen)
+        await seen.waitForCount(1)
+
+        let steps: [EffectPackageProblem] = [
+            .manifestInvalid(message: "not valid JSON"),
+            .manifestInvalid(message: "not valid JSON"),
+            .manifestInvalid(message: "the name is empty"),
+            .sourceMissing,
+        ]
+        for (index, problem) in steps.enumerated() {
+            rig.packages.script(Self.inventory([.broken(.package("glow"), problem)]))
+            #expect(rig.watch.fire())
+            await seen.waitForCount(index + 2)
+        }
+        await end(consumer)
+        await rig.waitForEnd()
+
+        #expect(
+            Self.transitions(rig.developer) == [
+                "package glow is broken: manifestMissing",
+                #"package glow is broken: manifestInvalid(message: "not valid JSON")"#,
+                #"package glow is broken: manifestInvalid(message: "the name is empty")"#,
+                "package glow is broken: sourceMissing",
+            ])
+    }
+
+    @Test("a package that leaves the folder is forgotten without a line, and one that comes back broken is logged again")
+    func departureForgetsTheProblem() async {
+        let rig = Rig(inventory: Self.inventory([.broken(.package("glow"), .sourceMissing)]))
+        let seen = Collector<[EffectCatalogEntry]>()
+        let consumer = listen(to: rig.subject.catalog(), into: seen)
+        await seen.waitForCount(1)
+
+        rig.packages.script(Self.inventory([]))
+        #expect(rig.watch.fire())
+        await seen.waitForCount(2)
+        rig.packages.script(Self.inventory([.broken(.package("glow"), .sourceMissing)]))
+        #expect(rig.watch.fire())
+        await seen.waitForCount(3)
+        await end(consumer)
+        await rig.waitForEnd()
+
+        #expect(Self.transitions(rig.developer) == ["package glow is broken: sourceMissing", "package glow is broken: sourceMissing"])
+    }
+
+    @Test("asking for the source of a broken package logs nothing: the listing that showed it already did")
+    func sourceOfBrokenPackageLogsNothing() async {
+        let rig = Rig()
+        rig.packages.script(.broken(.package("glow"), .sourceMissing), for: .package("glow"))
+
+        for _ in 0..<3 { _ = await rig.subject.source(of: .package("glow")) }
+
+        #expect(rig.developer.messages(in: .effect).isEmpty)
+        #expect(rig.errors.entries.count == 0)
     }
 
     // MARK: - Listing again
