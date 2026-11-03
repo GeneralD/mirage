@@ -17,9 +17,11 @@ import Views
 /// `MetalKitPreviewGateway` readying an `MTKView` and drawing into its layer's
 /// drawable, and `PreviewDataSource` driving the live gateways end to end.
 /// The view is never put in a window, so it is created at its drawable's size
-/// (an off-screen view's scale is 1). Every draw then asserts the layer's
-/// drawable size: only a drawable actually taken sets it — a zero-sized view
-/// gets none, and its command buffer commits empty and still completes cleanly.
+/// (at scale 1, as the creation draws observe). The scale of an off-screen view
+/// is not fixed, though: after a resize the drawable follows the view's backing
+/// size, so the resize test checks it against `convertToBacking`. Every draw then asserts the
+/// layer's drawable size: only a drawable actually taken sets it — a zero-sized
+/// view gets none, and its command buffer commits empty and still completes cleanly.
 /// The drawable's pixels are the compositor's and are not read back; the kernel
 /// tests pin them, and the frame surface is read back to prove the draw left it
 /// alone. Everything that decides (latest-wins, exactly-once) is tested against
@@ -171,7 +173,10 @@ struct PreviewSmokeTests {
 
         view.setFrameSize(NSSize(width: 18, height: 32))
         #expect(try await drawOnce(texture, with: kernel, into: layer, on: context).error == nil)
-        #expect(metalLayer.drawableSize == CGSize(width: 18, height: 32))
+        // The drawable follows the view's backing scale, which is not the layer's contentsScale here (1 while
+        // the drawable came out at 2 x the points on the host this failed on), so the expectation is the view's
+        // own backing size for its new bounds.
+        #expect(metalLayer.drawableSize == view.convertToBacking(view.bounds).size)
         try metal.unbind(texture)
     }
 
