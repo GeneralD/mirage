@@ -95,16 +95,18 @@ private func help(of entry: EffectCatalogEntry) -> String {
 private let helpDescriptionLimit = 280
 
 /// The entry's description for the hover: without the whitespace around it, cut at
-/// `helpDescriptionLimit` scalars with an ellipsis when more than whitespace follows the cut, and
-/// `nil` when it says nothing (the manifest names none, or a blank one). It reads the start of the
-/// description and stops at the first non-whitespace scalar after the cut, so a long text is not read
-/// through on every keystroke.
+/// `helpDescriptionLimit` scalars with an ellipsis when something other than whitespace follows the
+/// cut within the next `helpDescriptionLimit` scalars, and `nil` when it says nothing (the manifest
+/// names none, or a blank one). It reads the whitespace before the text, the text up to the cut and
+/// no more than `helpDescriptionLimit` scalars past it, so a long text is not read through on every
+/// keystroke; a gap of whitespace longer than that after the cut hides what follows it without an ellipsis.
 private func helpDescription(of entry: EffectCatalogEntry) -> String? {
     guard let description = entry.description else { return nil }
     let content = description.unicodeScalars.drop { $0.properties.isWhitespace }
     let head = String(Substring(content.prefix(helpDescriptionLimit))).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !head.isEmpty else { return nil }
-    return content.dropFirst(helpDescriptionLimit).contains { !$0.properties.isWhitespace } ? head + "…" : head
+    let rest = content.dropFirst(helpDescriptionLimit).prefix(helpDescriptionLimit)
+    return rest.contains { !$0.properties.isWhitespace } ? head + "…" : head
 }
 
 /// The search as it is matched: without the whitespace around it.

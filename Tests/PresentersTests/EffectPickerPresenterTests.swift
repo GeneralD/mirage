@@ -102,6 +102,8 @@ struct EffectPickerPresenterTests {
             (String(repeating: "あ", count: 279) + " い", String(repeating: "あ", count: 279) + "…"),
             // padding between the cut and more text still ends in the ellipsis: there is more to say
             (String(repeating: "あ", count: 280) + "   \n  い", String(repeating: "あ", count: 280) + "…"),
+            // the look past the cut is bounded (280 scalars): a longer gap hides what follows, without an ellipsis
+            (String(repeating: "あ", count: 280) + String(repeating: " ", count: 300) + "い", String(repeating: "あ", count: 280)),
         ])
     func helpDescriptionCapIgnoresPadding(description: String, shown: String) async {
         let entry = EffectCatalogEntry.fixture(.package("pad"), displayName: "Pad", description: description)
