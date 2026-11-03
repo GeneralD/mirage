@@ -38,7 +38,10 @@ import Foundation
 /// (its kind, or the reason it carries), is logged once, as an error when a file exists and cannot
 /// be read and as a developer line otherwise; one that was broken and is ready now is logged once
 /// as readable again; a package that stays as it was is not logged again, and one that left the
-/// folder is forgotten without a line. A new stream starts with nothing remembered, so each run of
+/// folder is forgotten without a line. A listing with no packages in it forgets them all the same
+/// way, and that includes a folder that cannot be listed, which gives an empty listing too (the
+/// DataSource logs why): the Repository cannot tell the two apart, so a broken package it hid is
+/// logged again when the folder lists. A new stream starts with nothing remembered, so each run of
 /// the menu logs what it finds once. `source(of:)` logs nothing, and neither does the DataSource
 /// for a broken package.
 ///
