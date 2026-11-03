@@ -92,7 +92,8 @@ Ripple.lens/
   range, is reported as invalid.
 - `name` (required): what the menu shows. Surrounding whitespace is trimmed; it cannot be empty.
 - `author`, `description` (optional): the effect picker's hover shows them, the description on a line
-  after the author (without the whitespace around it, and cut at 280 characters).
+  after the author (without the whitespace around it, and cut at 280 characters, counted as Unicode
+  scalars; the name and the author are shown in full).
 - `thumbnail` (optional): a picture for the effect picker's cell (the menu does not show it), a
   PNG or JPEG file inside the package, given by its path relative to the package
   (`thumbnail.png`, `images/thumb.jpg`) and at most 1 MiB. A path that is absolute or has a `..`

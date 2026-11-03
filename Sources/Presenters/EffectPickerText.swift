@@ -84,16 +84,24 @@ private func help(of entry: EffectCatalogEntry) -> String {
     }
 }
 
-/// The most characters of a description that a hover shows: a longer one is cut, so that a manifest
-/// cannot make a tooltip the size of a file.
+/// The most Unicode scalars of a description that a hover shows: a longer one is cut. It bounds the
+/// description alone, in scalars and not in `Character`s (a base letter followed by a thousand
+/// combining marks is one `Character`), so that the hover does not grow with a long one and the work
+/// of `helpDescription`, which the picker repeats on every keystroke, does not either. The name and the
+/// author are not cut: the cell shows them in full too.
 private let helpDescriptionLimit = 280
 
 /// The entry's description for the hover: without the whitespace around it, cut at
-/// `helpDescriptionLimit` characters with an ellipsis, and `nil` when it says nothing (the manifest
-/// names none, or a blank one).
+/// `helpDescriptionLimit` scalars with an ellipsis when more than whitespace follows the cut, and
+/// `nil` when it says nothing (the manifest names none, or a blank one). It reads the start of the
+/// description and stops at the first non-whitespace scalar after the cut, so a long text is not read
+/// through on every keystroke.
 private func helpDescription(of entry: EffectCatalogEntry) -> String? {
-    guard let text = entry.description?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-    return text.count > helpDescriptionLimit ? String(text.prefix(helpDescriptionLimit)) + "…" : text
+    guard let description = entry.description else { return nil }
+    let content = description.unicodeScalars.drop { $0.properties.isWhitespace }
+    let head = String(Substring(content.prefix(helpDescriptionLimit))).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !head.isEmpty else { return nil }
+    return content.dropFirst(helpDescriptionLimit).contains { !$0.properties.isWhitespace } ? head + "…" : head
 }
 
 /// The search as it is matched: without the whitespace around it.

@@ -93,6 +93,38 @@ struct EffectPickerPresenterTests {
         #expect(rig.presenter.cells.map(\.help) == ["Long\n\(whole)…", "Exact\n\(whole)"])
     }
 
+    @Test(
+        "the whitespace around a description is not counted, and the ellipsis follows the last word it keeps, not a gap",
+        arguments: [
+            // 280 characters and the padding around them: shown whole, and no ellipsis for padding alone
+            ("  \n" + String(repeating: "あ", count: 280) + " \n\t " + String(repeating: " ", count: 500), String(repeating: "あ", count: 280)),
+            // a gap that falls on the cut is dropped, then the ellipsis: not "あ… " with a space before it
+            (String(repeating: "あ", count: 279) + " い", String(repeating: "あ", count: 279) + "…"),
+            // padding between the cut and more text still ends in the ellipsis: there is more to say
+            (String(repeating: "あ", count: 280) + "   \n  い", String(repeating: "あ", count: 280) + "…"),
+        ])
+    func helpDescriptionCapIgnoresPadding(description: String, shown: String) async {
+        let entry = EffectCatalogEntry.fixture(.package("pad"), displayName: "Pad", description: description)
+        let rig = PickerRig(state: .fixture([entry]))
+
+        await rig.start()
+
+        #expect(rig.presenter.cells.map(\.help) == ["Pad\n\(shown)"])
+    }
+
+    @Test("the cap counts scalars, not Characters: a letter under a thousand combining marks is one Character and is still cut")
+    func helpDescriptionCapCountsScalars() async throws {
+        let flood = "e" + String(repeating: "\u{0301}", count: 1000)
+        let entry = EffectCatalogEntry.fixture(.package("flood"), displayName: "Flood", description: flood)
+        let rig = PickerRig(state: .fixture([entry]))
+
+        await rig.start()
+
+        let help = try #require(rig.presenter.cells.first?.help)
+        #expect(help == "Flood\n" + String(flood.unicodeScalars.prefix(280)) + "…")
+        #expect(help.unicodeScalars.count == "Flood\n".unicodeScalars.count + 280 + 1)
+    }
+
     @Test("a package that cannot be chosen says why and nothing else, whatever description its entry carries")
     func brokenHelpIgnoresTheDescription() async {
         let entry = EffectCatalogEntry.fixture(
