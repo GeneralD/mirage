@@ -262,7 +262,9 @@ Generators live in `Tests/TestSupport/Generators/`. Targets are listed in
   from `#filePath`) and copies the files into an `InMemoryFileSystemGateway`, so
   the packages the README points to stay held to the format. It writes nothing,
   and the subject under test never sees the disk. A suite that reads another
-  repository file the same way is named here too.
+  repository file the same way is named here too: `EffectThumbnailDecodingTests`
+  reads `Examples/Ripple.lens/thumbnail.png` (from `#filePath`), the one picture
+  the README ships, to hold the real decoder to it; it writes nothing either.
 - Test doubles shared across layers live in `Tests/TestDoubles`; nothing
   test-only lives under `Sources/`.
 - GPU-touching suites follow `.claude/rules/gpu-testing.md`.

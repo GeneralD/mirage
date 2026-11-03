@@ -60,8 +60,8 @@ struct EffectArtworkResolutionTests {
         #expect(asked.values.isEmpty)
     }
 
-    @Test("every resolution asks the decoder afresh, so a picture that decodes later is drawn then")
-    func nothingIsRemembered() {
+    @Test("the resolver remembers no answer of the decoder: a picture that did not decode a moment ago is drawn once it does")
+    func aFailedDecodeIsNotRemembered() {
         let artwork = EffectArtwork.image(.fixture(5), fallback: tile)
         let answers = Collector<Bool>()
 

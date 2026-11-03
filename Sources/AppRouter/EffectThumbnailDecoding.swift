@@ -9,8 +9,15 @@ import Domain
 enum EffectThumbnailDecoding {
     /// The most pixels a thumbnail may have to be drawn: 2048 × 2048. A cell is a few hundred
     /// points wide, so a picture beyond this adds nothing a viewer sees, while a PNG within the
-    /// catalog's 1 MiB can claim sides of tens of thousands of pixels, which draws into hundreds of
-    /// megabytes; a thumbnail over the limit is not decoded and the cell draws its tile.
+    /// catalog's 1 MiB can claim sides of tens of thousands of pixels (a 15 000 × 15 000 grey one is
+    /// 982 742 bytes, and drew into about 226 MB in 0.34 s on the machine that measured it), so a
+    /// thumbnail over the limit is not drawn and the cell draws its tile. Counted in pixels, not in
+    /// points: a Retina export says it is half as wide as it is.
+    ///
+    /// The picture is refused after `NSBitmapImageRep(data:)` has read its header and before anything
+    /// draws it. That is cheap because the OS decodes lazily (the same 982 742-byte file took about a
+    /// millisecond and no measurable memory to open, and the cost came when it was drawn), which is
+    /// how it behaves and not a documented promise.
     static let maxPixels = 2048 * 2048
 
     /// The thumbnail as an image, or `nil` when it has no pixels to draw: its bytes are not a
