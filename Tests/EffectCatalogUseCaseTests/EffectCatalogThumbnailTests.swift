@@ -3,9 +3,9 @@ import TestDoubles
 import TestSupport
 import Testing
 
-/// What the effects menu's policy does with a package's thumbnail (#12): nothing but carry it. The
-/// state's entries are the catalog's, picture included, and a listing that changes only a picture is
-/// a new state that prepares nothing.
+/// What the effects menu's policy does with a package's thumbnail and description (#12): nothing but
+/// carry them. The state's entries are the catalog's, picture and description included, and a listing
+/// that changes only a picture, or only a description, is a new state that prepares nothing.
 @Suite("EffectCatalogUseCase thumbnails", .timeLimit(.minutes(1)))
 struct EffectCatalogThumbnailTests {
     private typealias Rig = EffectCatalogRig
@@ -16,6 +16,10 @@ struct EffectCatalogThumbnailTests {
 
     private static func other(_ thumbnail: EffectThumbnail?) -> EffectCatalogEntry {
         .fixture(Rig.other.id, displayName: Rig.other.displayName, thumbnail: thumbnail)
+    }
+
+    private static func described(_ description: String?) -> EffectCatalogEntry {
+        .fixture(Rig.glitch.id, displayName: Rig.glitch.displayName, description: description)
     }
 
     @Test("the state's entries carry each package's thumbnail as the catalog listed it")
@@ -57,6 +61,29 @@ struct EffectCatalogThumbnailTests {
                 Rig.state([Rig.bundled, Self.glitch(nil), Self.other(first)], selection: Rig.glitch),
             ])
         #expect(rig.runtime.prepareRequests.count == 1, "a picture is not a source: nothing was prepared again")
+        await rig.stop(run)
+    }
+
+    @Test("a listing that replaces only a description publishes a new state and prepares nothing")
+    func replacedDescriptionPublishesAndPreparesNothing() async {
+        let rig = Rig(entries: [Rig.bundled, Self.described("before"), Rig.other], persisted: Rig.glitch.id)
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.packages.publish([Rig.bundled, Self.described("after"), Rig.other])
+        await watcher.states.waitForCount(2)
+        rig.packages.publish([Rig.bundled, Self.described(nil), Rig.other])
+        await watcher.states.waitForCount(3)
+
+        #expect(
+            watcher.states.values == [
+                Rig.state([Rig.bundled, Self.described("before"), Rig.other], selection: Rig.glitch),
+                Rig.state([Rig.bundled, Self.described("after"), Rig.other], selection: Rig.glitch),
+                Rig.state([Rig.bundled, Self.described(nil), Rig.other], selection: Rig.glitch),
+            ])
+        #expect(rig.runtime.prepareRequests.count == 1, "a description is not a source: nothing was prepared again")
         await rig.stop(run)
     }
 }

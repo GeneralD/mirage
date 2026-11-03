@@ -92,7 +92,8 @@ Ripple.lens/
   range, is reported as invalid.
 - `name` (required): what the menu shows. Surrounding whitespace is trimmed; it cannot be empty.
 - `author`, `description` (optional): the effect picker's hover shows them, the description on a line
-  after the author (without the whitespace around it, and cut at 280 characters).
+  after the author (without the whitespace around it, and cut at 280 characters, counted as Unicode
+  scalars; the name and the author are shown in full).
 - `thumbnail` (optional): a picture for the effect picker's cell (the menu does not show it), a
   PNG or JPEG file inside the package, given by its path relative to the package
   (`thumbnail.png`, `images/thumb.jpg`) and at most 1 MiB. A path that is absolute or has a `..`
@@ -101,7 +102,9 @@ Ripple.lens/
   its picture: it still loads, and the reason goes to the app's log (at debug level; a file that is
   there and cannot be read is an error). A picture that does not decode, or has more than
   2048 × 2048 pixels in all (about 4 megapixels), is drawn like a missing one: the effect's coloured
-  tile with its initials. The cell is a few hundred points wide, so 512 × 512 is plenty.
+  tile with its initials, and nothing is logged for it. A PNG or JPEG cut off in the middle of its
+  pixels (a file that is still being written) is not told from a whole one: it draws as far as it goes,
+  the rest black or grey, until the finished file is read. The cell is a few hundred points wide, so 512 × 512 is plenty.
 - Keys this version doesn't know are ignored, so a package can carry more than an older build
   reads. A `parameters` list is read past for now; the parameter UI is MVP-C.
 - `effect.metal` is the kernel described above, entry point `effect`, and nothing else: no

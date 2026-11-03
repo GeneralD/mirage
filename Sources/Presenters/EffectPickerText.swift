@@ -23,13 +23,16 @@ func pickerEmptyMessage(of state: EffectCatalogState, matching query: String) ->
     return "No effects match “\(term)”"
 }
 
-/// What a cell draws above its name: the thumbnail the catalog carries for the entry, with the
-/// entry's own tile to fall back on when the bytes do not decode, or that tile alone when the
-/// entry has no thumbnail (a bundled effect, a package whose manifest names none or names one that
-/// cannot be used, and a broken package: the catalog gives those none).
+/// What a cell draws above its name: the thumbnail the catalog carries for a package that can be
+/// chosen, with the entry's own tile to fall back on when the bytes do not decode, or that tile
+/// alone when there is none to draw: the entry has no thumbnail (a bundled effect, a package whose
+/// manifest names none or names one that cannot be used), or it is a broken package, whose
+/// manifest is not trusted for its picture any more than for its name. The catalog gives a broken
+/// package none, and this does not rely on that, as `help(of:)` does not rely on it for a description.
 func artwork(of entry: EffectCatalogEntry) -> EffectArtwork {
     let tile = placeholder(of: entry)
-    return entry.thumbnail.map { .image($0, fallback: tile) } ?? .placeholder(tile)
+    guard entry.availability == .ready, let thumbnail = entry.thumbnail else { return .placeholder(tile) }
+    return .image(thumbnail, fallback: tile)
 }
 
 /// The tile a cell draws when it has no picture to show: the entry has no thumbnail, or its
@@ -84,16 +87,26 @@ private func help(of entry: EffectCatalogEntry) -> String {
     }
 }
 
-/// The most characters of a description that a hover shows: a longer one is cut, so that a manifest
-/// cannot make a tooltip the size of a file.
+/// The most Unicode scalars of a description that a hover shows: a longer one is cut. It bounds the
+/// description alone, in scalars and not in `Character`s (a base letter followed by a thousand
+/// combining marks is one `Character`), so that the hover does not grow with a long one and the work
+/// of `helpDescription`, which the picker repeats on every keystroke, does not either. The name and the
+/// author are not cut: the cell shows them in full too.
 private let helpDescriptionLimit = 280
 
 /// The entry's description for the hover: without the whitespace around it, cut at
-/// `helpDescriptionLimit` characters with an ellipsis, and `nil` when it says nothing (the manifest
-/// names none, or a blank one).
+/// `helpDescriptionLimit` scalars with an ellipsis when something other than whitespace follows the
+/// cut within the next `helpDescriptionLimit` scalars, and `nil` when it says nothing (the manifest
+/// names none, or a blank one). It reads the whitespace before the text, the text up to the cut and
+/// no more than `helpDescriptionLimit` scalars past it, so a long text is not read through on every
+/// keystroke; a gap of whitespace longer than that after the cut hides what follows it without an ellipsis.
 private func helpDescription(of entry: EffectCatalogEntry) -> String? {
-    guard let text = entry.description?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-    return text.count > helpDescriptionLimit ? String(text.prefix(helpDescriptionLimit)) + "…" : text
+    guard let description = entry.description else { return nil }
+    let content = description.unicodeScalars.drop { $0.properties.isWhitespace }
+    let head = String(Substring(content.prefix(helpDescriptionLimit))).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !head.isEmpty else { return nil }
+    let rest = content.dropFirst(helpDescriptionLimit).prefix(helpDescriptionLimit)
+    return rest.contains { !$0.properties.isWhitespace } ? head + "…" : head
 }
 
 /// The search as it is matched: without the whitespace around it.
