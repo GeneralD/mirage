@@ -12,7 +12,7 @@
 | **Gateway** | 1:1 thin pass-through to one OS API | Branching, timing, ordering, retries, loops — anything that needs a test |
 | **Support** | Cross-cutting seams (random, log, host time, app directories) | Business logic |
 | **Presenter** | `@Published` display state | AppKit / SwiftUI / MetalKit imports; business logic |
-| **Views / Router / App** | Declarative rendering, wiring, lifecycle | Business logic; direct UseCase/Gateway access (`ExtensionApp` → `extensionRelayUseCase` excepted: Key-Path table) |
+| **Views / Router / App** | Declarative rendering, wiring, lifecycle; in `AppRouter` also the picker's thumbnail decode (`EffectThumbnailDecoding`: one AppKit call and the pixel limit that guards it, which stay covered and tested because `Views` is not) | Other business logic; direct UseCase/Gateway access (`ExtensionApp` → `extensionRelayUseCase` excepted: Key-Path table) |
 | **DI targets** | `liveValue` registrations, and dev-only `DependencyValues` extensions whose members each only assign one value (no branch, no `var`; `scripts/check-live-thin.sh` checks `DevelopmentSubstitutions.swift`) | Implementation |
 | **Shells (`Apps/**`)** | `main.swift`, assets (plus generated `Info.plist` / entitlements from `project.yml`) | Any logic; hand-written plists |
 

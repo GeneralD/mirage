@@ -81,8 +81,8 @@ Shared conventions:
   `AppDirectoriesProvider`) holding `manifest.json` (`formatVersion` 1 and
   `name`; optional `author` / `description` / `thumbnail`, the picker's hover
   shows the description after the author, and the last is a path to a PNG or
-  JPEG of at most 1 MiB inside the package, which costs the package only its
-  picture when it cannot be used (the picker then draws the effect's tile); unknown keys, `parameters`
+  JPEG of at most 1 MiB inside the package and of at most 2048 × 2048 pixels once decoded, which costs the package only its
+  picture when it cannot be used or decoded (the picker then draws the effect's tile); unknown keys, `parameters`
   included, ignored) and `effect.metal` (entry point `effect`, compiled behind
   the prelude). The id is the directory name without the suffix.
   `EffectPackageDataSource` reads it through `FileSystemGateway` and lists a
@@ -185,7 +185,7 @@ Shared conventions:
   by an injected `makePickerWindow`; the live one, `EffectPickerWindow`, is AppKit glue in `AppRouter`, not `Views`) and starts `EffectPickerPresenter` while it is open; that Presenter maps the same
   `state` to cells and only observes (it never starts or stops the Interactor), and the grid's `EffectPickerGeometry`
   and the choice between a decoded thumbnail and the effect's tile (`resolveArtwork`) are pure and in `Presenters` because
-  `Views` is coverage-ignored; the live decode (`EffectThumbnailDecoding`) is in `AppRouter` and reaches the view as a closure. Details: the *Key Design Decisions* entries in
+  `Views` is coverage-ignored; the live decode (`EffectThumbnailDecoding`, which also refuses a picture of more than 2048 × 2048 pixels) is in `AppRouter`, covered and tested, and reaches the view as a closure. Details: the *Key Design Decisions* entries in
   `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*, *Effect picker*).
 
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only

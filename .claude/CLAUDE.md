@@ -39,7 +39,7 @@ swift-dependencies.
 
 ```text
 View → Presenter → Interactor → UseCase → Repository → DataSource/DataStore → Gateway (OS boundary)
-                 → Router (wireframe only)
+                 → Router (wireframe; plus the picker's thumbnail decode, see `architecture-boundaries.md`)
 ```
 
 The host app and the Camera Extension are two processes; each has exactly

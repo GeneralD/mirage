@@ -3,8 +3,9 @@ import Foundation
 /// The picture of a `.lens` package, for the effect picker (#12): the bytes of the file its
 /// manifest's `thumbnail` names. The package DataSource makes one only from bytes it checked: at
 /// most 1 MiB, and beginning with the signature of `format`. A signature is not a whole image, so
-/// the bytes may still fail to decode, and a view that shows them must then show no picture.
-/// Turning them into pixels is the view's; nothing below it decodes an image.
+/// the bytes may still fail to decode, and a view that shows them must then draw the effect's tile.
+/// Turning them into pixels is the view lane's (`EffectThumbnailDecoding` in `AppRouter`, which also
+/// refuses a picture of more than 2048 × 2048 pixels); nothing below it decodes an image.
 public struct EffectThumbnail: Sendable, Hashable {
     public let data: Data
     public let format: EffectThumbnailFormat

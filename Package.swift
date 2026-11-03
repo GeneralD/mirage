@@ -204,7 +204,7 @@ let package = Package(
         .target(name: "Presenters", dependencies: dependencies),
         .testTarget(name: "PresentersTests", dependencies: ["Presenters"] + testDependencies),
 
-        // ── Router (builds the Presenters, starts / stops the menu, opens / closes the picker window; View lane; host only) ──
+        // ── Router (builds the Presenters, starts / stops the menu, opens / closes the picker window, decodes its thumbnails; View lane; host only) ──
         .target(name: "AppRouter", dependencies: dependencies + ["Presenters", "Views"]),
         .testTarget(name: "AppRouterTests", dependencies: ["AppRouter", "Presenters"] + testDependencies),
 
