@@ -1,0 +1,4 @@
+# Hackathon `mvp-cd`: registration lists every feature appends to (docs/hackathon/mvp-cd/PRODUCT.md → Hot files).
+Sources/HostDependencyInjection/*.swift merge=union
+Sources/CommonDependencyInjection/*.swift merge=union
+Sources/ExtensionDependencyInjection/*.swift merge=union
