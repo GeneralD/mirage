@@ -33,7 +33,7 @@ commit what it rewrites.
 |---|---|
 | `version.txt` | Once, in the final PR to `main` |
 | `Package.swift` | Only by an issue whose Scope names it; new targets are created together up front |
-| `docs/ARCHITECTURE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, `README.md` | Only by the docs-sync issues at the end of each epic; a single-line paragraph conflicts whole |
+| `docs/ARCHITECTURE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, `README.md` | Only by the one docs-sync issue before the final PR; a single-line paragraph conflicts whole |
 | `codecov.yml`, `scripts/check-*.sh` allow-lists | Only by an issue whose Scope names them |
 | `Sources/*DependencyInjection/*.swift` | `merge=union` (`.gitattributes`): add your `liveValue` block; never reorder existing ones |
 
