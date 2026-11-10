@@ -89,6 +89,9 @@ struct HostSide {
     /// What the pipeline presents to: `preview`, or the real preview over the fake GPU layer.
     let previewSink: any PreviewSink
     let pipeline: FramePipelineUseCaseImpl
+    /// The runtime the pipeline applies its effect with: `effects` on a `.fake` host, the real one on a `.real` host.
+    /// The catalog drives the same one, and so would anything that reads how its passes ended (`outcomes()`).
+    let runtime: any EffectRuntimeRepository
     /// The effects menu's catalog on the same runtime as the pipeline (`LoopbackRig(catalog: .real)`), or `nil`.
     let catalog: CatalogSide?
 
@@ -163,6 +166,7 @@ struct HostSide {
         }
         previewSink = hostSink
         pipeline = hostPipeline
+        runtime = hostRuntime
         // The catalog drives the very runtime the pipeline applies, so what it prepares is what the next frame is drawn with.
         catalog =
             switch catalogChoice {

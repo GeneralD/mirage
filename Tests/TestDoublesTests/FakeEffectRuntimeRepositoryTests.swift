@@ -143,4 +143,30 @@ struct FakeEffectRuntimeRepositoryTests {
         #expect(await strangerPreparing.value.failure == nil)
         #expect(await strangerApplying.value.failure == nil)
     }
+
+    @Test("every outcomes() call opens a stream of its own: each copies what is reported after it was opened, and none replays")
+    func outcomesAreCopiedToEveryOpenStream() async throws {
+        func outcome(_ seconds: Double) -> EffectPassOutcome {
+            EffectPassOutcome(fingerprint: .of(effect), result: .success(GPUTiming(gpuStart: 1, gpuEnd: 1 + seconds)))
+        }
+        runtime.report(outcome(1))
+
+        let first = runtime.outcomes()
+        let second = runtime.outcomes()
+        #expect(runtime.outcomeStreams.count == 2, "one element per call")
+        runtime.report(outcome(2))
+        runtime.report(outcome(3))
+
+        #expect(await first.prefix(2).reduce(into: [EffectPassOutcome]()) { $0.append($1) } == [outcome(2), outcome(3)])
+        #expect(await second.prefix(2).reduce(into: [EffectPassOutcome]()) { $0.append($1) } == [outcome(2), outcome(3)])
+    }
+
+    @Test("a stream keeps the newest 64 outcomes nobody has read, as the live one does")
+    func outcomesKeepTheNewest64() async throws {
+        let stream = runtime.outcomes()
+        let reported = (0..<70).map { EffectPassOutcome(fingerprint: .of(effect), result: .failure(.unknown(code: $0))) }
+        for outcome in reported { runtime.report(outcome) }
+
+        #expect(await stream.prefix(64).reduce(into: [EffectPassOutcome]()) { $0.append($1) } == Array(reported.suffix(64)))
+    }
 }

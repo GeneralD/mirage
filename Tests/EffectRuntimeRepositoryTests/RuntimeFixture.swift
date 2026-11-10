@@ -70,6 +70,28 @@ struct RuntimeFixture {
         return call
     }
 
+    /// Opens `outcomes()` and reads the stream on a task of its own into `OutcomeWatch.delivered`. The
+    /// stream is registered through the executor, so it is open from the next drain, and replays
+    /// nothing: open it before the pass it is to see.
+    func watchOutcomes() -> OutcomeWatch {
+        OutcomeWatch(subject.outcomes())
+    }
+
+    /// Drains the executor until `watch` has been delivered `count` outcomes, and returns what it has,
+    /// or `nil` when they never came. An `apply` queues its report before it answers, but the drain that
+    /// saw the answer may be over by then, so what an `apply` reported is waited for here and not in `answer`.
+    @MainActor
+    func delivered(_ count: Int, to watch: OutcomeWatch) async -> [EffectPassOutcome]? {
+        let arrived = await tickUntil(tick: { executor.drain() }, until: { watch.delivered.count >= count })
+        return arrived ? watch.delivered.values : nil
+    }
+
+    /// The first `count` outcomes `stream` delivers, waiting for them. Off the main actor, because the
+    /// closure `reduce` takes is not `Sendable`.
+    func read(_ count: Int, from stream: AsyncStream<EffectPassOutcome>) async -> [EffectPassOutcome] {
+        await stream.prefix(count).reduce(into: [EffectPassOutcome]()) { $0.append($1) }
+    }
+
     /// Drains the executor until `call` has answered, and returns the answer.
     @MainActor
     func answer(_ call: Call) async -> Reply {
@@ -168,6 +190,24 @@ struct Call {
             answered.append(answer)
             return answer
         }
+    }
+}
+
+/// An `outcomes()` stream and what its consumer, a task of its own, has read from it so far.
+struct OutcomeWatch: Sendable {
+    let delivered = Collector<EffectPassOutcome>()
+    private let consumer: Task<Void, Never>
+
+    init(_ stream: AsyncStream<EffectPassOutcome>) {
+        let delivered = delivered
+        consumer = Task {
+            for await outcome in stream { delivered.append(outcome) }
+        }
+    }
+
+    /// Lets go of the stream, which ends it.
+    func stop() {
+        consumer.cancel()
     }
 }
 

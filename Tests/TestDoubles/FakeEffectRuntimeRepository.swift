@@ -12,6 +12,10 @@ import TestSupport
 /// the pending request itself (`pendingCount` tells what is left).
 /// `setParameters` never suspends, as the live one does not wait for anything: every
 /// write is recorded in `parameterWrites`, in call order, and nothing is applied.
+/// `apply` reports nothing, because the test chooses what each pass ends in: it tells the
+/// streams `outcomes()` opened what it likes with `report(_:)`, as the live runtime does for
+/// every pass. Each `outcomes()` call opens a stream of its own, which replays nothing and keeps
+/// the newest 64 outcomes it has not delivered.
 public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendable {
     public struct PrepareRequest: Sendable {
         public let id: Int
@@ -45,12 +49,17 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
     private struct State {
         var nextID = 1
         var waiting: [Int: Continuation] = [:]
+        var nextObserver = 1
+        var observers: [Int: AsyncStream<EffectPassOutcome>.Continuation] = [:]
     }
 
     private let state = Locked(State())
     public let prepareRequests = Collector<PrepareRequest>()
     public let parameterWrites = Collector<ParameterWrite>()
     public let applyRequests = Collector<ApplyRequest>()
+    /// One element per `outcomes()` call, recorded once its stream is open: a caller that opens it on its
+    /// own task can be waited for before the test reports, because a stream replays nothing.
+    public let outcomeStreams = Collector<Void>()
 
     public init() {}
 
@@ -73,6 +82,27 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
         return await suspend(id) {
             applyRequests.append(ApplyRequest(id: id, input: input, output: output, frameContext: frameContext, origin: ObjectIdentifier(self)))
         }
+    }
+
+    public func outcomes() -> AsyncStream<EffectPassOutcome> {
+        let (stream, continuation) = AsyncStream.makeStream(of: EffectPassOutcome.self, bufferingPolicy: .bufferingNewest(64))
+        let id = state.withLock { state in
+            defer { state.nextObserver += 1 }
+            state.observers[state.nextObserver] = continuation
+            return state.nextObserver
+        }
+        continuation.onTermination = { [state] _ in
+            state.withLock { $0.observers[id] = nil }
+        }
+        outcomeStreams.append(())
+        return stream
+    }
+
+    /// Tells `outcome` to every stream `outcomes()` has open, at once. The live runtime does so from its
+    /// executor, a moment after the pass answers; a subject cannot see the difference, so it is not modelled.
+    public func report(_ outcome: EffectPassOutcome) {
+        let open = state.withLock { Array($0.observers.values) }
+        for observer in open { observer.yield(outcome) }
     }
 
     /// Resumes the suspended `prepare`; `false` when it is unknown, came from another repository, or is already resumed.

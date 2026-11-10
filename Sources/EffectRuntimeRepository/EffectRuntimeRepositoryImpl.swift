@@ -32,6 +32,12 @@ import Domain
 /// for it. The compile holds no lease, so the leases still stay the caller's until
 /// `apply` returns.
 ///
+/// **Outcomes.** Every `apply` ends in one `EffectPassOutcome`: the pass's timing, or the failure
+/// (the selection's own included), stamped with the fingerprint of the effect the selection ran.
+/// It is reported to the state before it is narrowed to the `Result<Void, EffectFailure>` the
+/// pipeline is answered, which keeps no memory of failure, and reporting does not wait: the state
+/// queues it on its executor, and `outcomes()` is the state's stream.
+///
 /// Cancellation cuts nothing short (the port's contract): neither call observes it,
 /// nor do the state, the compiler and the renderer, so a cancelled caller still
 /// receives the real outcome.
@@ -73,14 +79,20 @@ extension EffectRuntimeRepositoryImpl: EffectRuntimeRepository {
             _ = workRunner.run { [self] in _ = await compile(effect, under: ticket) }
             (selection, uniforms) = (await state.selected(), passUniforms)
         }
+        let outcome: Result<GPUTiming, EffectFailure>
         switch selection.result {
         case .success(let kernel):
-            return await renderer.render(
-                library: kernel, input: input.token, output: output.token, uniforms: uniforms, parameters: selection.parameters
-            ).map { _ in () }
+            outcome = await renderer.render(
+                library: kernel, input: input.token, output: output.token, uniforms: uniforms, parameters: selection.parameters)
         case .failure(let failure):
-            return .failure(failure)
+            outcome = .failure(failure)
         }
+        state.report(EffectPassOutcome(fingerprint: selection.fingerprint, result: outcome))
+        return outcome.map { _ in () }
+    }
+
+    public func outcomes() -> AsyncStream<EffectPassOutcome> {
+        state.outcomes()
     }
 }
 
