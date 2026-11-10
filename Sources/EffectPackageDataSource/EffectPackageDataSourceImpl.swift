@@ -90,6 +90,30 @@ extension EffectPackageDataSourceImpl: EffectPackages {
         return read(key, directory: directory, includingThumbnail: false).listing
     }
 
+    public func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem> {
+        guard EffectScaffoldTemplate.isValid(name: name) else { return .failure(.invalidName(name)) }
+        let directory = Self.scaffoldDirectory(named: name, in: folder)
+        guard !fileSystem.isDirectory(directory) else { return .failure(.alreadyExists(path: directory)) }
+        do {
+            try fileSystem.createDirectory(directory)
+        } catch {
+            return .failure(.unwritable(path: directory))
+        }
+        let sourcePath = Self.join(directory, Self.sourceFileName)
+        let manifestPath = Self.join(directory, Self.manifestFileName)
+        do {
+            try fileSystem.writeData(Data(EffectScaffoldTemplate.effectSource.utf8), to: sourcePath)
+        } catch {
+            return .failure(.unwritable(path: sourcePath))
+        }
+        do {
+            try fileSystem.writeData(Data(EffectScaffoldTemplate.manifest(named: name).utf8), to: manifestPath)
+        } catch {
+            return .failure(.unwritable(path: manifestPath))
+        }
+        return .success(directory)
+    }
+
     public func openFolder() {
         let folder = appDirectories.effectsDirectory
         guard makeFolderIfAbsent(folder) else { return }
@@ -312,6 +336,14 @@ extension EffectPackageDataSourceImpl {
 
     private static func directory(of key: String, in folder: String) -> String {
         join(folder, key + packageSuffix)
+    }
+
+    /// The directory a scaffold makes for `name` in `folder`: one trailing `/` of the folder is taken off
+    /// (the root keeps its own), and the name is joined on without a doubled `/`.
+    private static func scaffoldDirectory(named name: String, in folder: String) -> String {
+        let parent = folder.count > 1 && folder.hasSuffix("/") ? String(folder.dropLast()) : folder
+        let packageName = name + packageSuffix
+        return parent.hasSuffix("/") ? parent + packageName : join(parent, packageName)
     }
 
     private static func join(_ directory: String, _ name: String) -> String {
