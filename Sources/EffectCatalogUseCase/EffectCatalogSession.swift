@@ -163,7 +163,7 @@ actor EffectCatalogSession {
         if let chosen = selection, entries.contains(where: { $0.id == chosen && $0.availability == .ready }) {
             return (chosen, false)
         }
-        guard let bundled = entries.first(where: { $0.origin == .bundled && $0.availability == .ready }) else { return nil }
+        guard let bundled = readyBundled else { return nil }
         let lost = selection.map(displayName(of:))
         selection = bundled.id
         if let lost {
