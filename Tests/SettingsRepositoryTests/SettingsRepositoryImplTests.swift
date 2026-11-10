@@ -13,6 +13,8 @@ private final class RecordingPreferences: Preferences, Sendable {
     private let disabled = Locked<[DisabledEffectRecord]>([])
     let reads = Collector<Void>()
     let writes = Collector<EffectID>()
+    let hotkeyReads = Collector<Void>()
+    let hotkeyWrites = Collector<Bool>()
 
     init(selected: EffectID? = nil) {
         stored = Locked(selected)
@@ -34,6 +36,15 @@ private final class RecordingPreferences: Preferences, Sendable {
 
     func setDisabledEffects(_ records: [DisabledEffectRecord]) async {
         disabled.set(records)
+    }
+
+    func hotkeysEnabled() async -> Bool {
+        hotkeyReads.append(())
+        return true
+    }
+
+    func setHotkeysEnabled(_ on: Bool) async {
+        hotkeyWrites.append(on)
     }
 }
 
