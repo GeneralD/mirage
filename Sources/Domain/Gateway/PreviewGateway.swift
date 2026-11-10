@@ -25,17 +25,18 @@ public protocol PreviewGateway: Sendable {
     func prepare(_ target: any PreviewTargetHandle, on context: any GPUContextHandle) throws -> any PreviewLayerHandle
 
     /// Encodes one pass of `kernel` — `texture` at index 0, the layer's next
-    /// drawable at index 1, whole 16 × 16 threadgroups covering the drawable
-    /// (the kernel bounds-checks its `gid`) — presents the drawable and commits.
-    /// `completion` runs exactly once with the raw outcome when the command
-    /// buffer finishes, on the GPU's completion thread, also when the layer had
-    /// no drawable to give (nothing is drawn then). Throws only before the
-    /// commit (foreign handle, no command buffer or encoder); `completion` then
-    /// never runs. May wait inside `nextDrawable()` while the compositor holds
-    /// every drawable (at most one second, the layer's timeout).
+    /// drawable at index 1, `original` at index 2, whole 16 × 16 threadgroups
+    /// covering the drawable (the kernel bounds-checks its `gid`) — presents the
+    /// drawable and commits. `completion` runs exactly once with the raw outcome
+    /// when the command buffer finishes, on the GPU's completion thread, also when
+    /// the layer had no drawable to give (nothing is drawn then). Throws only
+    /// before the commit (foreign handle, no command buffer or encoder);
+    /// `completion` then never runs. May wait inside `nextDrawable()` while the
+    /// compositor holds every drawable (at most one second, the layer's timeout).
     func draw(
-        _ texture: any TextureHandle, with kernel: any LibraryHandle, into layer: any PreviewLayerHandle,
-        on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
+        _ texture: any TextureHandle, original: any TextureHandle, with kernel: any LibraryHandle,
+        into layer: any PreviewLayerHandle, on context: any GPUContextHandle,
+        completion: @escaping @Sendable (GPUCompletion) -> Void
     ) throws
 }
 
@@ -57,8 +58,9 @@ private struct UnimplementedPreviewGateway: PreviewGateway {
     }
 
     func draw(
-        _ texture: any TextureHandle, with kernel: any LibraryHandle, into layer: any PreviewLayerHandle,
-        on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
+        _ texture: any TextureHandle, original: any TextureHandle, with kernel: any LibraryHandle,
+        into layer: any PreviewLayerHandle, on context: any GPUContextHandle,
+        completion: @escaping @Sendable (GPUCompletion) -> Void
     ) throws {
         reportIssue("PreviewGateway.draw not implemented")
         throw GPUError.commandBufferUnavailable

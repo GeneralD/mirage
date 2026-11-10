@@ -28,6 +28,7 @@ public final class FakePreviewGateway: PreviewGateway, Sendable {
     public struct Draw: Sendable {
         public let id: Int
         public let texture: FakeTextureHandle
+        public let original: FakeTextureHandle
         public let kernel: FakeLibraryHandle
         public let layer: FakePreviewLayerHandle
         public let context: FakeGPUContextHandle
@@ -75,20 +76,24 @@ public final class FakePreviewGateway: PreviewGateway, Sendable {
     }
 
     public func draw(
-        _ texture: any TextureHandle, with kernel: any LibraryHandle, into layer: any PreviewLayerHandle,
-        on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
+        _ texture: any TextureHandle, original: any TextureHandle, with kernel: any LibraryHandle,
+        into layer: any PreviewLayerHandle, on context: any GPUContextHandle,
+        completion: @escaping @Sendable (GPUCompletion) -> Void
     ) throws {
-        // Same order as the live gateway: context, kernel, texture, layer.
+        // Same order as the live gateway: context, kernel, texture, original, layer.
         let fakeContext = try (context as? FakeGPUContextHandle).orThrow(GPUError.foreignHandle)
         let fakeKernel = try (kernel as? FakeLibraryHandle).orThrow(GPUError.foreignHandle)
         let fakeTexture = try (texture as? FakeTextureHandle).orThrow(GPUError.foreignHandle)
+        let fakeOriginal = try (original as? FakeTextureHandle).orThrow(GPUError.foreignHandle)
         let fakeLayer = try (layer as? FakePreviewLayerHandle).orThrow(PreviewError.foreignTarget)
         let draw = try state.withLock { state in
             if let error = state.drawError { throw error }
             let id = state.nextID
             state.nextID += 1
             state.pending[id] = completion
-            return Draw(id: id, texture: fakeTexture, kernel: fakeKernel, layer: fakeLayer, context: fakeContext, origin: ObjectIdentifier(self))
+            return Draw(
+                id: id, texture: fakeTexture, original: fakeOriginal, kernel: fakeKernel, layer: fakeLayer, context: fakeContext,
+                origin: ObjectIdentifier(self))
         }
         draws.append(draw)
     }

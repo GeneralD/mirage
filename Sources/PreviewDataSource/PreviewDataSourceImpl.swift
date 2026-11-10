@@ -129,7 +129,10 @@ extension PreviewDataSourceImpl {
         }
         drawing = true
         do {
-            try previewGateway.draw(texture, with: attachment.kernel, into: attachment.layer, on: attachment.context) { [self] outcome in
+            // The frame is its own original for now: the kernel does not read index 2 yet.
+            try previewGateway.draw(
+                texture, original: texture, with: attachment.kernel, into: attachment.layer, on: attachment.context
+            ) { [self] outcome in
                 frameExecutor.run { [self] in finish(request, texture: texture, outcome: outcome) }
             }
         } catch {
