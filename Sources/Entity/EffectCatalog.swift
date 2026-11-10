@@ -53,20 +53,31 @@ public enum EffectSelectionOutcome: Sendable, Hashable {
     case unavailable(EffectPackageProblem?)
 }
 
-/// What the menu needs to know, in one value: the rows, the chosen effect and how the
-/// last attempt to run it went. The outcome is `nil` while the newest attempt has not been
-/// answered: a state can be published in that time (a listing that needs no `prepare`
-/// arrives meanwhile, or the answer for the effect chosen before arrives while the new
-/// choice is still being remembered), and the last answer then belongs to a request that
-/// is no longer the newest.
+/// What the menu needs to know, in one value: the rows, the chosen effect, how the last attempt
+/// to run it went, and which effects health has switched off. The outcome is `nil` while the newest
+/// attempt has not been answered: a state can be published in that time (a listing that needs no
+/// `prepare` arrives meanwhile, or the answer for the effect chosen before arrives while the new
+/// choice is still being remembered), and the last answer then belongs to a request that is no
+/// longer the newest.
 public struct EffectCatalogState: Sendable, Hashable {
     public let entries: [EffectCatalogEntry]
     public let selection: EffectID
     public let outcome: EffectSelectionOutcome?
+    /// The effects that health has switched off, each with the reason the menu shows beside its
+    /// row. Empty while no effect is off.
+    public let disabled: [EffectID: EffectDisableReason]
+    /// `true` when even the bundled effect keeps failing, so no effect can move frames and the menu
+    /// says the GPU is unavailable. `false` otherwise.
+    public let isGPUUnavailable: Bool
 
-    public init(entries: [EffectCatalogEntry], selection: EffectID, outcome: EffectSelectionOutcome? = nil) {
+    public init(
+        entries: [EffectCatalogEntry], selection: EffectID, outcome: EffectSelectionOutcome? = nil,
+        disabled: [EffectID: EffectDisableReason] = [:], isGPUUnavailable: Bool = false
+    ) {
         self.entries = entries
         self.selection = selection
         self.outcome = outcome
+        self.disabled = disabled
+        self.isGPUUnavailable = isGPUUnavailable
     }
 }
