@@ -58,6 +58,7 @@ extension CameraDataSourceImpl: CameraSource {
         do {
             started = try captureSessionGateway.start(
                 descriptor: descriptor,
+                capture: .standard,
                 onFrame: { [self] captured in frameExecutor.run { self.deliver(captured, from: session, to: onFrame) } },
                 onEnd: { [self] reason in frameExecutor.run { self.finish(reason, from: session, to: onEnd) } }
             )

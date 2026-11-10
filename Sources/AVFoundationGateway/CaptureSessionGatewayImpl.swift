@@ -10,9 +10,11 @@ public struct CaptureSessionGatewayImpl: Sendable {
 extension CaptureSessionGatewayImpl: CaptureSessionGateway {
     public func start(
         descriptor: SurfaceDescriptor,
+        capture: CameraCapture,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws -> any CaptureSessionHandle {
+        // Received for the capture rig to apply; the rig does not take it yet.
         try CaptureRig(descriptor: descriptor, onFrame: onFrame, onEnd: onEnd)
     }
 }
