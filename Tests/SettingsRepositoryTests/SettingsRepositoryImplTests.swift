@@ -6,21 +6,34 @@ import Testing
 
 @testable import SettingsRepository
 
+/// One `setParameterValues` call as the double received it. Private, like `RecordingPreferences`.
+private struct RecordedParameterWrite: Sendable {
+    let id: EffectID
+    let values: [String: EffectParameterValue]
+}
+
 /// A `Preferences` that holds one value and records every call that reached it. Private: the
 /// Repository suite is its only user, and `InMemoryKeyValueStore` is the double one layer down.
 private final class RecordingPreferences: Preferences, Sendable {
     private let stored: Locked<EffectID?>
     private let disabled: Locked<[DisabledEffectRecord]>
+    private let parameters: Locked<[EffectID: [String: EffectParameterValue]]>
     let reads = Collector<Void>()
     let writes = Collector<EffectID>()
     let disabledReads = Collector<Void>()
     let disabledWrites = Collector<[DisabledEffectRecord]>()
     let hotkeyReads = Collector<Void>()
     let hotkeyWrites = Collector<Bool>()
+    let parameterReads = Collector<EffectID>()
+    let parameterWrites = Collector<RecordedParameterWrite>()
 
-    init(selected: EffectID? = nil, disabled: [DisabledEffectRecord] = []) {
+    init(
+        selected: EffectID? = nil, disabled: [DisabledEffectRecord] = [],
+        parameters: [EffectID: [String: EffectParameterValue]] = [:]
+    ) {
         stored = Locked(selected)
         self.disabled = Locked(disabled)
+        self.parameters = Locked(parameters)
     }
 
     func selectedEffect() async -> EffectID? {
@@ -50,6 +63,16 @@ private final class RecordingPreferences: Preferences, Sendable {
 
     func setHotkeysEnabled(_ on: Bool) async {
         hotkeyWrites.append(on)
+    }
+
+    func parameterValues(of id: EffectID) async -> [String: EffectParameterValue] {
+        parameterReads.append(id)
+        return parameters.current[id] ?? [:]
+    }
+
+    func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async {
+        parameters.withLock { $0[id] = values }
+        parameterWrites.append(RecordedParameterWrite(id: id, values: values))
     }
 }
 

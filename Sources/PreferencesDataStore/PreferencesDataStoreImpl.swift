@@ -5,8 +5,9 @@ import Foundation
 /// What the user chose, kept in the user's defaults through `KeyValueStoreGateway` (epic #42,
 /// D6): the chosen effect as one string under one key (`StoredEffectID` is its form), the
 /// records of disabled effects as one JSON string under another, and the global hotkeys flag
-/// as `"1"` or `"0"` under a third. The first DataStore, and the only place that knows the keys
-/// and the forms.
+/// as `"1"` or `"0"` under a third, and the parameter values of each effect as one JSON object
+/// under a key of its own (`StoredParameterValues` is that form). The first DataStore, and the
+/// only place that knows the keys and the forms.
 ///
 /// Reading never writes. A stored string that does not decode is not an error and is left
 /// where it is (another build may have written it, and may read it again), so a relaunch
@@ -78,5 +79,27 @@ extension PreferencesDataStoreImpl: Preferences {
 
     public func setHotkeysEnabled(_ on: Bool) async {
         keyValueStore.set(on ? "1" : "0", forKey: Self.hotkeysEnabledKey)
+    }
+
+    /// Reading never writes. A value that does not decode as a whole is `[:]`, is left where it is,
+    /// and one developer-log line names the effect it belongs to.
+    public func parameterValues(of id: EffectID) async -> [String: EffectParameterValue] {
+        let key = StoredParameterValues.key(of: id)
+        guard let stored = keyValueStore.string(forKey: key) else { return [:] }
+        guard let values = StoredParameterValues.decode(stored) else {
+            developerLog.record(.effect, "stored parameter values of '\(StoredEffectID.encode(id))' do not decode, ignored: \(stored)")
+            return [:]
+        }
+        return values
+    }
+
+    /// A value that does not encode is not stored, and one developer-log line says so; the value
+    /// already stored under the key stays where it is.
+    public func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async {
+        guard let encoded = StoredParameterValues.encode(values) else {
+            developerLog.record(.effect, "parameter values of '\(StoredEffectID.encode(id))' do not encode, not stored")
+            return
+        }
+        keyValueStore.set(encoded, forKey: StoredParameterValues.key(of: id))
     }
 }
