@@ -14,7 +14,7 @@ struct InMemoryPreviewSinkTests {
     @Test("present holds the completion until the test releases it, exactly once")
     func completionIsHeld() throws {
         let completions = Collector<Void>()
-        sink.present(frame(1)) { completions.append(()) }
+        sink.present(frame(1), original: nil) { completions.append(()) }
         #expect(completions.count == 0)
         let presentation = try #require(sink.pending.first)
         #expect(presentation.frame == frame(1))
@@ -26,10 +26,30 @@ struct InMemoryPreviewSinkTests {
         #expect(sink.pending.isEmpty)
     }
 
+    @Test("present keeps the original it is given on the presentation, and its completion is held and returns true exactly once")
+    func originalIsRecorded() throws {
+        let completions = Collector<Void>()
+        sink.present(frame(1), original: frame(2)) { completions.append(()) }
+        let presentation = try #require(sink.pending.first)
+        #expect(presentation.original == frame(2))
+        #expect(presentation.frame == frame(1), "the original does not replace the frame")
+
+        #expect(sink.complete(presentation))
+        #expect(!sink.complete(presentation))
+        #expect(completions.count == 1)
+    }
+
+    @Test("present with no original records nil on the presentation")
+    func missingOriginalIsNil() throws {
+        sink.present(frame(1), original: nil) {}
+        let presentation = try #require(sink.presented.values.first)
+        #expect(presentation.original == nil)
+    }
+
     @Test("frames are recorded in presentation order and complete in the order the test chooses")
     func outOfOrderCompletion() throws {
         let completed = Collector<Int>()
-        for index in 1...3 { sink.present(frame(index)) { completed.append(index) } }
+        for index in 1...3 { sink.present(frame(index), original: nil) { completed.append(index) } }
         #expect(sink.presented.values.map(\.frame.token.index) == [1, 2, 3])
 
         let pending = sink.pending
@@ -43,8 +63,8 @@ struct InMemoryPreviewSinkTests {
     func foreignPresentationIsRefused() throws {
         let other = InMemoryPreviewSink()
         let completions = Collector<Void>()
-        sink.present(frame(1)) { completions.append(()) }
-        other.present(frame(1)) {}
+        sink.present(frame(1), original: nil) { completions.append(()) }
+        other.present(frame(1), original: nil) {}
         // Both sinks number their first presentation 1, so only provenance tells them apart.
         let stranger = try #require(other.pending.first)
         #expect(stranger.id == sink.pending.first?.id)
@@ -69,7 +89,7 @@ struct InMemoryPreviewSinkTests {
     func completesAtOnceUntilAttached() throws {
         let sink = InMemoryPreviewSink(holding: .onceAttached)
         let completions = Collector<Int>()
-        sink.present(frame(1)) { completions.append(1) }
+        sink.present(frame(1), original: nil) { completions.append(1) }
         #expect(completions.values == [1], "completed before present returned")
         #expect(sink.presented.values.map(\.frame) == [frame(1)])
         #expect(sink.pending.isEmpty)
@@ -77,11 +97,11 @@ struct InMemoryPreviewSinkTests {
         #expect(!sink.complete(early), "a frame that completed at once is not completed twice")
 
         #expect(throws: PreviewError.foreignTarget) { try sink.attach(ForeignPreviewTarget()) }
-        sink.present(frame(2)) { completions.append(2) }
+        sink.present(frame(2), original: nil) { completions.append(2) }
         #expect(completions.values == [1, 2], "a refused attach leaves the sink completing at once")
 
         try sink.attach(FakePreviewTargetHandle())
-        sink.present(frame(3)) { completions.append(3) }
+        sink.present(frame(3), original: nil) { completions.append(3) }
         #expect(completions.values == [1, 2], "once attached the completion is held")
         let held = try #require(sink.pending.first)
         #expect(held.frame == frame(3))
@@ -108,7 +128,7 @@ struct InMemoryPreviewSinkTests {
         sink.detach(target)
 
         let completions = Collector<Int>()
-        sink.present(frame(1)) { completions.append(1) }
+        sink.present(frame(1), original: nil) { completions.append(1) }
         #expect(completions.values == [1], "completed before present returned")
         #expect(sink.pending.isEmpty)
     }
@@ -122,7 +142,7 @@ struct InMemoryPreviewSinkTests {
         sink.detach(stranger)
 
         #expect(sink.detached.map(ObjectIdentifier.init) == [ObjectIdentifier(stranger)], "the call is recorded whether or not it unbinds")
-        sink.present(frame(1)) {}
+        sink.present(frame(1), original: nil) {}
         #expect(sink.pending.map(\.frame) == [frame(1)], "the attached target still holds the frame")
     }
 
@@ -131,7 +151,7 @@ struct InMemoryPreviewSinkTests {
         let target = FakePreviewTargetHandle()
         try sink.attach(target)
         let completions = Collector<Void>()
-        sink.present(frame(1)) { completions.append(()) }
+        sink.present(frame(1), original: nil) { completions.append(()) }
         sink.detach(target)
 
         #expect(completions.count == 0, "detach does not complete a held frame")
@@ -146,7 +166,7 @@ struct InMemoryPreviewSinkTests {
         let target = FakePreviewTargetHandle()
         try sink.attach(target)
         sink.detach(target)
-        sink.present(frame(1)) {}
+        sink.present(frame(1), original: nil) {}
 
         #expect(sink.pending.map(\.frame) == [frame(1)])
     }
@@ -157,11 +177,11 @@ struct InMemoryPreviewSinkTests {
         let first = FakePreviewTargetHandle()
         try sink.attach(first)
         sink.detach(first)
-        sink.present(frame(1)) {}
+        sink.present(frame(1), original: nil) {}
         #expect(sink.pending.isEmpty)
 
         try sink.attach(FakePreviewTargetHandle())
-        sink.present(frame(2)) {}
+        sink.present(frame(2), original: nil) {}
         #expect(sink.pending.map(\.frame) == [frame(2)])
     }
 
@@ -172,7 +192,7 @@ struct InMemoryPreviewSinkTests {
         sink.detach(ForeignPreviewTarget())
 
         #expect(sink.detached.isEmpty)
-        sink.present(frame(1)) {}
+        sink.present(frame(1), original: nil) {}
         #expect(sink.pending.map(\.frame) == [frame(1)], "the attached target is still attached, so the frame is held")
     }
 }

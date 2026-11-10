@@ -9,6 +9,8 @@ import Testing
 struct PreviewRepositoryTests {
     private let renderer = SpyPreviewRenderer()
     private let frame = FrameRef(token: SurfaceToken(index: 2, generation: 7), descriptor: .hd720, presentationTime: HostTimestamp(nanoseconds: 42))
+    private let original = FrameRef(
+        token: SurfaceToken(index: 5, generation: 3), descriptor: .hd720, presentationTime: HostTimestamp(nanoseconds: 41))
 
     private func makeSubject() -> PreviewRepositoryImpl {
         withDependencies {
@@ -34,17 +36,26 @@ struct PreviewRepositoryTests {
         await #expect(throws: GPUError.noDevice) { try await MainActor.run { try subject.attach(FakePreviewTargetHandle()) } }
     }
 
-    @Test("present forwards the frame with no original, and the renderer's completion reaches the caller exactly once")
+    @Test("present passes the frame and its original to the renderer unchanged, and the renderer's completion reaches the caller exactly once")
     func presentForwards() throws {
         let completions = Collector<Void>()
-        makeSubject().present(frame) { completions.append(()) }
+        makeSubject().present(frame, original: original) { completions.append(()) }
 
         let presentation = try #require(renderer.presented.values.first)
         #expect(renderer.presented.values.map(\.frame) == [frame])
-        #expect(presentation.original == nil, "the source sink carries no original")
+        #expect(presentation.original == original, "the repository hands the original on, not the frame again or nil")
         #expect(completions.count == 0, "the repository adds no completion of its own")
         presentation.completion()
         #expect(completions.count == 1)
+    }
+
+    @Test("present with no original passes nil to the renderer")
+    func presentForwardsNoOriginal() throws {
+        makeSubject().present(frame, original: nil) {}
+
+        let presentation = try #require(renderer.presented.values.first)
+        #expect(presentation.frame == frame)
+        #expect(presentation.original == nil)
     }
 
     @Test("detach hands the target to the renderer unchanged, exactly once")

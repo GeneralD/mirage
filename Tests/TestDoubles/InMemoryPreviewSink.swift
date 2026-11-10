@@ -23,6 +23,8 @@ public final class InMemoryPreviewSink: PreviewSink, Sendable {
     public struct Presentation: Sendable {
         public let id: Int
         public let frame: FrameRef
+        /// The frame as its source delivered it, when the presentation carries one.
+        public let original: FrameRef?
         /// The sink that issued it: ids restart at 1 per instance, so the id alone cannot tell a stranger's presentation.
         fileprivate let origin: ObjectIdentifier
     }
@@ -87,13 +89,14 @@ public final class InMemoryPreviewSink: PreviewSink, Sendable {
         }
     }
 
-    public func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
+    public func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
         let (presentation, held) = state.withLock { state in
             let id = state.nextID
             state.nextID += 1
             let held = holding == .always || state.current != nil
             if held { state.pending[id] = completion }
-            return (Presentation(id: id, frame: frame, origin: ObjectIdentifier(self)), held)
+            let presentation = Presentation(id: id, frame: frame, original: original, origin: ObjectIdentifier(self))
+            return (presentation, held)
         }
         presented.append(presentation)
         guard !held else { return }

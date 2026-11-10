@@ -213,7 +213,7 @@ extension FramePipelineUseCaseImpl {
     /// onto the executor before the lease ends.
     private func present(_ frame: FrameRef) {
         presenting += 1
-        previewSink.present(frame) { [weak self] in
+        previewSink.present(frame, original: nil) { [weak self] in
             self?.frameExecutor.run { [weak self] in self?.presentationEnded(frame) }
         }
     }
