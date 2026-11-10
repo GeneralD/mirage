@@ -193,6 +193,84 @@ struct CameraDataSourceConfigureTests {
         source.configure(Self.third)
         #expect(source.captures == [Self.other, Self.third])
     }
+
+    @Test("a session that starts with no mirror setting hands its handle false")
+    func startWithoutMirrorHandsFalse() throws {
+        let rig = Rig()
+        try rig.start()
+        #expect(rig.gateway.mirrorCalls == [false])
+    }
+
+    @Test("a mirror setting made before start reaches the handle when the session receives it")
+    func mirrorBeforeStartReachesHandle() throws {
+        let rig = Rig()
+        rig.subject.setMirrored(true)
+        try rig.start()
+        #expect(rig.gateway.mirrorCalls == [true])
+    }
+
+    @Test("a mirror setting made while running reaches the live handle once, after the executor drains")
+    func mirrorWhileRunningReachesHandleOnDrain() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.subject.setMirrored(true)
+        #expect(rig.executor.pendingCount == 1)
+        #expect(rig.gateway.mirrorCalls == [false])
+        rig.executor.drain()
+        #expect(rig.gateway.mirrorCalls == [false, true])
+    }
+
+    @Test("a configure restart hands the handle of the new session the mirror setting in force")
+    func configureRestartHandsCurrentMirror() throws {
+        let rig = Rig()
+        try rig.start()
+        rig.subject.setMirrored(true)
+        rig.executor.drain()
+        rig.subject.configure(Self.other)
+        rig.executor.drain()
+        #expect(rig.gateway.startCount == 2)
+        #expect(rig.gateway.mirrorCalls == [false, true, true])
+    }
+
+    @Test("a mirror setting made while nothing runs reaches no handle and is handed to the next start")
+    func mirrorWhileIdleWaitsForNextStart() throws {
+        let rig = Rig()
+        rig.subject.setMirrored(true)
+        rig.executor.drain()
+        #expect(rig.gateway.startCount == 0)
+        #expect(rig.gateway.mirrorCalls.isEmpty)
+        try rig.start()
+        #expect(rig.gateway.mirrorCalls == [true])
+    }
+
+    @Test("a mirror setting made after stop reaches no handle, not even a stopped one")
+    func mirrorAfterStopReachesNoHandle() throws {
+        let gateway = MirrorSpyGateway()
+        let executor = ManualFrameExecutor()
+        let subject = withDependencies {
+            $0.captureSessionGateway = gateway
+            $0.frameExecutor = executor
+            $0.developerLog = RecordingLog()
+            $0.errorLog = RecordingLog()
+        } operation: {
+            CameraDataSourceImpl()
+        }
+        try subject.start(descriptor: .hd720, onFrame: { _ in }, onEnd: { _ in })
+        executor.drain()
+        subject.stop()
+        executor.drain()
+        subject.setMirrored(true)
+        executor.drain()
+        #expect(gateway.mirrorCalls == [false])
+    }
+
+    @Test("the fake camera source records every mirror setting in call order")
+    func fakeRecordsMirrorOrder() {
+        let source = FakeCameraSource()
+        source.setMirrored(true)
+        source.setMirrored(false)
+        #expect(source.mirrorSettings == [true, false])
+    }
 }
 
 /// A frame executor that runs `beforeFirstRun` once, ahead of the first work it is
@@ -212,5 +290,30 @@ private final class HookedExecutor: FrameExecutor, @unchecked Sendable {
 
     func drain() {
         inner.drain()
+    }
+}
+
+/// A capture gateway whose handles record every `setMirrored`, live or stopped alike. Unlike
+/// `FakeCaptureSessionGateway`, which drops a stopped handle's calls, it shows a call that
+/// reached a handle after its `stop`.
+private final class MirrorSpyGateway: CaptureSessionGateway, Sendable {
+    private struct Handle: CaptureSessionHandle {
+        let gateway: MirrorSpyGateway
+
+        func stop() {}
+        func setMirrored(_ mirrored: Bool) { gateway.calls.withLock { $0.append(mirrored) } }
+    }
+
+    fileprivate let calls = Locked<[Bool]>([])
+
+    var mirrorCalls: [Bool] { calls.current }
+
+    func start(
+        descriptor: SurfaceDescriptor,
+        capture: CameraCapture,
+        onFrame: @escaping @Sendable (CapturedSurface) -> Void,
+        onEnd: @escaping @Sendable (CaptureEnd) -> Void
+    ) throws -> any CaptureSessionHandle {
+        Handle(gateway: self)
     }
 }
