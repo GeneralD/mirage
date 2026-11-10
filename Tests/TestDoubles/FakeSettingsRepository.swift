@@ -18,6 +18,15 @@ import TestSupport
 /// The hotkeys flag and the schema version answer at once and are never held. `hotkeyFlagWrites`
 /// records every `setHotkeysEnabled`, `stamps` every `stampSchemaVersion` version, and `resets` one
 /// entry per `resetAll()`. `resetAll()` puts every value back to its default, as the live reset does.
+///
+/// The system members answer at once as well (hackathon #183). The launch-at-login status starts at
+/// `launchAtLogin` and moves the way `LoginItem` does: `setLaunchAtLogin` answers `on ? .on : .off`
+/// and leaves `.unavailable` alone. `launchRequests` records every `setLaunchAtLogin` and
+/// `settingsOpens` every `openLoginItemsSettings`. The hotkeys registration answers what
+/// `script(registration:)` set, once, or else that every binding is registered; `registeredBindings`
+/// records every `registerHotkeys` and `unregisters` every `unregisterHotkeys`, which leaves the
+/// registration `.empty`. `hotkeyPresses()` opens the stream the next `pressHotkey(_:)` goes to, and
+/// ends the one before it.
 public final class FakeSettingsRepository: SettingsRepository, Sendable {
     /// One call that is parked until the test completes it.
     public struct Request: Sendable {
@@ -38,6 +47,10 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         var disabled: [DisabledEffectRecord]
         var hotkeysEnabled: Bool
         var schemaVersion: StoredSchemaVersion
+        var launchAtLogin: LaunchAtLoginStatus
+        var scripted: HotkeyRegistration?
+        var hotkeyRegistration: HotkeyRegistration = .empty
+        var pressContinuation: AsyncStream<HotkeyAction>.Continuation?
         var holdingReads = false
         var holdingWrites = false
         var holdingDisabledWrites = false
@@ -63,14 +76,30 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
     public let stamps = Collector<Int>()
     /// One entry per `resetAll()` call, in call order.
     public let resets = Collector<Void>()
+    /// The values `setLaunchAtLogin` was called with, in call order, including a call that changed nothing.
+    public let launchRequests = Collector<Bool>()
+    /// One entry per `openLoginItemsSettings()` call, in call order.
+    public let settingsOpens = Collector<Void>()
+    /// The bindings `registerHotkeys` was called with, in call order.
+    public let registeredBindings = Collector<[HotkeyBinding]>()
+    /// One entry per `unregisterHotkeys()` call, in call order.
+    public let unregisters = Collector<Void>()
 
     public init(
         selected: EffectID? = nil,
         disabled: [DisabledEffectRecord] = [],
         hotkeysEnabled: Bool = true,
-        schemaVersion: StoredSchemaVersion = .missing
+        schemaVersion: StoredSchemaVersion = .missing,
+        launchAtLogin: LaunchAtLoginStatus = .off
     ) {
-        state = Locked(State(selected: selected, disabled: disabled, hotkeysEnabled: hotkeysEnabled, schemaVersion: schemaVersion))
+        state = Locked(
+            State(
+                selected: selected,
+                disabled: disabled,
+                hotkeysEnabled: hotkeysEnabled,
+                schemaVersion: schemaVersion,
+                launchAtLogin: launchAtLogin
+            ))
     }
 
     /// Calls that are parked right now.
@@ -101,6 +130,17 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         guard let continuation = state.withLock({ $0.parked.removeValue(forKey: request.id) }) else { return false }
         continuation.resume()
         return true
+    }
+
+    /// Makes the next `registerHotkeys` answer `registration`, and sets `hotkeyRegistration` to it. The script is
+    /// used once: the `registerHotkeys` after it answers that every binding is registered.
+    public func script(registration: HotkeyRegistration) {
+        state.withLock { $0.scripted = registration }
+    }
+
+    /// Delivers `action` to the stream `hotkeyPresses()` returned last. Nothing happens when no stream is open.
+    public func pressHotkey(_ action: HotkeyAction) {
+        state.withLock { $0.pressContinuation }?.yield(action)
     }
 
     public func selectedEffect() async -> EffectID? {
@@ -154,6 +194,51 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
             $0.schemaVersion = .missing
         }
         resets.append(())
+    }
+
+    public var launchAtLoginStatus: LaunchAtLoginStatus {
+        state.current.launchAtLogin
+    }
+
+    public func setLaunchAtLogin(_ on: Bool) -> LaunchAtLoginStatus {
+        launchRequests.append(on)
+        return state.withLock { current in
+            guard current.launchAtLogin != .unavailable else { return current.launchAtLogin }
+            current.launchAtLogin = on ? .on : .off
+            return current.launchAtLogin
+        }
+    }
+
+    public func openLoginItemsSettings() {
+        settingsOpens.append(())
+    }
+
+    public func registerHotkeys(_ bindings: [HotkeyBinding]) async -> HotkeyRegistration {
+        registeredBindings.append(bindings)
+        return state.withLock { state in
+            let answer = state.scripted ?? HotkeyRegistration(registered: bindings.map(\.action))
+            state.scripted = nil
+            state.hotkeyRegistration = answer
+            return answer
+        }
+    }
+
+    public func unregisterHotkeys() async {
+        state.withLock { $0.hotkeyRegistration = .empty }
+        unregisters.append(())
+    }
+
+    public var hotkeyRegistration: HotkeyRegistration {
+        get async { state.current.hotkeyRegistration }
+    }
+
+    public func hotkeyPresses() async -> AsyncStream<HotkeyAction> {
+        let (stream, next) = AsyncStream<HotkeyAction>.makeStream()
+        state.withLock { state in
+            state.pressContinuation?.finish()
+            state.pressContinuation = next
+        }
+        return stream
     }
 
     private func parkIfHeld(_ call: Request.Call) async {
