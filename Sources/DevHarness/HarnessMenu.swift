@@ -1,5 +1,7 @@
 import AppKit
 import AppRouter
+import Dependencies
+import HostDependencyInjection
 import SwiftUI
 import Views
 
@@ -15,9 +17,10 @@ import Views
 /// Router's, called beside the session's as `HostAppDelegate` calls them; this resolves nothing
 /// itself (`scripts/check-dependency-keypaths.sh` denies `App` and `DevHarness` `\.effectInteractor`).
 ///
-/// The Router is built outside the session's substitution on purpose: the effects menu resolves
-/// nothing the discarding sink touches. `live()` is that construction, and the one place a Router
-/// is made for the harness.
+/// The Router is built inside the same substitution as the session (`live()`): the menu's controls
+/// resolve the frame pipeline, and the pipeline keeps the sink of the scope that builds it, so a
+/// Router built outside would give it the real sink. `live()` is that construction, and the one
+/// place a Router is made for the harness.
 @MainActor
 final class HarnessMenu {
     /// The Router whose Presenter the Effects menu draws from.
@@ -31,9 +34,13 @@ final class HarnessMenu {
         self.makeEffectsMenu = makeEffectsMenu
     }
 
-    /// The harness's menu over the live Router, as the process launches it.
+    /// The harness's menu over the live Router, as the process launches it. The Router is built inside the substitution, as the session's is.
     static func live() -> HarnessMenu {
-        HarnessMenu(router: AppRouter())
+        withDependencies {
+            $0.useDiscardingVirtualCameraSink()
+        } operation: {
+            HarnessMenu(router: AppRouter())
+        }
     }
 
     /// The menu `NSApplication` shows: the application menu with Quit, then the Effects menu when

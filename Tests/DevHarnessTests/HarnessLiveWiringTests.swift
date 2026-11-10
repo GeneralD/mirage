@@ -1,4 +1,5 @@
 import Clocks
+import ControlsInteractor
 import Dependencies
 import Domain
 import EffectCatalogUseCase
@@ -7,8 +8,13 @@ import EffectPackageDataSource
 import EffectPackageRepository
 import EffectWatchDataSource
 import HostDependencyInjection
+import HotkeyDataSource
+import LoginItemDataSource
 import PreferencesDataStore
+import SettingsInteractor
 import SettingsRepository
+import SettingsUseCase
+import StoreMaintenanceDataStore
 import TestDoubles
 import TestSupport
 import Testing
@@ -24,7 +30,8 @@ import Testing
 /// Only the OS boundary under them is a fake: the camera source and permission, IOSurface, the Mach
 /// gateways, the executor, scheduler, work runner and clock, the logs, the GPU layer (`FakeGPUGateway`,
 /// `FakeShaderLibraryGateway`, `FakeTextureCacheGateway`), and for the effects folder the file system,
-/// the file events, the app directories, the key-value store and Finder. Nothing here constructs the
+/// the file events, the app directories, the key-value store and Finder, and the hotkey and login-item gateways.
+/// Nothing here constructs the
 /// graph by hand — `HarnessWiringTests` does that, and `FramePathIntegrationTests` builds the catalog
 /// by hand over the same fakes — so what this proves is the route the harness takes at launch:
 /// `live()` wraps the construction, the substitution it applies reaches the pipeline that is resolved
@@ -89,6 +96,8 @@ struct HarnessLiveWiringTests {
         let fileWatch = FakeFileWatchGateway()
         let store = InMemoryKeyValueStore()
         let workspace = FakeWorkspaceGateway()
+        let hotkeyGateway = FakeHotkeyGateway()
+        let loginItemGateway = FakeLoginItemGateway()
         let folder = "/effects"
         // One set of fakes, applied to every scope this test opens (the suite's note says why each call is wrapped).
         let wiring: (inout DependencyValues) -> Void = {
@@ -112,6 +121,8 @@ struct HarnessLiveWiringTests {
             $0.fileWatchGateway = fileWatch
             $0.keyValueStoreGateway = store
             $0.workspaceGateway = workspace
+            $0.hotkeyGateway = hotkeyGateway
+            $0.loginItemGateway = loginItemGateway
         }
         func wired<Value>(_ operation: () -> Value) -> Value {
             withDependencies(wiring, operation: operation)
@@ -125,6 +136,9 @@ struct HarnessLiveWiringTests {
             @Dependency(\.effectPackages) var effectPackages
             @Dependency(\.effectWatch) var effectWatch
             @Dependency(\.preferences) var preferences
+            @Dependency(\.settingsUseCase) var settingsUseCase
+            @Dependency(\.loginItem) var loginItem
+            @Dependency(\.storeMaintenance) var storeMaintenance
             #expect(effectInteractor is EffectInteractorImpl)
             #expect(effectCatalogUseCase is EffectCatalogUseCaseImpl)
             #expect(effectPackageRepository is EffectPackageRepositoryImpl)
@@ -132,7 +146,22 @@ struct HarnessLiveWiringTests {
             #expect(effectPackages is EffectPackageDataSourceImpl)
             #expect(effectWatch is EffectWatchDataSourceImpl)
             #expect(preferences is PreferencesDataStoreImpl)
-            // The menu, and the Router in it, beside the session and not inside the harness's substitution: the pair
+            #expect(settingsUseCase is SettingsUseCaseImpl)
+            #expect(loginItem is LoginItemDataSourceImpl)
+            #expect(storeMaintenance is StoreMaintenanceDataStoreImpl)
+            // The stateful settings and controls values are resolved inside the substitution, as `live()` applies it: the
+            // controls Interactor resolves the frame pipeline, which keeps the sink of the scope that builds it.
+            withDependencies {
+                $0.useDiscardingVirtualCameraSink()
+            } operation: {
+                @Dependency(\.controlsInteractor) var controlsInteractor
+                @Dependency(\.settingsInteractor) var settingsInteractor
+                @Dependency(\.hotkeys) var hotkeys
+                #expect(controlsInteractor is ControlsInteractorImpl)
+                #expect(settingsInteractor is SettingsInteractorImpl)
+                #expect(hotkeys is HotkeyDataSourceImpl)
+            }
+            // The session and the menu, each built inside the harness's substitution (`live()` applies it): the pair
             // `HarnessAppDelegate` builds, by the same two calls.
             return (HarnessSession.live(), HarnessMenu.live())
         }
