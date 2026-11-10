@@ -424,6 +424,82 @@ struct EffectRuntimeStateDataSourceTests {
         #expect(try await fixture.fail(last, cause: .source) == .failed(.compileFailed, attempt: 1))
     }
 
+    // MARK: - The compiler's message
+
+    @Test(
+        "the compiler message is the diagnostics of the effect whose compile failed, as the compiler wrote them, whatever the cause",
+        arguments: [ShaderDiagnostics.Cause.source, .environment])
+    func compilerMessageOfAFailure(_ cause: ShaderDiagnostics.Cause) async throws {
+        let fixture = StateFixture()
+        let compile = try await fixture.startCompile(.first)
+        _ = try await fixture.fail(compile, message: "first:4:2: error: unknown type 'half3x4'", cause: cause)
+        #expect(try await fixture.answer(fixture.compilerMessage(of: .first)) == "first:4:2: error: unknown type 'half3x4'")
+    }
+
+    @Test("the compiler message is nil for an effect whose compile never failed")
+    func compilerMessageNeverFailed() async throws {
+        let fixture = StateFixture()
+        _ = try await fixture.prepared(.first)
+        #expect(try await fixture.answer(fixture.compilerMessage(of: .first)) == nil)
+    }
+
+    @Test("the compiler message is nil for an effect whose source differs from the one that failed")
+    func compilerMessageOtherSource() async throws {
+        let fixture = StateFixture()
+        let compile = try await fixture.startCompile(.first)
+        _ = try await fixture.fail(compile, message: "first:1:1: error: x")
+        #expect(try await fixture.answer(fixture.compilerMessage(of: .second)) == nil)
+    }
+
+    @Test("the compiler message is given to an effect that differs only in its name, since the key is the source, not the name")
+    func compilerMessageRenamed() async throws {
+        let fixture = StateFixture()
+        let compile = try await fixture.startCompile(.first)
+        _ = try await fixture.fail(compile, message: "first:1:1: error: x")
+        let renamed = EffectSource(name: "renamed", source: EffectSource.first.source)
+        #expect(try await fixture.answer(fixture.compilerMessage(of: renamed)) == "first:1:1: error: x")
+    }
+
+    @Test("a newer failure replaces the message of an older one: the older effect answers nil and the newer its own message")
+    func newerFailureReplacesTheMessage() async throws {
+        let fixture = StateFixture()
+        let older = try await fixture.startCompile(.first)
+        _ = try await fixture.fail(older, message: "first:1:1: error: old")
+        let newer = try await fixture.startCompile(.second)
+        _ = try await fixture.fail(newer, message: "second:2:2: error: new")
+        #expect(try await fixture.answer(fixture.compilerMessage(of: .first)) == nil)
+        #expect(try await fixture.answer(fixture.compilerMessage(of: .second)) == "second:2:2: error: new")
+    }
+
+    @Test(
+        "a failure of a compile that a newer begin overtook is still recorded as its effect's message, whatever the cause",
+        arguments: [ShaderDiagnostics.Cause.source, .environment])
+    func supersededFailureIsRecorded(_ cause: ShaderDiagnostics.Cause) async throws {
+        let fixture = StateFixture()
+        let older = try await fixture.startCompile(.first)
+        _ = try await fixture.startCompile(.second)
+        _ = try await fixture.fail(older, message: "first:1:1: error: late", cause: cause)
+        #expect(try await fixture.answer(fixture.compilerMessage(of: .first)) == "first:1:1: error: late")
+    }
+
+    @Test("the compiler message is nil again once the same effect compiles successfully")
+    func compilerMessageClearedBySuccess() async throws {
+        let fixture = StateFixture()
+        let compile = try await fixture.startCompile(.first)
+        _ = try await fixture.fail(compile, message: "first:1:1: error: x")
+        _ = try await fixture.prepared(.first)
+        #expect(try await fixture.answer(fixture.compilerMessage(of: .first)) == nil)
+    }
+
+    @Test("a success of another effect leaves the message of the effect that failed in place")
+    func successOfAnotherEffectKeepsTheMessage() async throws {
+        let fixture = StateFixture()
+        let compile = try await fixture.startCompile(.first)
+        _ = try await fixture.fail(compile, message: "first:1:1: error: x")
+        _ = try await fixture.prepared(.second)
+        #expect(try await fixture.answer(fixture.compilerMessage(of: .first)) == "first:1:1: error: x")
+    }
+
     // MARK: - Uniforms and the session
 
     @Test("the uniforms: seconds since the session's first frame, the caller's frame index, the output's size, seed 0")

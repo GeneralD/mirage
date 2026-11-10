@@ -74,6 +74,12 @@ struct StateFixture {
         return Pending { await subject.selected() }
     }
 
+    /// Starts `compilerMessage(of:)` for `effect` on its own task; it answers on the executor, as `selected()` does.
+    func compilerMessage(of effect: EffectSource) -> Pending<String?> {
+        let subject = subject
+        return Pending { await subject.compilerMessage(of: effect) }
+    }
+
     // MARK: - Outcomes
 
     /// Tells the state that a pass ended. The report is queued on the executor and runs at the next drain.
@@ -136,10 +142,11 @@ struct StateFixture {
         return Compiled(library: library, settlement: try await answer(settle(compile.effect, compile.ticket, outcome: .success(library))))
     }
 
-    /// Settles `compile` with diagnostics of `cause`.
+    /// Settles `compile` with diagnostics of `message` and `cause`.
     @MainActor
-    func fail(_ compile: Compile, cause: ShaderDiagnostics.Cause = .source) async throws -> EffectSettlement {
-        let diagnostics = ShaderDiagnostics(message: "effect:3:5: error: x", code: 3, cause: cause)
+    func fail(_ compile: Compile, message: String = "effect:3:5: error: x", cause: ShaderDiagnostics.Cause = .source) async throws -> EffectSettlement
+    {
+        let diagnostics = ShaderDiagnostics(message: message, code: 3, cause: cause)
         return try await answer(settle(compile.effect, compile.ticket, outcome: .failure(diagnostics)))
     }
 
