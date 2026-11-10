@@ -26,11 +26,13 @@ import Domain
 actor EffectCatalogSession {
     /// What the runtime was last handed: kept to tell a hot reload (same effect, new
     /// source) from a choice, to hand the runtime nothing it already has, and to say how
-    /// the runtime took it (`answer`, `nil` while that is still out).
+    /// the runtime took it (`answer`, `nil` while that is still out). `model` holds the
+    /// parameter values handed with `source`, which the panel shows and edits.
     struct Prepared {
         var id: EffectID
         let source: EffectSource
         var answer: EffectSelectionOutcome?
+        var model: ParameterModel
     }
 
     @Dependency(\.effectPackageRepository) var packages
@@ -138,9 +140,10 @@ actor EffectCatalogSession {
         switch source.answer {
         case .failure(let problem):
             unreadable(settled.id, problem)
-        case .success(let source) where source == prepared?.source:
+        case .success(let source) where source == prepared?.source && (prepared?.id == settled.id || source.parameters.isEmpty):
             // The runtime has this very source already. If the last look could not read it, the menu
-            // goes back to how the runtime took it (which may still be out).
+            // goes back to how the runtime took it (which may still be out). A source that declares
+            // parameters, now chosen under another id, is prepared afresh: its model is the other effect's.
             unreadableSource = nil
             prepared?.id = settled.id
             publish()
@@ -184,15 +187,21 @@ actor EffectCatalogSession {
     func prepare(_ source: EffectSource, for id: EffectID, announcing verb: String?) async -> EffectSelectionOutcome {
         generation += 1
         let mine = generation
-        prepared = Prepared(id: id, source: source, answer: nil)
+        // A hot reload or a re-choice of the same effect keeps its values; any other choice starts from the defaults.
+        let model =
+            if let previous = prepared, previous.id == id {
+                previous.model.respecified(source.parameters)
+            } else {
+                ParameterModel(specs: source.parameters, restoring: [:])
+            }
+        prepared = Prepared(id: id, source: source, answer: nil, model: model)
         armed = ArmedHealth(id: id, fingerprint: .of(source), policy: EffectHealthPolicy())
         unreadableSource = nil
         if let verb {
             developerLog.record(.effect, "effect '\(source.name)' \(verb)")
         }
 
-        // The empty block: this session keeps no parameter values for the effect.
-        let answer = await runtime.prepare(source, parameters: .none).selectionOutcome
+        let answer = await runtime.prepare(source, parameters: model.block).selectionOutcome
         guard generation == mine else { return answer }
         prepared?.answer = answer
         publish()
@@ -213,8 +222,11 @@ actor EffectCatalogSession {
 
     func publish() {
         guard let selection else { return }
+        // The parameters belong to the effect the runtime was handed: while a choice is still out, the panel lists none.
+        let parameters = prepared?.id == selection ? (prepared?.model.states ?? []) : []
         let state = EffectCatalogState(
-            entries: entries, selection: selection, outcome: outcome, disabled: disabled.mapValues(\.record.reason))
+            entries: entries, selection: selection, outcome: outcome, parameters: parameters,
+            disabled: disabled.mapValues(\.record.reason))
         guard state != broadcast.current else { return }
         broadcast.publish(state)
     }
