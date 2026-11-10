@@ -10,6 +10,7 @@ import Testing
 /// Repository suite is its only user, and `InMemoryKeyValueStore` is the double one layer down.
 private final class RecordingPreferences: Preferences, Sendable {
     private let stored: Locked<EffectID?>
+    private let disabled = Locked<[DisabledEffectRecord]>([])
     let reads = Collector<Void>()
     let writes = Collector<EffectID>()
 
@@ -25,6 +26,14 @@ private final class RecordingPreferences: Preferences, Sendable {
     func setSelectedEffect(_ id: EffectID) async {
         stored.set(id)
         writes.append(id)
+    }
+
+    func disabledEffects() async -> [DisabledEffectRecord] {
+        disabled.current
+    }
+
+    func setDisabledEffects(_ records: [DisabledEffectRecord]) async {
+        disabled.set(records)
     }
 }
 

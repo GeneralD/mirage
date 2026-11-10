@@ -10,6 +10,13 @@ public protocol Preferences: Sendable {
     func selectedEffect() async -> EffectID?
 
     func setSelectedEffect(_ id: EffectID) async
+
+    /// The records of disabled effects kept across launches, `[]` when none was stored or what was
+    /// stored does not decode as a whole (a value written by another build is not an error).
+    func disabledEffects() async -> [DisabledEffectRecord]
+
+    /// Replaces every stored record with `records`; an empty array is stored as an empty array.
+    func setDisabledEffects(_ records: [DisabledEffectRecord]) async
 }
 
 public enum PreferencesKey: TestDependencyKey {
@@ -31,5 +38,14 @@ private struct UnimplementedPreferences: Preferences {
 
     func setSelectedEffect(_ id: EffectID) async {
         reportIssue("Preferences.setSelectedEffect not implemented")
+    }
+
+    func disabledEffects() async -> [DisabledEffectRecord] {
+        reportIssue("Preferences.disabledEffects not implemented")
+        return []
+    }
+
+    func setDisabledEffects(_ records: [DisabledEffectRecord]) async {
+        reportIssue("Preferences.setDisabledEffects not implemented")
     }
 }
