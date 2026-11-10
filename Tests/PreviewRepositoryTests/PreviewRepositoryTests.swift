@@ -44,6 +44,15 @@ struct PreviewRepositoryTests {
         try #require(renderer.presented.values.first).completion()
         #expect(completions.count == 1)
     }
+
+    @Test("detach hands the target to the renderer unchanged, exactly once")
+    func detachForwards() {
+        let subject = makeSubject()
+        let target = FakePreviewTargetHandle()
+        subject.detach(target)
+
+        #expect(renderer.detached.values == [ObjectIdentifier(target)])
+    }
 }
 
 /// The renderer as the repository suite needs it: records what it is handed and

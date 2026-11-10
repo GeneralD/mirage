@@ -13,15 +13,17 @@ public protocol PreviewTargetHandle: AnyObject, Sendable {
 /// surface until `completion` runs — exactly once, on any thread, and possibly
 /// before `present` itself returns — and the caller releases the lease
 /// afterwards; a sink that is slower than the camera is visible to the pipeline
-/// as completions that lag. Until a target is attached every frame completes at
-/// once, undrawn. `attach` runs on the main thread, because the target is a
-/// view; returning from it does not promise drawing — a preview kernel that
-/// fails to compile afterwards leaves no target attached (logged, not thrown),
-/// and frames complete at once again. The live value is `PreviewRepositoryImpl`
-/// over `PreviewDataSource`.
+/// as completions that lag. Until a target is attached, and again after it is
+/// detached, every frame completes at once, undrawn. `attach` runs on the main
+/// thread, because the target is a view; returning from it does not promise
+/// drawing — a preview kernel that fails to compile afterwards leaves no target
+/// attached (logged, not thrown), and frames complete at once again. `detach`
+/// lets go of the target when it is the attached one and is a no-op otherwise.
+/// The live value is `PreviewRepositoryImpl` over `PreviewDataSource`.
 public protocol PreviewSink: Sendable {
     @MainActor
     func attach(_ target: any PreviewTargetHandle) throws
+    func detach(_ target: any PreviewTargetHandle)
     func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void)
 }
 
@@ -40,6 +42,10 @@ private struct UnimplementedPreviewSink: PreviewSink {
     func attach(_ target: any PreviewTargetHandle) throws {
         reportIssue("PreviewSink.attach not implemented")
         throw PreviewError.foreignTarget
+    }
+
+    func detach(_ target: any PreviewTargetHandle) {
+        reportIssue("PreviewSink.detach not implemented")
     }
 
     func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {

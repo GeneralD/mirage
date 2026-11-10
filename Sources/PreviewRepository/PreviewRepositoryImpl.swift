@@ -18,6 +18,10 @@ extension PreviewRepositoryImpl: PreviewSink {
         try renderer.attach(target)
     }
 
+    public func detach(_ target: any PreviewTargetHandle) {
+        renderer.detach(target)
+    }
+
     public func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
         renderer.present(frame, completion: completion)
     }
