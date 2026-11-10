@@ -50,6 +50,13 @@ public protocol EffectCatalogUseCase: Sendable {
     ///   or a new `run()`.
     func select(_ id: EffectID) async -> EffectSelectionOutcome
 
+    /// Lifts the switch-off of `id`, a package effect that health switched off, and chooses it again. The record is
+    /// forgotten and the settings written without it before the choice is made, so the choice runs instead of being
+    /// refused; its passes are counted afresh, as for any choice. An effect with no record is only chosen: nothing is written.
+    ///
+    /// The answer is `select`'s, except that a `run()` that begins meanwhile answers `.unavailable(nil)`.
+    func reenable(_ id: EffectID) async -> EffectSelectionOutcome
+
     /// Sets the parameter `id` of the chosen effect to `value`. The value is clamped and snapped by
     /// its declaration, the state shows the result, and the runtime is handed the new block in the
     /// same step. It prepares nothing, and a value the parameter already has changes nothing.
@@ -90,6 +97,11 @@ private struct UnimplementedEffectCatalogUseCase: EffectCatalogUseCase {
 
     func select(_ id: EffectID) async -> EffectSelectionOutcome {
         reportIssue("EffectCatalogUseCase.select not implemented")
+        return .unavailable(nil)
+    }
+
+    func reenable(_ id: EffectID) async -> EffectSelectionOutcome {
+        reportIssue("EffectCatalogUseCase.reenable not implemented")
         return .unavailable(nil)
     }
 

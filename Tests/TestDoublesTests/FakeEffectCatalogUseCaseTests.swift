@@ -174,6 +174,18 @@ struct FakeEffectCatalogUseCaseTests {
         #expect(useCase.selections.values == [.package("glitch"), .package("broken"), .package("gone")])
     }
 
+    @Test("reenable records the id and answers the scripted outcome, and is not recorded as a selection")
+    func reenableIsRecorded() async {
+        let useCase = FakeEffectCatalogUseCase()
+        #expect(await useCase.reenable(.package("glitch")) == .prepared)
+
+        useCase.script(selectOutcome: .failed(.timeout))
+        #expect(await useCase.reenable(.package("broken")) == .failed(.timeout))
+
+        #expect(useCase.reenables.values == [.package("glitch"), .package("broken")])
+        #expect(useCase.selections.count == 0)
+    }
+
     @Test("setParameter and resetParameters are recorded in the order they were called, with the id and the value")
     func parameterCallsAreRecordedInOrder() async {
         let useCase = FakeEffectCatalogUseCase()

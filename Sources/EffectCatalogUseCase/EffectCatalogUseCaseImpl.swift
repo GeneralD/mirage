@@ -41,6 +41,10 @@ extension EffectCatalogUseCaseImpl: EffectCatalogUseCase {
         await session.select(id)
     }
 
+    public func reenable(_ id: EffectID) async -> EffectSelectionOutcome {
+        await session.reenable(id)
+    }
+
     public func setParameter(_ id: String, to value: EffectParameterValue) async {
         await session.setParameter(id, to: value)
     }
