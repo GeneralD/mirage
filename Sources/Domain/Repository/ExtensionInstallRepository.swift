@@ -5,6 +5,12 @@ import Dependencies
 public protocol ExtensionInstallRepository: Sendable {
     var status: InstallStatus { get async }
     func install() async -> AsyncStream<InstallStatus>
+    /// Streams the current status first, then every later transition, terminal ones included.
+    /// It never finishes on its own, and it submits no activation.
+    func updates() async -> AsyncStream<InstallStatus>
+    /// Opens the System Settings pane for the extension approval. Returns `true` when the system
+    /// accepted the request. It leaves `status` alone and submits no activation.
+    func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool
 }
 
 public enum ExtensionInstallRepositoryKey: TestDependencyKey {
@@ -29,5 +35,15 @@ private struct UnimplementedExtensionInstallRepository: ExtensionInstallReposito
     func install() async -> AsyncStream<InstallStatus> {
         reportIssue("ExtensionInstallRepository.install not implemented")
         return AsyncStream { $0.finish() }
+    }
+
+    func updates() async -> AsyncStream<InstallStatus> {
+        reportIssue("ExtensionInstallRepository.updates not implemented")
+        return AsyncStream { $0.finish() }
+    }
+
+    func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        reportIssue("ExtensionInstallRepository.openApprovalSettings not implemented")
+        return false
     }
 }
