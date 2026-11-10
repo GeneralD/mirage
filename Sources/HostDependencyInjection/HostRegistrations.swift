@@ -39,6 +39,7 @@ import SettingsInteractor
 import SettingsRepository
 import SettingsUseCase
 import ShaderCompilationDataSource
+import StillImageDataSource
 import StoreMaintenanceDataStore
 import SystemExtensionGateway
 import UserDefaultsGateway
@@ -257,4 +258,8 @@ extension HotkeyGatewayKey: DependencyKey {
 
 extension LoginItemGatewayKey: DependencyKey {
     public static let liveValue: any LoginItemGateway = LoginItemGatewayImpl()
+}
+
+extension StillImagesKey: DependencyKey {
+    public static let liveValue: any StillImages = StillImageDataSourceImpl()
 }
