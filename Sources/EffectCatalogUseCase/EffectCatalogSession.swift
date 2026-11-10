@@ -129,6 +129,39 @@ actor EffectCatalogSession {
         }
     }
 
+    /// Sets one parameter of the chosen effect (`docs/hackathon/mvp-cd/specs/parameters.md`). It prepares nothing, and it
+    /// is not `async`: the turn has no suspension, so the model update, the publish and the runtime write cannot be
+    /// interleaved with another message.
+    func setParameter(_ id: String, to value: EffectParameterValue) {
+        guard let current = prepared, current.id == selection else {
+            developerLog.record(.effect, "parameter '\(id)' ignored: no effect is chosen")
+            return
+        }
+        guard let setting = current.model.setting(id, to: value) else {
+            developerLog.record(.effect, "parameter '\(id)' of '\(current.source.name)' rejected")
+            return
+        }
+        adopt(setting)
+    }
+
+    /// Puts every parameter of the chosen effect back to its default, under the rules of `setParameter`.
+    func resetParameters() {
+        guard let current = prepared, current.id == selection else {
+            developerLog.record(.effect, "parameter reset ignored: no effect is chosen")
+            return
+        }
+        adopt(current.model.resetting())
+    }
+
+    /// Takes the model an edit produced. A model equal to the one held changes nothing; any other is published and
+    /// handed to the runtime with the source it runs, in this same turn.
+    private func adopt(_ model: ParameterModel) {
+        guard let current = prepared, model != current.model else { return }
+        prepared?.model = model
+        publish()
+        runtime.setParameters(model.block, of: current.source)
+    }
+
     // MARK: - A listing
 
     private func reconcile(_ listing: [EffectCatalogEntry], in run: Int) async {
