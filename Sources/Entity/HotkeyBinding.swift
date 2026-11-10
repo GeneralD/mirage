@@ -9,8 +9,8 @@ public enum HotkeyAction: Int, Sendable, Hashable, CaseIterable {
 /// One global hotkey: an action bound to a key and its modifiers. Entity does not import Carbon,
 /// so both values are plain numbers in Carbon's encoding.
 public struct HotkeyBinding: Sendable, Hashable {
-    /// A Carbon virtual key code.
     public let action: HotkeyAction
+    /// A Carbon virtual key code.
     public let keyCode: UInt32
     /// A Carbon modifier mask: command 256, shift 512, option 2048, control 4096.
     public let modifiers: UInt32

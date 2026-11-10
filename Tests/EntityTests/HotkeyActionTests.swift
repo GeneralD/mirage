@@ -3,14 +3,14 @@ import Testing
 
 @Suite("HotkeyAction")
 struct HotkeyActionTests {
-    @Test("HotkeyAction の raw value は 1, 2, 3 で、allCases は 3 件。HotkeyAction(rawValue: 0) は nil")
+    @Test("the raw values are 1, 2 and 3, allCases has three cases, and rawValue 0 is nil")
     func rawValuesAreTheCarbonIDsFromOne() {
         #expect(HotkeyAction.allCases.map(\.rawValue) == [1, 2, 3])
         #expect(HotkeyAction.allCases.count == 3)
         #expect(HotkeyAction(rawValue: 0) == nil)
     }
 
-    @Test("defaultHotkeyBindings は action ごとにちょうど 1 件で、(keyCode, modifiers) の組が重ならない")
+    @Test("defaultHotkeyBindings has exactly one binding per action and no two share a (keyCode, modifiers) pair")
     func defaultBindingsHaveOneKeyPerActionAndNoSharedCombination() {
         let bindings = defaultHotkeyBindings
         let countsPerAction = HotkeyAction.allCases.map { action in bindings.filter { $0.action == action }.count }
