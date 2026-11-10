@@ -7,6 +7,8 @@ public protocol KeyValueStoreGateway: Sendable {
     func string(forKey key: String) -> String?
     func set(_ value: String, forKey key: String)
     func removeValue(forKey key: String)
+    /// Removes every value this app has stored. Other apps' and the system's values are untouched.
+    func removeAll()
 }
 
 public enum KeyValueStoreGatewayKey: TestDependencyKey {
@@ -32,5 +34,9 @@ private struct UnimplementedKeyValueStoreGateway: KeyValueStoreGateway {
 
     func removeValue(forKey key: String) {
         reportIssue("KeyValueStoreGateway.removeValue not implemented")
+    }
+
+    func removeAll() {
+        reportIssue("KeyValueStoreGateway.removeAll not implemented")
     }
 }
