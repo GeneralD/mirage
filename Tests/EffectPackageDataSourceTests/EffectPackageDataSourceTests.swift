@@ -114,6 +114,40 @@ struct EffectPackageDataSourceTests {
         #expect(rig.developer.entries.values.isEmpty)
     }
 
+    @Test("a package that declares parameters is ready with them, on its manifest and on the source to compile, however it is read")
+    func readyPackageCarriesItsParameters() async {
+        let rig = Rig()
+        rig.files.write(Rig.manifest("ripple"), EffectManifestDecodingTests.exampleText)
+        rig.files.write(Rig.shader("ripple"), Rig.validShader)
+
+        let inventory = await rig.subject.packages()
+        let single = await rig.subject.package(.package("ripple"))
+
+        let specs = EffectManifestDecodingTests.exampleSpecs
+        let expected = EffectPackage(
+            id: .package("ripple"),
+            manifest: EffectManifest(formatVersion: 1, name: "Ripple", parameters: specs),
+            source: EffectSource(name: "Ripple", source: Rig.validShader, parameters: specs))
+        #expect(inventory.listings == [.ready(expected)])
+        #expect(single == .ready(expected))
+        #expect(rig.errors.entries.values.isEmpty)
+    }
+
+    @Test("a package without parameters is ready with none, as it was before they existed")
+    func readyPackageWithoutParameters() async {
+        let rig = Rig()
+        rig.writePackage("glitch")
+
+        let inventory = await rig.subject.packages()
+
+        guard case .ready(let package) = inventory.listings.first else {
+            Issue.record("not ready: \(inventory.listings)")
+            return
+        }
+        #expect(package.manifest.parameters.isEmpty)
+        #expect(package.source.parameters.isEmpty)
+    }
+
     @Test(
         "only a directory named for a `.lens` package is one: a plain file, a file with the suffix, other directories and a bare suffix are ignored without being looked into"
     )
@@ -178,6 +212,27 @@ struct EffectPackageDataSourceTests {
                 $0.write(Rig.shader("p"), Rig.validShader)
             },
             problem: .manifestInvalid(message: "not valid JSON"), watched: [Rig.manifest("p"), Rig.shader("p")]),
+        Breakage(
+            name: "a parameter of a type this build does not know",
+            arrange: {
+                $0.write(
+                    Rig.manifest("p"),
+                    #"{"formatVersion": 1, "name": "P", "parameters": [{"id": "a", "label": "A", "type": "texture", "default": 0}]}"#)
+                $0.write(Rig.shader("p"), Rig.validShader)
+            },
+            problem: .manifestInvalid(message: "\"parameters[0].type\" is not one of float, int, bool, color, vec2, choice"),
+            watched: [Rig.manifest("p"), Rig.shader("p")]),
+        Breakage(
+            name: "a parameter that breaks a rule",
+            arrange: {
+                $0.write(
+                    Rig.manifest("p"),
+                    #"{"formatVersion": 1, "name": "P", "parameters": [{"id": "a", "label": "A", "type": "bool", "default": true}, {"id": "a", "label": "B", "type": "bool", "default": true}]}"#
+                )
+                $0.write(Rig.shader("p"), Rig.validShader)
+            },
+            problem: .manifestInvalid(message: "\"parameters[1].id\" repeats \"parameters[0].id\""),
+            watched: [Rig.manifest("p"), Rig.shader("p")]),
         Breakage(
             name: "the name is empty",
             arrange: {
