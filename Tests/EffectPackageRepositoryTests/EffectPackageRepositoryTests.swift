@@ -45,6 +45,10 @@ struct EffectPackageRepositoryTests {
             nil
         }
 
+        func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem> {
+            .failure(.unwritable(path: folder))
+        }
+
         func openFolder() {
             base.openFolder()
         }
