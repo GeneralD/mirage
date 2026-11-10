@@ -74,6 +74,7 @@ struct SettingsUseCaseTests {
         // A stamp that ran before the reset would have been cleared by it, so the stored version proves the order.
         #expect(stored == .version(1))
         #expect(hotkeys == true)
-        #expect(log.entries.values == [LogEntry(.app, "settings reset")])
+        #expect(
+            log.entries.values == [LogEntry(.app, "launch at login now off"), LogEntry(.app, "settings reset")])
     }
 }
