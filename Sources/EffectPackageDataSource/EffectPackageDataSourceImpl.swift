@@ -5,19 +5,20 @@ import Foundation
 /// The effects folder as `.lens` packages (epic #42, D1 / D2 / D3): a folder named `<id>.lens`
 /// holding a `manifest.json` and an `effect.metal`. It lists the folder, reads each package and
 /// answers `.ready` with the shader as an `EffectSource` (default compile options, and the
-/// parameters its manifest declares), or `.broken` with the reason; a package it cannot use is never left out. Everything it touches comes
-/// through `FileSystemGateway`, `WorkspaceGateway` and `AppDirectoriesProvider`, and the
-/// effects folder's path is asked of the provider on each call, never kept.
+/// parameters its manifest declares), or `.broken` with the reason; a package it cannot use is
+/// never left out. Everything it touches comes through `FileSystemGateway`, `WorkspaceGateway` and
+/// `AppDirectoriesProvider`, and the effects folder's path is asked of the provider on each call,
+/// never kept.
 ///
 /// - **Which entries are packages.** Only a directory whose name ends in `.lens`, under a
 ///   non-empty id; any other file or directory in the folder is ignored. The listing is in id
 ///   order whatever order the gateway lists in (the live one promises none).
 /// - **What is broken.** Both files of a package are read every time. The first problem in
-///   this order is the one reported: `manifest.json` missing, unreadable, then undecodable
-///   (`EffectManifestDecoding`), then `effect.metal` missing, then unreadable. A file that
-///   cannot be found is *missing*, told by the `CocoaError` code and never by a message;
-///   any other failure to read it (permissions, text that is not UTF-8, a path that is a
-///   directory) is *unreadable*.
+///   this order is the one reported: `manifest.json` missing, unreadable, then undecodable or
+///   breaking a rule of its `parameters` (`EffectManifestDecoding`), then `effect.metal`
+///   missing, then unreadable. A file that cannot be found is *missing*, told by the
+///   `CocoaError` code and never by a message; any other failure to read it (permissions, text
+///   that is not UTF-8, a path that is a directory) is *unreadable*.
 /// - **The thumbnail** (#12) is read by `packages()` only, for a package that is ready and whose
 ///   manifest names one. `EffectThumbnailReading` decides from the path's text whether it can be
 ///   read at all. A directory on its way that is not there, or is a file, makes the file missing,

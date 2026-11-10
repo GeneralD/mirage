@@ -19,8 +19,9 @@ import Foundation
 /// - **`choice`.** 1 to 32 options, none empty as written and none twice.
 ///
 /// The first rule broken is the one reported, so one wrong manifest gets one reason: the count first,
-/// then each parameter in turn, its rules in the order of the list above. Each reason names the key by the same path
-/// the decoder's errors use (`parameters[2].default`, and `parameters[2].default[1]` for one component).
+/// then each parameter in turn, its rules in the order of the list above. Each reason names the key
+/// by the same path the decoder's errors use (`parameters[2].default`, and `parameters[2].default[1]`
+/// for one component).
 enum EffectParameterValidation {
     static let maximumCount = 32
     static let maximumOptionCount = 32
