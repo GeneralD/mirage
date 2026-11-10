@@ -78,6 +78,12 @@ public protocol EffectRuntimeState: Sendable {
     /// ones, never a frame) and ends when its consumer lets go. A `report` made after this returns is
     /// delivered to the stream.
     func outcomes() -> AsyncStream<EffectPassOutcome>
+
+    /// The diagnostics (`ShaderDiagnostics.message`, as the compiler wrote them) of the newest failed compile, for
+    /// `effect` when it has the same source, compile options and parameter layout (`CompileKey`) as that failure; `nil`
+    /// otherwise. One slot: a newer failure replaces it whatever its effect, and a success clears it only for its own key.
+    /// A failure is recorded even when its ticket is no longer the newest. Answers on the executor, like `selected()`.
+    func compilerMessage(of effect: EffectSource) async -> String?
 }
 
 /// What an `apply` runs once the selection has settled: the library to run or the failure
@@ -164,6 +170,11 @@ private struct UnimplementedEffectRuntimeState: EffectRuntimeState {
     func outcomes() -> AsyncStream<EffectPassOutcome> {
         reportIssue("EffectRuntimeState.outcomes not implemented")
         return AsyncStream { $0.finish() }
+    }
+
+    func compilerMessage(of effect: EffectSource) async -> String? {
+        reportIssue("EffectRuntimeState.compilerMessage not implemented")
+        return nil
     }
 
     /// The stamp of a selection nothing decided: the placeholders above answer with it.

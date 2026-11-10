@@ -79,6 +79,9 @@ public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     /// reasons (no GPU context, a compiler service fault). Only a
     /// `begin` starts it over: the retries an `admit` hands back keep counting.
     private var contextFailures = 0
+    /// The diagnostics of the newest failed compile and the key of the effect it failed for: one slot, replaced by
+    /// a newer failure and cleared by a success of the same key only.
+    private var lastFailure: (key: CompileKey, message: String)?
 
     /// How many outcomes a stream holds for a consumer that has not read them.
     private static let outcomeBacklog = 64
@@ -151,6 +154,13 @@ extension EffectRuntimeStateDataSourceImpl: EffectRuntimeState {
         }
         return stream
     }
+
+    public func compilerMessage(of effect: EffectSource) async -> String? {
+        await onExecutor { [self] () -> String? in
+            guard let lastFailure, lastFailure.key == CompileKey(effect) else { return nil }
+            return lastFailure.message
+        }
+    }
 }
 
 // MARK: - Executor-confined steps
@@ -178,11 +188,13 @@ extension EffectRuntimeStateDataSourceImpl {
         switch outcome {
         case .success(let library):
             cache[CompileKey(effect)] = library
+            if lastFailure?.key == CompileKey(effect) { lastFailure = nil }
             guard isNewest else { return .compiled(selected: false) }
             let failures = contextFailures
             select(.ready(library, fingerprint(of: effect)))
             return .compiled(selected: true, afterFailures: failures)
         case .failure(let diagnostics):
+            lastFailure = (key: CompileKey(effect), message: diagnostics.message)
             switch diagnostics.cause {
             case .source:
                 if isNewest { select(.failed(fingerprint(of: effect))) }
