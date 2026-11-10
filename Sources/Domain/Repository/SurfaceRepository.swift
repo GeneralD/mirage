@@ -7,6 +7,12 @@ public protocol SurfaceRepository: Sendable {
     func allocate(_ descriptor: SurfaceDescriptor) throws -> SurfaceToken?
     /// As `allocate(_:)`, with every byte set to `byte` (slate frames); a failed fill leaves `liveCount` unchanged.
     func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken?
+    /// Writes `image` into the surface behind `token`. `false` when the token is stale, the surface's width,
+    /// height or `pixelFormat` is not the image's (`.bgra32`), the byte count is not `width * height * 4`, or
+    /// the write fails; the surface is then left as it was.
+    func upload(_ image: StillImage, to token: SurfaceToken) -> Bool
+    /// Reads the surface behind `token` back as a packed image. `nil` when the token is stale or the read fails.
+    func download(from token: SurfaceToken) -> StillImage?
     @discardableResult
     func release(_ token: SurfaceToken) -> Bool
     func releaseAll()
@@ -36,6 +42,16 @@ private struct UnimplementedSurfaceRepository: SurfaceRepository {
 
     func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
         reportIssue("SurfaceRepository.allocate(filledWith:) not implemented")
+        return nil
+    }
+
+    func upload(_ image: StillImage, to token: SurfaceToken) -> Bool {
+        reportIssue("SurfaceRepository.upload not implemented")
+        return false
+    }
+
+    func download(from token: SurfaceToken) -> StillImage? {
+        reportIssue("SurfaceRepository.download not implemented")
         return nil
     }
 

@@ -28,6 +28,14 @@ final class SpySurfaceRepository: SurfaceRepository, Sendable {
         try inner.allocate(descriptor, filledWith: byte)
     }
 
+    func upload(_ image: StillImage, to token: SurfaceToken) -> Bool {
+        inner.upload(image, to: token)
+    }
+
+    func download(from token: SurfaceToken) -> StillImage? {
+        inner.download(from: token)
+    }
+
     @discardableResult
     func release(_ token: SurfaceToken) -> Bool {
         let accepted = inner.release(token)
