@@ -6,8 +6,9 @@
 /// `choice` reach the shader as `uint`, `color` as `float4` (`EffectParameterKind.fieldType`).
 ///
 /// `Codable` is deliberately absent: the manifest's JSON is shaped for authors to write, not like
-/// this enum's synthesized form, and its decoding (with the validation that goes with it) comes
-/// with the manifest reader.
+/// this enum's synthesized form, so it is `EffectParameterSpec` that reads and writes it
+/// (`EffectParameter+Codable.swift`), and the validation that goes with it is the manifest
+/// reader's (`EffectManifestDecoding`).
 public enum EffectParameterKind: Sendable, Hashable {
     /// `step`, when present, is the grid the value snaps to.
     case float(min: Float, max: Float, step: Float?, defaultValue: Float)

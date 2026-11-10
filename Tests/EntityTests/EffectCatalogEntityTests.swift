@@ -70,11 +70,25 @@ struct EffectManifestTests {
         #expect(throws: DecodingError.self) { try decoder.decode(EffectManifest.self, from: Data(#"{"formatVersion":"1","name":"Glitch"}"#.utf8)) }
     }
 
-    @Test("a key this build does not know is ignored, `parameters` included: a newer package still reads")
+    @Test("a key this build does not know is ignored: a newer package still reads")
     func unknownKeysAreIgnored() throws {
-        let json = #"{"formatVersion":1,"name":"Glitch","author":"me","parameters":[{"id":"amount","type":"float"}],"license":"MIT"}"#
+        let json = #"{"formatVersion":1,"name":"Glitch","author":"me","license":"MIT","inputs":["camera"]}"#
         let manifest = try JSONDecoder().decode(EffectManifest.self, from: Data(json.utf8))
         #expect(manifest == EffectManifest(formatVersion: 1, name: "Glitch", author: "me"))
+    }
+
+    @Test("`parameters` is read when it is there, and is the empty list when it is absent or null")
+    func parametersAreOptional() throws {
+        let decoder = JSONDecoder()
+        let parameter = #"{"id":"amount","label":"Amount","type":"bool","default":true}"#
+        let spec = EffectParameterSpec(id: "amount", label: "Amount", kind: .bool(defaultValue: true))
+
+        let with = try decoder.decode(EffectManifest.self, from: Data(#"{"formatVersion":1,"name":"Glitch","parameters":[\#(parameter)]}"#.utf8))
+        let null = try decoder.decode(EffectManifest.self, from: Data(#"{"formatVersion":1,"name":"Glitch","parameters":null}"#.utf8))
+
+        #expect(with == EffectManifest(formatVersion: 1, name: "Glitch", parameters: [spec]))
+        #expect(null == EffectManifest(formatVersion: 1, name: "Glitch"))
+        #expect(EffectManifest(formatVersion: 1, name: "Glitch").parameters.isEmpty)
     }
 }
 

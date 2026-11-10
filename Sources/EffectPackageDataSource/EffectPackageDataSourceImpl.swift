@@ -4,8 +4,8 @@ import Foundation
 
 /// The effects folder as `.lens` packages (epic #42, D1 / D2 / D3): a folder named `<id>.lens`
 /// holding a `manifest.json` and an `effect.metal`. It lists the folder, reads each package and
-/// answers `.ready` with the shader as an `EffectSource` (default compile options), or `.broken`
-/// with the reason; a package it cannot use is never left out. Everything it touches comes
+/// answers `.ready` with the shader as an `EffectSource` (default compile options, and the
+/// parameters its manifest declares), or `.broken` with the reason; a package it cannot use is never left out. Everything it touches comes
 /// through `FileSystemGateway`, `WorkspaceGateway` and `AppDirectoriesProvider`, and the
 /// effects folder's path is asked of the provider on each call, never kept.
 ///
@@ -187,7 +187,8 @@ extension EffectPackageDataSourceImpl {
                 switch source {
                 case .missing: return .failure(.sourceMissing)
                 case .unreadable(let problem): return .failure(problem)
-                case .text(let sourceText): return .success((decoded, EffectSource(name: decoded.name, source: sourceText)))
+                case .text(let sourceText):
+                    return .success((decoded, EffectSource(name: decoded.name, source: sourceText, parameters: decoded.parameters)))
                 }
             }
         }

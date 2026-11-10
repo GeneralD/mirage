@@ -14,12 +14,18 @@ import Foundation
 ///   thumbnail's path can be used is `EffectThumbnailReading`'s, and one that cannot costs the
 ///   package only its picture; a `thumbnail` that is neither a string nor `null` is the wrong type,
 ///   as it is for `author`. A key this build does not know is ignored, so a newer package can
-///   carry more than an older build reads; `parameters` is one of them until MVP-C interprets it,
-///   whatever shape its value has.
+///   carry more than an older build reads.
+/// - `parameters` is a list of the knobs the effect declares; absent, or `null`, it is the empty
+///   list. A parameter that has the wrong shape (`EffectParameterSpec`'s decoding) or breaks a rule
+///   (`EffectParameterValidation`) makes the whole package invalid, and the message names the key
+///   as `parameters[2].default`. The shape of every key is read in one pass, so a parameter of the
+///   wrong shape is named before an empty name; then the name is judged, and then the rules of the
+///   parameters. Only a manifest of the supported format gets that far.
 /// - Everything else that is wrong with the text (not JSON, not an object, a required key
 ///   missing, a value of the wrong type) is `manifestInvalid`, with a message that names the key.
-///   The messages are built from the decoder's coding path and not from its own wording, so they
-///   do not change with the locale or the OS.
+///   The messages are built from the decoder's coding path, and from the closed reasons of
+///   `EffectParameterSpec.Rejection`, and not from the decoder's own wording, so they do not change
+///   with the locale or the OS.
 public enum EffectManifestDecoding {
     /// The only `formatVersion` this build reads.
     public static let supportedFormatVersion = 1
@@ -36,10 +42,11 @@ public enum EffectManifestDecoding {
             let manifest = try decoder.decode(EffectManifest.self, from: data)
             let name = manifest.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return .failure(.manifestInvalid(message: "\"name\" is empty")) }
-            return .success(
+            return EffectParameterValidation.validate(manifest.parameters).map { parameters in
                 EffectManifest(
                     formatVersion: supportedFormatVersion, name: name, author: manifest.author, description: manifest.description,
-                    thumbnail: manifest.thumbnail))
+                    thumbnail: manifest.thumbnail, parameters: parameters)
+            }
         } catch {
             return .failure(.manifestInvalid(message: message(for: error)))
         }
@@ -76,19 +83,34 @@ public enum EffectManifestDecoding {
         number.rounded() == number ? "\"formatVersion\" is out of range" : "\"formatVersion\" is not an integer"
     }
 
-    /// `.dataCorrupted` has no key to name, so it is always "not valid JSON": the decoder reports a bad
-    /// escape met while a value is read (a lone surrogate in `name`) with an empty coding path, as it
-    /// does a truncated text or a number beyond a `Double`, and the manifest has no decoding strategy
-    /// that could raise it with a path of its own.
+    /// `.dataCorrupted` has no key to name unless `EffectParameterSpec` raised it, so it is "not valid
+    /// JSON": the decoder reports a bad escape met while a value is read (a lone surrogate in `name`) with
+    /// an empty coding path, as it does a truncated text or a number beyond a `Double`, and nothing else in
+    /// the manifest raises it with a path of its own.
     private static func message(for error: any Error) -> String {
         guard let error = error as? DecodingError else { return "not valid JSON" }
         return switch error {
         case .keyNotFound(let key, let context): "missing required key \(quoted(context.codingPath + [key]))"
         case .typeMismatch(_, let context): "\(subject(of: context)) has the wrong type"
         case .valueNotFound(_, let context): "\(subject(of: context)) has no value"
-        case .dataCorrupted: "not valid JSON"
+        case .dataCorrupted(let context): message(forCorruption: context)
         @unknown default: "not valid JSON"
         }
+    }
+
+    /// A value `EffectParameterSpec` refuses names its key and says why, in words of this file and not of the
+    /// decoder. Anything else that is corrupted is the text as a whole: "not valid JSON".
+    private static func message(forCorruption context: DecodingError.Context) -> String {
+        guard let rejection = context.underlyingError as? EffectParameterSpec.Rejection else { return "not valid JSON" }
+        let reason =
+            switch rejection {
+            case .unknownType: "is not one of \(EffectParameterSpec.typeNames.joined(separator: ", "))"
+            case .outOfRange: "is out of range"
+            case .notAnInteger: "is not a 32-bit integer"
+            case .wrongComponentCount(let expected): "is not a list of \(expected) numbers"
+            case .notAnOption: "is not one of \"options\""
+            }
+        return "\(quoted(context.codingPath)) \(reason)"
     }
 
     /// The key a problem is about, or the manifest as a whole when the path is empty.
@@ -96,7 +118,14 @@ public enum EffectManifestDecoding {
         context.codingPath.isEmpty ? "the manifest" : quoted(context.codingPath)
     }
 
+    /// The path as an author reads the manifest: a key after a dot, an index in brackets
+    /// (`parameters[2].default`). An array's index is a key with an `intValue`, whose `stringValue`
+    /// is the decoder's own wording ("Index 2") and so is never used.
     private static func quoted(_ path: [any CodingKey]) -> String {
-        "\"\(path.map(\.stringValue).joined(separator: "."))\""
+        let text = path.reduce("") { text, key in
+            if let index = key.intValue { return "\(text)[\(index)]" }
+            return text.isEmpty ? key.stringValue : "\(text).\(key.stringValue)"
+        }
+        return "\"\(text)\""
     }
 }
