@@ -9,7 +9,8 @@ import Domain
 /// two are decoupled by a one-element slot where the newest frame wins: a frame
 /// that was never taken is released the moment a newer one arrives, and nothing
 /// is ever queued. A tick hands the frame it takes to the effect runtime off the
-/// executor, at most one pass at a time; a tick that finds a pass still running
+/// executor, at most one pass at a time; while bypassed (`setBypass`) a tick sends
+/// its frame unchanged and starts no pass. A tick that finds a pass still running
 /// drops its frame as `.inFlightCapReached`, so every frame a tick takes is
 /// sent, counted as a drop, or abandoned by `stop`. The pass's answer comes back
 /// on the executor: on success the rendered output goes to the sink and then to
@@ -65,6 +66,9 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     // and the index the next pass of this run hands the effect.
     private var inFlight: EffectPass?
     private var frameIndex: UInt32 = 0
+    // Executor-confined, the bypass `setBypass` sets: while true, a tick hands its frame on
+    // unchanged and starts no pass. Neither `start` nor `stop` resets it.
+    private var bypassed = false
     // Executor-confined, the preview: frames handed to it whose completion has not come
     // back onto the executor yet. Each keeps its lease until then, and `stop`'s pool
     // reset waits for them as it waits for a pass in flight.
@@ -142,6 +146,17 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
             resetPoolWhenIdle()
         }
     }
+
+    /// The flag changes on the executor, so a tick that is already running sees the old
+    /// value and the next tick the new one. A value equal to the current one is no change
+    /// and logs nothing.
+    public func setBypass(_ enabled: Bool) {
+        frameExecutor.run { [self] in
+            guard bypassed != enabled else { return }
+            bypassed = enabled
+            developerLog.record(.pipeline, enabled ? "bypass on" : "bypass off")
+        }
+    }
 }
 
 // MARK: - Frame path (executor-confined)
@@ -164,10 +179,12 @@ extension FramePipelineUseCaseImpl {
 
     /// Takes the latest frame into the effect stage. A pass still running means the
     /// in-flight cap is reached: the frame drops here rather than waiting behind
-    /// the GPU, and the next tick takes whatever is newest by then.
+    /// the GPU, and the next tick takes whatever is newest by then. While bypassed, the
+    /// frame is delivered unchanged instead of starting a pass.
     private func flushLatest(run: Int) {
         guard let frame = takeLatest() else { return }
         guard inFlight == nil else { return drop(frame, because: .inFlightCapReached) }
+        guard !bypassed else { return deliver(frame) }
         startEffect(on: frame, run: run)
     }
 
