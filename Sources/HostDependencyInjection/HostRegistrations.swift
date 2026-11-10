@@ -147,6 +147,10 @@ extension PreferencesKey: DependencyKey {
     public static let liveValue: any Preferences = PreferencesDataStoreImpl()
 }
 
+extension CameraPreferencesKey: DependencyKey {
+    public static let liveValue: any CameraPreferences = CameraPreferencesDataStoreImpl()
+}
+
 extension CaptureSessionGatewayKey: DependencyKey {
     public static let liveValue: any CaptureSessionGateway = CaptureSessionGatewayImpl()
 }
