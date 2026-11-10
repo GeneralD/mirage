@@ -11,10 +11,15 @@ struct ExtensionInstallDataSourceTests {
     private let gateway = FakeSystemExtensionGateway()
     private let log = RecordingLog()
 
-    private func makeSubject() -> ExtensionInstallDataSourceImpl {
+    private func makeSubject(
+        workspace: FakeWorkspaceGateway = FakeWorkspaceGateway(),
+        errors: RecordingLog = RecordingLog()
+    ) -> ExtensionInstallDataSourceImpl {
         withDependencies {
             $0.systemExtensionGateway = gateway
             $0.developerLog = log
+            $0.workspaceGateway = workspace
+            $0.errorLog = errors
         } operation: {
             ExtensionInstallDataSourceImpl()
         }
@@ -427,5 +432,50 @@ struct ExtensionInstallDataSourceTests {
             await Task.yield()
         }
         return false
+    }
+
+    @Test("loginItemsAndExtensions opens the LoginItems-Settings extension link")
+    func loginItemsPaneURL() async {
+        let workspace = FakeWorkspaceGateway()
+        _ = await makeSubject(workspace: workspace).openApprovalSettings(.loginItemsAndExtensions)
+        #expect(workspace.openedURLs.values == ["x-apple.systempreferences:com.apple.LoginItems-Settings.extension"])
+    }
+
+    @Test("privacyAndSecurity opens the PrivacySecurity extension link")
+    func privacyPaneURL() async {
+        let workspace = FakeWorkspaceGateway()
+        _ = await makeSubject(workspace: workspace).openApprovalSettings(.privacyAndSecurity)
+        #expect(workspace.openedURLs.values == ["x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"])
+    }
+
+    @Test("an accepted open returns true and logs one developer line and no error")
+    func acceptedOpenLogsOneDeveloperLine() async {
+        let errors = RecordingLog()
+        let subject = makeSubject(errors: errors)
+        #expect(await subject.openApprovalSettings(.privacyAndSecurity))
+        #expect(log.messages(in: .install) == ["opened System Settings: privacyAndSecurity"])
+        #expect(errors.entries.values.isEmpty)
+    }
+
+    @Test("a refused open returns false and logs one error line")
+    func refusedOpenLogsOneErrorLine() async {
+        let errors = RecordingLog()
+        let subject = makeSubject(workspace: FakeWorkspaceGateway(opensURLs: false), errors: errors)
+        #expect(await subject.openApprovalSettings(.loginItemsAndExtensions) == false)
+        #expect(errors.messages(in: .install) == ["System Settings did not open: loginItemsAndExtensions"])
+        #expect(log.messages(in: .install).isEmpty)
+    }
+
+    @Test("opening the pane leaves the status and the activation alone")
+    func openingSettingsKeepsApprovalPending() async {
+        let subject = makeSubject()
+        var iterator = await subject.install().makeAsyncIterator()
+        #expect(await iterator.next() == .installing)
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.needsApproval)
+        #expect(await iterator.next() == .needsApproval)
+        #expect(await subject.openApprovalSettings(.loginItemsAndExtensions))
+        #expect(await subject.status == .needsApproval)
+        #expect(gateway.activations.count == 1)
     }
 }

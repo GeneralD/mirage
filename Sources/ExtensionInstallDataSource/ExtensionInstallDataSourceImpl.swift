@@ -9,6 +9,8 @@ import Domain
 public actor ExtensionInstallDataSourceImpl {
     @Dependency(\.systemExtensionGateway) private var gateway
     @Dependency(\.developerLog) private var developerLog
+    @Dependency(\.workspaceGateway) private var workspace
+    @Dependency(\.errorLog) private var errorLog
 
     // Mutated on every transition; the actor is what makes that safe.
     private var current: InstallStatus = .notInstalled
@@ -58,6 +60,16 @@ extension ExtensionInstallDataSourceImpl: CameraExtensionInstaller {
         continuation.yield(current)
         watch(continuation)
         return stream
+    }
+
+    public func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        let opened = workspace.openURL(Self.settingsURL(for: pane))
+        if opened {
+            developerLog.record(.install, "opened System Settings: \(pane)")
+        } else {
+            errorLog.record(.install, "System Settings did not open: \(pane)")
+        }
+        return opened
     }
 }
 
@@ -134,6 +146,14 @@ extension ExtensionInstallDataSourceImpl {
         guard next.isTerminal else { return }
         for subscriber in subscribers.values { subscriber.finish() }
         subscribers = [:]
+    }
+
+    /// The System Settings deep links. Apple documents neither, so the strings are kept in this one place.
+    private static func settingsURL(for pane: SystemSettingsPane) -> String {
+        switch pane {
+        case .loginItemsAndExtensions: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
+        case .privacyAndSecurity: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+        }
     }
 
     static func status(for event: SystemExtensionEvent) -> InstallStatus {

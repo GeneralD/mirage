@@ -15,6 +15,9 @@ public protocol CameraExtensionInstaller: Sendable {
     /// It never finishes on its own: a retried `install()` reaches it again, and it is detached
     /// when the consumer stops reading. It submits no activation; only `install()` does.
     func updates() async -> AsyncStream<InstallStatus>
+    /// Opens the System Settings pane for the extension approval. Returns `true` when the system
+    /// accepted the request. It leaves `status` alone and submits no activation.
+    func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool
 }
 
 public enum CameraExtensionInstallerKey: TestDependencyKey {
@@ -44,5 +47,10 @@ private struct UnimplementedCameraExtensionInstaller: CameraExtensionInstaller {
     func updates() async -> AsyncStream<InstallStatus> {
         reportIssue("CameraExtensionInstaller.updates not implemented")
         return AsyncStream { $0.finish() }
+    }
+
+    func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        reportIssue("CameraExtensionInstaller.openApprovalSettings not implemented")
+        return false
     }
 }
