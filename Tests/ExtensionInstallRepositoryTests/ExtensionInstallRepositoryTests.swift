@@ -37,4 +37,26 @@ struct ExtensionInstallRepositoryTests {
         let statuses = await makeSubject(installer).install().reduce(into: [InstallStatus]()) { $0.append($1) }
         #expect(statuses.isEmpty)
     }
+
+    @Test("updates streams the current status first, then the installer's transitions in order")
+    func updatesStreamCurrentThenTransitions() async {
+        let installer = FakeCameraExtensionInstaller(status: .needsApproval, script: [.installing, .installed])
+        let subject = makeSubject(installer)
+        let stream = await subject.updates()
+        _ = await subject.install()
+        installer.finishUpdates()
+        let statuses = await stream.reduce(into: [InstallStatus]()) { $0.append($1) }
+        #expect(statuses == [.needsApproval, .installing, .installed])
+    }
+
+    @Test("openApprovalSettings hands the pane to the installer and returns its answer")
+    func openApprovalSettingsForwardsAnswer() async {
+        let accepting = FakeCameraExtensionInstaller()
+        #expect(await makeSubject(accepting).openApprovalSettings(.privacyAndSecurity) == true)
+        #expect(accepting.openedPanes.values == [.privacyAndSecurity])
+
+        let refusing = FakeCameraExtensionInstaller(opensSettings: false)
+        #expect(await makeSubject(refusing).openApprovalSettings(.loginItemsAndExtensions) == false)
+        #expect(refusing.openedPanes.values == [.loginItemsAndExtensions])
+    }
 }
