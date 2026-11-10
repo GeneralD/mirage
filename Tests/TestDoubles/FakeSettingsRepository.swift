@@ -1,23 +1,26 @@
 import Domain
 import TestSupport
 
-/// `SettingsRepository` holding the chosen effect in memory: `selectedEffect()` answers
-/// what was given at the start or last set, and `writes` records every
-/// `setSelectedEffect`, in order, so a subject that must not persist is asserted to
-/// have written nothing.
+/// `SettingsRepository` holding the chosen effect and the disabled-effect records in memory:
+/// `selectedEffect()` answers what was given at the start or last set, and `disabledEffects()`
+/// what was given at the start or last set as well. `writes` records every `setSelectedEffect`,
+/// in order, so a subject that must not persist is asserted to have written nothing;
+/// `disabledWrites` records every `setDisabledEffects` array the same way, and `disabledReads`
+/// every `disabledEffects()` call.
 ///
-/// Both calls answer at once unless the test asked to hold them (`holdReads()`,
-/// `holdWrites()`): then each one suspends until `complete(_:)`, in any order, like a
-/// settings store that is slow to answer. That is how "something else happens while the
-/// subject is reading or remembering the choice" is a sequence the test writes down. A
-/// held read answers what was stored when it began; a held write has stored its value
-/// by then (it is remembered, but the call has not returned yet).
+/// Both kinds of call answer at once unless the test asked to hold them (`holdReads()`,
+/// `holdWrites()`, `holdDisabledWrites()`): then each one suspends until `complete(_:)`, in any
+/// order, like a settings store that is slow to answer. That is how "something else happens
+/// while the subject is reading or remembering the choice" is a sequence the test writes down.
+/// A held read answers what was stored when it began; a held write has stored its value by
+/// then (it is remembered, but the call has not returned yet).
 public final class FakeSettingsRepository: SettingsRepository, Sendable {
     /// One call that is parked until the test completes it.
     public struct Request: Sendable {
         public enum Call: Sendable, Equatable {
             case read
             case write(EffectID)
+            case writeDisabled([DisabledEffectRecord])
         }
 
         public let id: Int
@@ -28,8 +31,10 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
 
     private struct State {
         var selected: EffectID?
+        var disabled: [DisabledEffectRecord]
         var holdingReads = false
         var holdingWrites = false
+        var holdingDisabledWrites = false
         var nextRequest = 1
         var parked: [Int: CheckedContinuation<Void, Never>] = [:]
     }
@@ -39,12 +44,16 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
     public let reads = Collector<Void>()
     /// The ids `setSelectedEffect` was called with, in call order.
     public let writes = Collector<EffectID>()
-    /// The calls that were parked (`holdReads()`, `holdWrites()`), in call order. A request is recorded
+    /// One entry per `disabledEffects()` call.
+    public let disabledReads = Collector<Void>()
+    /// The arrays `setDisabledEffects` was called with, in call order.
+    public let disabledWrites = Collector<[DisabledEffectRecord]>()
+    /// The calls that were parked (`holdReads()`, `holdWrites()`, `holdDisabledWrites()`), in call order. A request is recorded
     /// in the same step that parks it, so a test that sees one can always complete it.
     public let heldRequests = Collector<Request>()
 
-    public init(selected: EffectID? = nil) {
-        state = Locked(State(selected: selected))
+    public init(selected: EffectID? = nil, disabled: [DisabledEffectRecord] = []) {
+        state = Locked(State(selected: selected, disabled: disabled))
     }
 
     /// Calls that are parked right now.
@@ -60,6 +69,12 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
     /// `holdWrites(false)` goes back to returning at once (calls already parked stay parked).
     public func holdWrites(_ holding: Bool = true) {
         state.withLock { $0.holdingWrites = holding }
+    }
+
+    /// From now on every `setDisabledEffects` suspends, after storing, until `complete(_:)`;
+    /// `holdDisabledWrites(false)` goes back to returning at once (calls already parked stay parked).
+    public func holdDisabledWrites(_ holding: Bool = true) {
+        state.withLock { $0.holdingDisabledWrites = holding }
     }
 
     /// Resumes the parked call; `false` when it is unknown, came from another repository, or is already resumed.
@@ -84,10 +99,26 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         await parkIfHeld(.write(id))
     }
 
+    public func disabledEffects() async -> [DisabledEffectRecord] {
+        disabledReads.append(())
+        return state.current.disabled
+    }
+
+    public func setDisabledEffects(_ records: [DisabledEffectRecord]) async {
+        state.withLock { $0.disabled = records }
+        disabledWrites.append(records)
+        await parkIfHeld(.writeDisabled(records))
+    }
+
     private func parkIfHeld(_ call: Request.Call) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             state.withLock { state in
-                let holding = call == .read ? state.holdingReads : state.holdingWrites
+                let holding: Bool
+                switch call {
+                case .read: holding = state.holdingReads
+                case .write: holding = state.holdingWrites
+                case .writeDisabled: holding = state.holdingDisabledWrites
+                }
                 guard holding else { return continuation.resume() }
                 let id = state.nextRequest
                 state.nextRequest += 1
