@@ -45,6 +45,8 @@ public final class CameraDataSourceImpl: @unchecked Sendable {
 
     // Read from any thread: the capture the next session should start with.
     private let wanted = CurrentValueSubject<CameraCapture, Never>(.standard)
+    // Read from any thread: the mirror flag the next session should start with (off by default).
+    private let mirrored = CurrentValueSubject<Bool, Never>(false)
     // Executor-confined: every mutation runs on FrameExecutor.
     private var current: Session?
     // Executor-confined: the running gateway session of `current`, once `start` has it.
@@ -105,6 +107,13 @@ extension CameraDataSourceImpl: CameraSource {
         wanted.value = capture
         frameExecutor.run { [self] in restartIfNeeded() }
     }
+
+    /// Remembers the mirror flag, and hands it to the running session's handle on the executor.
+    /// With nothing running there is no handle to touch; the next session receives the flag when it opens.
+    public func setMirrored(_ mirrored: Bool) {
+        self.mirrored.value = mirrored
+        frameExecutor.run { [self] in handle?.setMirrored(mirrored) }
+    }
 }
 
 extension CameraDataSourceImpl {
@@ -157,6 +166,8 @@ extension CameraDataSourceImpl {
     private func adopt(_ started: any CaptureSessionHandle, for session: Session) {
         guard session === current else { return started.stop() }
         handle = started
+        // Sent even when off: a new handle starts with the flag the user last set, whatever it is.
+        started.setMirrored(mirrored.value)
         if startedWith != wanted.value { restartIfNeeded() }
     }
 

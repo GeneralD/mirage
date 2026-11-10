@@ -28,6 +28,8 @@ public protocol CameraSource: Sendable {
     func stop()
     /// Names the capture the next session starts with; a live session on another capture restarts on it.
     func configure(_ capture: CameraCapture)
+    /// Sets the mirror flag of the running session without restarting it; remembered for the next session.
+    func setMirrored(_ mirrored: Bool)
 }
 
 public enum CameraSourceKey: TestDependencyKey {
@@ -57,5 +59,9 @@ private struct UnimplementedCameraSource: CameraSource {
 
     func configure(_ capture: CameraCapture) {
         reportIssue("CameraSource.configure not implemented")
+    }
+
+    func setMirrored(_ mirrored: Bool) {
+        reportIssue("CameraSource.setMirrored not implemented")
     }
 }
