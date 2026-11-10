@@ -39,6 +39,9 @@ public protocol EffectRuntimeRepository: Sendable {
     /// delivered: an observer that falls behind loses old outcomes, and `apply` never waits for it.
     /// An outcome arrives after the executor has run its report, so shortly after `apply` answers.
     func outcomes() -> AsyncStream<EffectPassOutcome>
+    /// The diagnostics the compiler wrote for the newest failed compile of `effect`, or `nil` when
+    /// there is none. Asking compiles nothing and renders nothing: the answer is read from the state.
+    func compilerMessage(of effect: EffectSource) async -> String?
 }
 
 public enum EffectRuntimeRepositoryKey: TestDependencyKey {
@@ -70,5 +73,10 @@ private struct UnimplementedEffectRuntimeRepository: EffectRuntimeRepository {
     func outcomes() -> AsyncStream<EffectPassOutcome> {
         reportIssue("EffectRuntimeRepository.outcomes not implemented")
         return AsyncStream { $0.finish() }
+    }
+
+    func compilerMessage(of effect: EffectSource) async -> String? {
+        reportIssue("EffectRuntimeRepository.compilerMessage not implemented")
+        return nil
     }
 }

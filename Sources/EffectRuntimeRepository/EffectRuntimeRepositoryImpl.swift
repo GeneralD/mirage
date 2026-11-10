@@ -94,6 +94,10 @@ extension EffectRuntimeRepositoryImpl: EffectRuntimeRepository {
     public func outcomes() -> AsyncStream<EffectPassOutcome> {
         state.outcomes()
     }
+
+    public func compilerMessage(of effect: EffectSource) async -> String? {
+        await state.compilerMessage(of: effect)
+    }
 }
 
 extension EffectRuntimeRepositoryImpl {

@@ -161,6 +161,22 @@ struct RuntimeFixture {
         #expect(await answer(call) == .success)
         return handle
     }
+
+    /// Asks `compilerMessage(of:)` for `effect` on its own task and drains the executor until it answers. A query
+    /// that never answers fails the test, so a returned `nil` is the state's answer and not a missing one.
+    @MainActor
+    func compilerMessage(of effect: EffectSource) async throws -> String? {
+        let subject = subject
+        let answered = Collector<String?>()
+        let query = Task {
+            let message = await subject.compilerMessage(of: effect)
+            answered.append(message)
+            return message
+        }
+        let arrived = await tickUntil(tick: { executor.drain() }, until: { answered.count == 1 })
+        try #require(arrived, "compilerMessage(of:) never answered")
+        return await query.value
+    }
 }
 
 /// An answer in a form `#expect` can compare (`Result<Void, _>` is not `Equatable`),

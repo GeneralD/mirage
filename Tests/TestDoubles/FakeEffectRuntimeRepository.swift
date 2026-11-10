@@ -16,6 +16,9 @@ import TestSupport
 /// streams `outcomes()` opened what it likes with `report(_:)`, as the live runtime does for
 /// every pass. Each `outcomes()` call opens a stream of its own, which replays nothing and keeps
 /// the newest 64 outcomes it has not delivered.
+/// `compilerMessage(of:)` answers with the value `answerCompilerMessage(_:)` set (nil by default) and is recorded in
+/// `compilerMessageRequests`. After `holdCompilerMessages()` it suspends until `completeCompilerMessage(_:with:)`, the
+/// same way `prepare` does; `pendingCount` counts those held queries too.
 public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendable {
     public struct PrepareRequest: Sendable {
         public let id: Int
@@ -44,19 +47,31 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
         fileprivate let origin: ObjectIdentifier
     }
 
+    public struct CompilerMessageRequest: Sendable {
+        public let id: Int
+        public let effect: EffectSource
+        /// The repository that issued it, as `PrepareRequest` carries: ids restart at 1 per instance.
+        fileprivate let origin: ObjectIdentifier
+    }
+
     private typealias Continuation = CheckedContinuation<Result<Void, EffectFailure>, Never>
+    private typealias CompilerMessageContinuation = CheckedContinuation<String?, Never>
 
     private struct State {
         var nextID = 1
         var waiting: [Int: Continuation] = [:]
         var nextObserver = 1
         var observers: [Int: AsyncStream<EffectPassOutcome>.Continuation] = [:]
+        var compilerMessageAnswer: String?
+        var holdingCompilerMessages = false
+        var waitingCompilerMessages: [Int: CompilerMessageContinuation] = [:]
     }
 
     private let state = Locked(State())
     public let prepareRequests = Collector<PrepareRequest>()
     public let parameterWrites = Collector<ParameterWrite>()
     public let applyRequests = Collector<ApplyRequest>()
+    public let compilerMessageRequests = Collector<CompilerMessageRequest>()
     /// One element per `outcomes()` call, recorded once its stream is open: a caller that opens it on its
     /// own task can be waited for before the test reports, because a stream replays nothing.
     public let outcomeStreams = Collector<Void>()
@@ -64,7 +79,7 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
     public init() {}
 
     /// Calls that are suspended right now.
-    public var pendingCount: Int { state.current.waiting.count }
+    public var pendingCount: Int { state.current.waiting.count + state.current.waitingCompilerMessages.count }
 
     public func prepare(_ effect: EffectSource, parameters: EffectParameterBlock) async -> Result<Void, EffectFailure> {
         let id = nextID()
@@ -117,6 +132,40 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
     public func completeApply(_ request: ApplyRequest, with result: Result<Void, EffectFailure>) -> Bool {
         guard request.origin == ObjectIdentifier(self) else { return false }
         return resume(request.id, with: result)
+    }
+
+    /// The message the next `compilerMessage(of:)` answers with, unless it is held. Nil by default.
+    public func answerCompilerMessage(_ message: String?) {
+        state.withLock { $0.compilerMessageAnswer = message }
+    }
+
+    /// Suspends every `compilerMessage(of:)` from now on until `completeCompilerMessage` resumes it.
+    public func holdCompilerMessages() {
+        state.withLock { $0.holdingCompilerMessages = true }
+    }
+
+    /// Resumes the held `compilerMessage(of:)` with `message`; `false` when it is unknown, came from another repository, or is already resumed.
+    @discardableResult
+    public func completeCompilerMessage(_ request: CompilerMessageRequest, with message: String?) -> Bool {
+        guard request.origin == ObjectIdentifier(self) else { return false }
+        guard let continuation = state.withLock({ $0.waitingCompilerMessages.removeValue(forKey: request.id) }) else { return false }
+        continuation.resume(returning: message)
+        return true
+    }
+
+    public func compilerMessage(of effect: EffectSource) async -> String? {
+        let id = nextID()
+        return await withCheckedContinuation { (continuation: CompilerMessageContinuation) in
+            // Recorded and registered in one critical section, as `suspend` does, so a recorded query can always be completed.
+            state.withLock { state in
+                compilerMessageRequests.append(CompilerMessageRequest(id: id, effect: effect, origin: ObjectIdentifier(self)))
+                if state.holdingCompilerMessages {
+                    state.waitingCompilerMessages[id] = continuation
+                } else {
+                    continuation.resume(returning: state.compilerMessageAnswer)
+                }
+            }
+        }
     }
 
     private func nextID() -> Int {
