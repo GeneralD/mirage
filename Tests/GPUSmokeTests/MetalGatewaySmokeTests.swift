@@ -22,8 +22,9 @@ import Testing
 /// `mac2` only: whole threadgroups, bounds-checked kernels, no Apple-family
 /// features. The kernels are plain fills, so nothing here can hang or fault.
 /// Every kernel is assembled the way `ShaderCompilationDataSource` assembles an
-/// effect (the prelude's `Uniforms`, then `#line 1 "effect"`), so the suite also
-/// proves the prelude compiles and that `#line` maps diagnostics on this compiler.
+/// effect (the prelude's `Uniforms`, the `Parameters` line, then `#line 1 "effect"`), so the
+/// suite also proves the prelude compiles and that `#line` maps diagnostics on this compiler.
+/// None of these effects declares a parameter; `ParametersStructSmokeTests` compiles ones that do.
 /// The bundled effect is compiled the same way and its pixels compared with
 /// `ChromaticGrainReference`, once through the gateway and once through
 /// `EffectRuntimeRepository` over the live DataSources.

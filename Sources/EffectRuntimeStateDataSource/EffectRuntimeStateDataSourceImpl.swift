@@ -7,9 +7,11 @@ import Domain
 /// interleave and there is no lock and no actor (as in `GPURenderDataSource` and
 /// `SurfacePoolDataSource`). The rules are the `EffectRuntimeState` port's.
 ///
-/// **The cache** is keyed by `(source, compile options)` — a `Hashable` key of the
-/// two, so two sources never share a library even if their hashes collide — and never
-/// by the name, so one source compiles once whatever it is called. Only a compile that
+/// **The cache** is keyed by `(source, compile options, parameter layout)` — a `Hashable`
+/// key of the three, so two sources never share a library even if their hashes collide — and
+/// never by the name, so one source compiles once whatever it is called. The layout is all the
+/// generated `Parameters` struct is made of (ids, field types, offsets), so a label, a default
+/// or a range, which the shader never sees, does not compile an effect again. Only a compile that
 /// succeeded is kept: a broken source compiles again when it is prepared again. A cache
 /// on disk, and with it a device id and an OS version in the key, is deferred to Later (epic #42, D12).
 ///
@@ -158,14 +160,17 @@ extension EffectRuntimeStateDataSourceImpl {
     }
 }
 
-/// What the cache is keyed by: the source and how it is compiled, never the name.
+/// What the cache is keyed by: the source, how it is compiled and the layout of its parameters,
+/// never the name. Built for a `begin` and a settlement, not for each frame's `admit`.
 private struct CompileKey: Hashable {
     let source: String
     let options: ShaderCompileOptions
+    let layout: EffectParameterLayout
 
     init(_ effect: EffectSource) {
         source = effect.source
         options = effect.options
+        layout = EffectParameterLayout(effect.parameters)
     }
 }
 

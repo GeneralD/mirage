@@ -41,7 +41,8 @@ struct EffectRuntimeStateDataSourceTests {
         #expect(fixture.fallbackReads.count == 0, "something was prepared, so the fallback is not asked")
     }
 
-    /// A change of what is compiled is a new key; a change of the name alone is not.
+    /// A change of what is compiled is a new key; a change of the name alone is not. The
+    /// parameters' layout is the third part of the key (`ParameterLayoutKeyTests`).
     struct KeyChange: Sendable, CustomTestStringConvertible {
         let label: String
         let effect: EffectSource

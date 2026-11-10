@@ -1,5 +1,6 @@
 import Domain
 import ShaderCompilationDataSource
+import TestSupport
 import Testing
 
 /// The pure half of the DataSource: what the compiler is handed, and how its
@@ -13,30 +14,66 @@ struct ShaderSourceAssemblyTests {
         text.split(separator: "\n", omittingEmptySubsequences: false)
     }
 
-    @Test("the assembled source is the prelude, the #line directive, then the author's source verbatim")
+    @Test("the assembled source is the prelude, one generated line, the #line directive, then the author's source verbatim")
     func assemblyOrder() {
         let author = "kernel void effect() {}\n// tail without newline"
-        let assembled = ShaderSourceAssembly.assemble(author)
-        #expect(assembled == ShaderPrelude.source + "#line 1 \"effect\"\n" + author)
-        #expect(ShaderPrelude.source.hasSuffix("\n"), "the directive must start a line of its own")
+        let assembled = ShaderSourceAssembly.assemble(author, layout: EffectParameterLayout(everyKindSpecs))
+        #expect(assembled == ShaderPrelude.source + everyKindParametersLine + "\n" + "#line 1 \"effect\"\n" + author)
+        #expect(ShaderPrelude.source.hasSuffix("\n"), "the generated line must start a line of its own")
     }
 
-    @Test("author line 1 is assembled line authorLineOffset + 1, right after the directive")
-    func offsetCountsPreludeAndDirective() {
-        let lines = Self.lines(ShaderSourceAssembly.assemble("first\nsecond"))
+    @Test("a layout with every kind generates the checked-in Parameters line, struct and static_assert together on one line")
+    func goldenParametersLine() {
+        let lines = Self.lines(ShaderSourceAssembly.assemble("first", layout: EffectParameterLayout(everyKindSpecs)))
+        #expect(String(lines[Self.offset - 2]) == everyKindParametersLine)
+    }
+
+    @Test("without parameters the generated line is the comment // no parameters, given an empty layout or left to the default")
+    func noParameters() {
+        let given = ShaderSourceAssembly.assemble("first", layout: EffectParameterLayout([]))
+        #expect(String(Self.lines(given)[Self.offset - 2]) == noParametersLine)
+        #expect(ShaderSourceAssembly.assemble("first") == given)
+        #expect(!given.contains("Parameters"), "no name is taken from an existing package")
+    }
+
+    @Test("authorLineOffset counts the prelude's lines, the generated line and the directive")
+    func offsetCountsPreludeParametersAndDirective() {
+        #expect(Self.offset == Self.lines(ShaderPrelude.source).count + 1, "the prelude's lines, plus the generated line and the directive")
+    }
+
+    @Test(
+        "author line 1 is assembled line authorLineOffset + 1, right after the directive, whatever the parameters",
+        arguments: Seeds.range(0..<50))
+    func offsetDoesNotDependOnTheLayout(seed: UInt64) {
+        var generator = SeededGenerator(seed: seed)
+        let layout = EffectParameterLayout(randomSpecs(&generator))
+        let lines = Self.lines(ShaderSourceAssembly.assemble("first\nsecond", layout: layout))
+        #expect(lines.count == Self.offset + 2, "the prelude, one generated line, the directive and the two author lines, nothing else")
+        #expect(lines[Self.offset - 2].hasPrefix(layout.fields.isEmpty ? noParametersLine : "struct Parameters { "))
         #expect(lines[Self.offset - 1] == "#line 1 \"effect\"")
         #expect(lines[Self.offset] == "first")
         #expect(lines[Self.offset + 1] == "second")
-        #expect(Self.offset == Self.lines(ShaderPrelude.source).count, "prelude lines + the directive line")
     }
 
-    @Test("the prelude declares Uniforms, hash and noise, and never an entry point")
+    @Test(
+        "a diagnostic on the author's third line reads effect:3 whatever the parameters, found by where the line really is",
+        arguments: Seeds.range(0..<50))
+    func authorLinesSurviveParameters(seed: UInt64) throws {
+        var generator = SeededGenerator(seed: seed)
+        let layout = EffectParameterLayout(randomSpecs(&generator))
+        let lines = Self.lines(ShaderSourceAssembly.assemble("one\ntwo\nTHIRD\nfour", layout: layout))
+        let compilerLine = try #require(lines.firstIndex(of: "THIRD")) + 1
+        #expect(ShaderSourceAssembly.authorRelative("program_source:\(compilerLine):9: error: x") == "effect:3:9: error: x")
+    }
+
+    @Test("the prelude declares Uniforms, hash and noise, never Parameters, and never an entry point")
     func preludeSurface() {
         let prelude = ShaderPrelude.source
         #expect(prelude.contains("struct Uniforms {\n    float time;\n    uint frameIndex;\n    float2 resolution;\n    uint seed;\n};"))
         #expect(prelude.contains("static_assert(sizeof(Uniforms) == 24"))
         #expect(prelude.contains("inline float hash(uint2 cell, uint timeStep, uint seed)"))
         #expect(prelude.contains("inline float noise(float2 p, float time, uint seed)"))
+        #expect(!prelude.contains("Parameters"), "it differs per effect, so it is generated, not shared")
         #expect(!prelude.contains("kernel "), "the effect's entry point is the author's")
     }
 
@@ -46,12 +83,13 @@ struct ShaderSourceAssemblyTests {
         #expect(ShaderSourceAssembly.authorRelative(message) == "effect:3:15: error: expected expression")
     }
 
-    @Test("a location in the prelude, the directive's line included, becomes prelude:<line>")
+    @Test("a location in the prelude, the generated Parameters line and the directive's line included, becomes prelude:<line>")
     func preludeLocation() {
         #expect(
             ShaderSourceAssembly.authorRelative("program_source:12:14: note: previous definition is here")
                 == "prelude:12:14: note: previous definition is here")
         #expect(ShaderSourceAssembly.authorRelative("program_source:\(Self.offset):1: warning: x") == "prelude:\(Self.offset):1: warning: x")
+        #expect(ShaderSourceAssembly.authorRelative("program_source:\(Self.offset - 1):7: error: x") == "prelude:\(Self.offset - 1):7: error: x")
     }
 
     @Test("every location of a multi-diagnostic message is rewritten on its own")
