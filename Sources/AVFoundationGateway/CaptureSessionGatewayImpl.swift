@@ -1,5 +1,5 @@
 /// Implements `CaptureSessionGateway`.
-/// Wraps `AVCaptureSession` (default video device, BGRA 1280x720 output).
+/// Wraps `AVCaptureSession` (the camera `capture` names, BGRA 1280x720 output).
 /// Stateless: each start is one `CaptureRig`, handed back as the session handle.
 import Domain
 
@@ -14,7 +14,6 @@ extension CaptureSessionGatewayImpl: CaptureSessionGateway {
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws -> any CaptureSessionHandle {
-        // Received for the capture rig to apply; the rig does not take it yet.
-        try CaptureRig(descriptor: descriptor, onFrame: onFrame, onEnd: onEnd)
+        try CaptureRig(descriptor: descriptor, capture: capture, onFrame: onFrame, onEnd: onEnd)
     }
 }
