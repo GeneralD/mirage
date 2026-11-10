@@ -9,12 +9,20 @@ public final class FakeCameraExtensionInstaller: CameraExtensionInstaller, Exten
     private let script: Locked<[InstallStatus]>
     // Consumers of `updates()`, fed by every status `install()` yields; this double never finishes them.
     private let watchers: Locked<[AsyncStream<InstallStatus>.Continuation]>
+    private let opensSettings: Bool
     public let installs = Collector<Void>()
+    /// The System Settings panes `openApprovalSettings(_:)` was asked to open, in order.
+    public let openedPanes = Collector<SystemSettingsPane>()
 
-    public init(status: InstallStatus = .notInstalled, script: [InstallStatus] = [.installing, .installed]) {
+    public init(
+        status: InstallStatus = .notInstalled,
+        script: [InstallStatus] = [.installing, .installed],
+        opensSettings: Bool = true
+    ) {
         current = Locked(status)
         self.script = Locked(script)
         watchers = Locked([])
+        self.opensSettings = opensSettings
     }
 
     public var status: InstallStatus { current.current }
@@ -51,6 +59,11 @@ public final class FakeCameraExtensionInstaller: CameraExtensionInstaller, Exten
             for watcher in list { watcher.finish() }
             list = []
         }
+    }
+
+    public func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        openedPanes.append(pane)
+        return opensSettings
     }
 }
 
