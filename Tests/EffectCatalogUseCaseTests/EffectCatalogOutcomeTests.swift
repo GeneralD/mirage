@@ -116,8 +116,10 @@ struct EffectCatalogOutcomeTests {
 
     // MARK: - Runs
 
-    @Test("a run starts with nothing switched off, and the state of the new run does not carry the old one's")
-    func newRunStartsWithNothingSwitchedOff() async {
+    @Test(
+        "a new run takes over the record the settings hold: the switched-off effect stays off, and the bundled effect is prepared first"
+    )
+    func newRunKeepsTheSwitchedOffEffectOff() async {
         let rig = Rig(persisted: glitch.id)
         let (run, watcher) = await rig.begin()
         rig.emit(.failure(.timeout), of: Rig.glitchSource, times: 5)
@@ -126,10 +128,13 @@ struct EffectCatalogOutcomeTests {
         await rig.stop(run)
 
         let again = rig.start()
-        await rig.answer(3)  // the new run prepares the persisted choice for itself
+        let request = await rig.answer(3)  // the new run reads the record and prepares the bundled effect first
+        #expect(request.effect == Rig.bundledSource)
         let fresh = rig.watch()
         await fresh.states.waitForCount(1)
-        #expect(fresh.states.values == [Rig.state(selection: glitch)], "nothing is off, so the state says nothing about health")
+        #expect(fresh.states.values.first?.selection == glitch.id, "the choice is still the user's")
+        #expect(fresh.states.values.first?.disabled == [glitch.id: .failure(.timeout)], "the record carries over")
+        #expect(fresh.states.values.first?.outcome == nil)
         await rig.stop(again)
     }
 
