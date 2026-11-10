@@ -201,6 +201,8 @@ private final class ControlsRig {
             $0.framePipelineUseCase = pipeline
             $0.continuousClock = clock
             $0.developerLog = log
+            $0.settingsUseCase = FakeSettingsUseCase()
+            $0.effectCatalogUseCase = FakeEffectCatalogUseCase()
         } operation: {
             ControlsInteractorImpl()
         }
