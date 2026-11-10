@@ -112,17 +112,19 @@ actor EffectCatalogSession {
         }
     }
 
+    /// Chooses the effect `id` and prepares it. A switched-off effect is refused at the door, as a broken package is.
     func select(_ id: EffectID) async -> EffectSelectionOutcome {
         guard let entry = entries.first(where: { $0.id == id }) else { return .unavailable(nil) }
         if case .broken(let problem) = entry.availability { return .unavailable(problem) }
+        guard disabled[id] == nil else { return .unavailable(nil) }
         let mine = epoch
         selection = id
         await settings.setSelectedEffect(id)
         // Another choice (or a fallback, or a new run) came in while the choice was being remembered: it owns the effect now.
         guard epoch == mine, selection == id else { return .unavailable(nil) }
         let source = await read(source: id)
-        // Another choice, a newer read of this effect, a fallback or a new run came in while this one waited: it owns the effect now.
-        guard epoch == mine, isNewest(source), selection == id else { return .unavailable(nil) }
+        // Another choice, a newer read, a fallback, a new run or a switch-off came in while this one waited: it owns the effect now.
+        guard epoch == mine, isNewest(source), selection == id, disabled[id] == nil else { return .unavailable(nil) }
         switch source.answer {
         case .success(let source): return await prepare(source, for: id, announcing: "selected")
         case .failure(let problem): return unreadable(id, problem)
@@ -168,6 +170,11 @@ actor EffectCatalogSession {
         guard epoch == run else { return }
         entries = listing
         guard let settled = settleSelection() else { return }
+        // A switched-off effect is never prepared again: the bundled effect stands in for it, as it did at the switch-off.
+        guard disabled[settled.id] == nil else {
+            await holdBundled(instead: settled.id, in: run)
+            return
+        }
         let source = await read(source: settled.id)
         guard epoch == run, isNewest(source), selection == settled.id else { return }
         switch source.answer {
