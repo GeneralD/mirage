@@ -178,4 +178,14 @@ struct FakeEffectInteractorTests {
         #expect(interactor.selections.values == [.package("glitch")])
         #expect(interactor.folderOpens.count == 1)
     }
+
+    @Test("setParameter and resetParameters are recorded in the order they were called, with the id and the value")
+    func parameterCallsAreRecordedInOrder() {
+        let interactor = FakeEffectInteractor(state: .fixture([chromatic]))
+        interactor.setParameter("strength", to: .float(0.25))
+        interactor.resetParameters()
+        interactor.setParameter("rings", to: .int(9))
+
+        #expect(interactor.parameterCalls.values == [.set("strength", .float(0.25)), .reset, .set("rings", .int(9))])
+    }
 }
