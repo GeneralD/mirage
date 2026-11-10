@@ -22,6 +22,14 @@ extension SurfaceRepositoryImpl: SurfaceRepository {
         try pool.allocate(descriptor, filledWith: byte)
     }
 
+    public func upload(_ image: StillImage, to token: SurfaceToken) -> Bool {
+        pool.upload(image, to: token)
+    }
+
+    public func download(from token: SurfaceToken) -> StillImage? {
+        pool.download(from: token)
+    }
+
     @discardableResult
     public func release(_ token: SurfaceToken) -> Bool {
         pool.release(token)
