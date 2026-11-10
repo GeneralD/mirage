@@ -176,4 +176,144 @@ struct CameraSelectionUseCaseTests {
         repository.emitChange()
         #expect(await awaitFirstSignal(stream))
     }
+
+    @Test("selectDevice saves the chosen camera's id and name, applies its own format, and keeps the unset items unset")
+    func selectDeviceSavesAndAppliesItsFormat() {
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("front", name: "Front Cam", isSystemDefault: true), device("usb", name: "USB Cam")],
+            formats: [
+                "front": [format(0, 1920, 1080), format(1, 1280, 720)],
+                "usb": [format(0, 1280, 720), format(1, 1920, 1080)],
+            ],
+            selection: selection(deviceID: "front", deviceName: "Front Cam")
+        )
+        let state = makeSubject(repository).selectDevice("usb")
+        #expect(repository.saves.values == [selection(deviceID: "usb", deviceName: "USB Cam")])
+        #expect(
+            repository.applied.values
+                == [CameraCapture(deviceID: "usb", format: CameraFormatChoice(index: 0, framesPerSecond: 30))])
+        #expect(state.selectedDeviceID == "usb")
+    }
+
+    @Test("selectDevice keeps the saved resolution and frame rate when the camera changes, so they come back on the first camera")
+    func selectDeviceKeepsSavedResolutionAndFrameRate() {
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("front", name: "Front Cam", isSystemDefault: true), device("usb", name: "USB Cam")],
+            formats: ["front": [format(0, 1920, 1080, fps: 1...30)], "usb": [format(0, 1280, 720)]],
+            selection: selection(
+                deviceID: "front",
+                deviceName: "Front Cam",
+                resolution: CameraResolution(width: 1920, height: 1080),
+                framesPerSecond: 24)
+        )
+        let subject = makeSubject(repository)
+        _ = subject.selectDevice("usb")
+        _ = subject.selectDevice("front")
+        #expect(
+            repository.saves.values
+                == [
+                    selection(
+                        deviceID: "usb",
+                        deviceName: "USB Cam",
+                        resolution: CameraResolution(width: 1920, height: 1080),
+                        framesPerSecond: 24),
+                    selection(
+                        deviceID: "front",
+                        deviceName: "Front Cam",
+                        resolution: CameraResolution(width: 1920, height: 1080),
+                        framesPerSecond: 24),
+                ])
+    }
+
+    @Test("selectDevice with an id that is not on the list saves nothing, applies nothing, and returns the state as it is")
+    func selectDeviceNotOnListChangesNothing() {
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("front", name: "Front Cam", isSystemDefault: true)],
+            formats: ["front": [format(0, 1280, 720)]],
+            selection: selection(deviceID: "front", deviceName: "Front Cam")
+        )
+        let state = makeSubject(repository).selectDevice("gone")
+        #expect(repository.saves.count == 0)
+        #expect(repository.applied.count == 0)
+        #expect(state.selectedDeviceID == "front")
+    }
+
+    @Test("selectResolution saves a resolution the camera offers, applies it with the format at that size, and rewrites only the resolution")
+    func selectResolutionSavesAndAppliesIt() {
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("front", name: "Front Cam", isSystemDefault: true)],
+            formats: ["front": [format(0, 1280, 720), format(1, 1920, 1080)]],
+            selection: selection(deviceID: "front", deviceName: "Front Cam", isMirrored: true)
+        )
+        let state = makeSubject(repository).selectResolution(CameraResolution(width: 1920, height: 1080))
+        #expect(
+            repository.saves.values
+                == [
+                    selection(
+                        deviceID: "front",
+                        deviceName: "Front Cam",
+                        resolution: CameraResolution(width: 1920, height: 1080),
+                        isMirrored: true)
+                ])
+        #expect(
+            repository.applied.values
+                == [CameraCapture(deviceID: "front", format: CameraFormatChoice(index: 1, framesPerSecond: 30))])
+        #expect(state.selectedResolution == CameraResolution(width: 1920, height: 1080))
+    }
+
+    @Test("selectResolution saves nothing and applies nothing for a resolution the camera does not offer")
+    func selectResolutionNotOfferedChangesNothing() {
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("front", name: "Front Cam", isSystemDefault: true)],
+            formats: ["front": [format(0, 1280, 720), format(1, 1920, 1080)]],
+            selection: selection(deviceID: "front", deviceName: "Front Cam")
+        )
+        let state = makeSubject(repository).selectResolution(CameraResolution(width: 1600, height: 900))
+        #expect(repository.saves.count == 0)
+        #expect(repository.applied.count == 0)
+        #expect(state.selectedResolution == m0)
+    }
+
+    @Test("selectFrameRate saves a frame rate the chosen resolution offers and applies it with the format at that rate")
+    func selectFrameRateSavesAndAppliesIt() {
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("front", name: "Front Cam", isSystemDefault: true)],
+            formats: ["front": [format(0, 1280, 720, fps: 1...15), format(1, 1280, 720, fps: 1...24)]],
+            selection: selection(deviceID: "front", deviceName: "Front Cam", resolution: m0)
+        )
+        let state = makeSubject(repository).selectFrameRate(24)
+        #expect(
+            repository.saves.values
+                == [selection(deviceID: "front", deviceName: "Front Cam", resolution: m0, framesPerSecond: 24)])
+        #expect(
+            repository.applied.values
+                == [CameraCapture(deviceID: "front", format: CameraFormatChoice(index: 1, framesPerSecond: 24))])
+        #expect(state.selectedFrameRate == 24)
+    }
+
+    @Test("selectFrameRate saves nothing and applies nothing for a frame rate the camera does not offer")
+    func selectFrameRateNotOfferedChangesNothing() {
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("front", name: "Front Cam", isSystemDefault: true)],
+            formats: ["front": [format(0, 1280, 720, fps: 1...24)]],
+            selection: selection(deviceID: "front", deviceName: "Front Cam")
+        )
+        let state = makeSubject(repository).selectFrameRate(30)
+        #expect(repository.saves.count == 0)
+        #expect(repository.applied.count == 0)
+        #expect(state.selectedFrameRate == 24)
+    }
+
+    @Test("setMirrored saves the mirror flag, sets it on the camera source, and returns a state showing it", arguments: [true, false])
+    func setMirroredSavesAndReflectsIt(isMirrored: Bool) {
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("front", name: "Front Cam", isSystemDefault: true)],
+            formats: ["front": [format(0, 1280, 720)]],
+            selection: selection(deviceID: "front", deviceName: "Front Cam", isMirrored: !isMirrored)
+        )
+        let state = makeSubject(repository).setMirrored(isMirrored)
+        #expect(repository.saves.values == [selection(deviceID: "front", deviceName: "Front Cam", isMirrored: isMirrored)])
+        #expect(repository.mirrors.values == [isMirrored])
+        #expect(state.isMirrored == isMirrored)
+    }
 }

@@ -4,11 +4,15 @@ import TestSupport
 /// The calls made to a camera use case, in the order they were made.
 public enum CameraUseCaseCall: Sendable, Hashable {
     case refresh
+    case selectDevice(String)
+    case selectResolution(CameraResolution)
+    case selectFrameRate(Int)
+    case setMirrored(Bool)
 }
 
-/// `CameraSelectionUseCase` the test drives. `refresh()` answers the state set by `setState(_:)` and records
-/// `.refresh` in `calls`. `changes()` makes a new stream on every call, buffered to one element as the live
-/// stream is; `streamsOpened` counts the calls and `streamsClosed` the streams whose consumption ended.
+/// `CameraSelectionUseCase` the test drives. `refresh()` and each command record their call in `calls`, and
+/// answer the state set by `setState(_:)`. `changes()` makes a new stream on every call, buffered to one element
+/// as the live stream is; `streamsOpened` counts the calls and `streamsClosed` the streams whose consumption ended.
 /// `emitChange()` yields one element on every stream that has not ended yet.
 public final class FakeCameraSelectionUseCase: CameraSelectionUseCase, Sendable {
     private struct State {
@@ -29,7 +33,7 @@ public final class FakeCameraSelectionUseCase: CameraSelectionUseCase, Sendable 
         self.state = Locked(State(cameraState: state))
     }
 
-    /// Sets the state that the next `refresh()` returns.
+    /// Sets the state that the next `refresh()` or command returns.
     public func setState(_ cameraState: CameraState) {
         state.withLock { $0.cameraState = cameraState }
     }
@@ -57,6 +61,26 @@ public final class FakeCameraSelectionUseCase: CameraSelectionUseCase, Sendable 
         }
         continuation.onTermination = { [weak self] _ in self?.end(id) }
         return stream
+    }
+
+    public func selectDevice(_ id: String) -> CameraState {
+        calls.append(.selectDevice(id))
+        return state.current.cameraState
+    }
+
+    public func selectResolution(_ resolution: CameraResolution) -> CameraState {
+        calls.append(.selectResolution(resolution))
+        return state.current.cameraState
+    }
+
+    public func selectFrameRate(_ framesPerSecond: Int) -> CameraState {
+        calls.append(.selectFrameRate(framesPerSecond))
+        return state.current.cameraState
+    }
+
+    public func setMirrored(_ isMirrored: Bool) -> CameraState {
+        calls.append(.setMirrored(isMirrored))
+        return state.current.cameraState
     }
 
     private func end(_ id: Int) {
