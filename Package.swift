@@ -54,6 +54,10 @@ let package = Package(
         // `swift run dev-harness`: camera prompt + preview window, no extension.
         // Not shipped (no xcodegen shell links it); `make build-dev-harness` builds it.
         .executable(name: "dev-harness", targets: ["DevHarness"]),
+        // `scripts/gallery`: one window of the app over fixture data, no camera. Not shipped; `swift build --product view-gallery` builds it.
+        .executable(name: "view-gallery", targets: ["ViewGallery"]),
+        // The offline authoring tool (validate, scaffold, render a still) over the host graph, no camera. Not shipped.
+        .executable(name: "lens-tool", targets: ["LensTool"]),
     ],
     dependencies: [
         .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.9.0"),
@@ -79,6 +83,15 @@ let package = Package(
         // Host only: the effects folder's path under Application Support. Builds a path, reads no environment variable.
         .target(name: "AppDirectories", dependencies: dependencies),
         .testTarget(name: "AppDirectoriesTests", dependencies: ["AppDirectories"] + testDependencies),
+        // Host only: the seeded random source (`RandomSourceImpl`).
+        .target(name: "RandomSource", dependencies: dependencies),
+        .testTarget(name: "RandomSourceTests", dependencies: ["RandomSource"] + testDependencies),
+        // Host only: the app and macOS versions (`HostEnvironmentProviderImpl`), the one place that reads `ProcessInfo` and `Bundle`.
+        .target(name: "HostEnvironment", dependencies: dependencies),
+        .testTarget(name: "HostEnvironmentTests", dependencies: ["HostEnvironment"] + testDependencies),
+        // Host only: the standard output and error streams behind the `ConsoleWriter` port, for the command-line tool.
+        .target(name: "StandardStreams", dependencies: dependencies),
+        .testTarget(name: "StandardStreamsTests", dependencies: ["StandardStreams"] + testDependencies),
 
         // ── Gateway (OS boundary) ──
         .target(name: "AVFoundationGateway", dependencies: dependencies),
@@ -107,6 +120,17 @@ let package = Package(
         .testTarget(name: "FileWatchGatewayTests", dependencies: ["FileWatchGateway"] + testDependencies),
         // Host only: Finder through NSWorkspace. Coverage-ignored and thin (scripts/check-live-thin.sh); no smoke, CI must not open Finder.
         .target(name: "WorkspaceGateway", dependencies: dependencies),
+        // Host only: global hotkeys through Carbon. Coverage-ignored and thin (scripts/check-live-thin.sh).
+        .target(name: "HotkeyGateway", dependencies: dependencies),
+        .testTarget(name: "HotkeyGatewayTests", dependencies: ["HotkeyGateway"] + testDependencies),
+        // Host only: the login item through ServiceManagement. Coverage-ignored and thin; the smoke suite only reads the status.
+        .target(name: "LoginItemGateway", dependencies: dependencies),
+        .testTarget(name: "LoginItemGatewayTests", dependencies: ["LoginItemGateway"] + testDependencies),
+        // Host only: this process's log lines through OSLog. Coverage-ignored and thin; no smoke, CI cannot see a log store.
+        .target(name: "LogStoreGateway", dependencies: dependencies),
+        // Host only: PNG decode and encode through ImageIO and CoreGraphics. Runs anywhere, so it is covered and has a smoke suite.
+        .target(name: "ImageIOGateway", dependencies: dependencies),
+        .testTarget(name: "ImageIOGatewayTests", dependencies: ["ImageIOGateway"] + testDependencies),
 
         // ── DataSource ──
         .target(name: "CameraDataSource", dependencies: dependencies),
@@ -145,11 +169,26 @@ let package = Package(
         // Host only: file events folded into one change per burst (`EffectWatchDataSourceImpl`, epic #42, D4).
         .target(name: "EffectWatchDataSource", dependencies: dependencies),
         .testTarget(name: "EffectWatchDataSourceTests", dependencies: ["EffectWatchDataSource"] + testDependencies),
+        // Host only: the hotkey register and the dispatch of a press.
+        .target(name: "HotkeyDataSource", dependencies: dependencies),
+        .testTarget(name: "HotkeyDataSourceTests", dependencies: ["HotkeyDataSource"] + testDependencies),
+        // Host only: the login item's status and the decision to register or unregister it.
+        .target(name: "LoginItemDataSource", dependencies: dependencies),
+        .testTarget(name: "LoginItemDataSourceTests", dependencies: ["LoginItemDataSource"] + testDependencies),
+        // Host only: support log lines, ordered and capped, and the diagnostics folder they are saved to.
+        .target(name: "SupportLogDataSource", dependencies: dependencies),
+        .testTarget(name: "SupportLogDataSourceTests", dependencies: ["SupportLogDataSource"] + testDependencies),
+        // Host only: still images read through the file and image ports.
+        .target(name: "StillImageDataSource", dependencies: dependencies),
+        .testTarget(name: "StillImageDataSourceTests", dependencies: ["StillImageDataSource"] + testDependencies),
 
         // ── DataStore ──
         // Host only: the chosen effect, kept between launches in the user's defaults (`KeyValueStoreGateway`).
         .target(name: "PreferencesDataStore", dependencies: dependencies),
         .testTarget(name: "PreferencesDataStoreTests", dependencies: ["PreferencesDataStore"] + testDependencies),
+        // Host only: wiping every stored value and stamping the schema version.
+        .target(name: "StoreMaintenanceDataStore", dependencies: dependencies),
+        .testTarget(name: "StoreMaintenanceDataStoreTests", dependencies: ["StoreMaintenanceDataStore"] + testDependencies),
 
         // ── Repository ──
         .target(name: "CameraRepository", dependencies: dependencies),
@@ -176,6 +215,12 @@ let package = Package(
         // Host only: the chosen effect as the UseCases see it, a pass-through to `PreferencesDataStore`.
         .target(name: "SettingsRepository", dependencies: dependencies),
         .testTarget(name: "SettingsRepositoryTests", dependencies: ["SettingsRepository", "PreferencesDataStore"] + testDependencies),
+        // Host only: the log lines and the environment bound into one snapshot.
+        .target(name: "SupportLogRepository", dependencies: dependencies),
+        .testTarget(name: "SupportLogRepositoryTests", dependencies: ["SupportLogRepository"] + testDependencies),
+        // Host only: still images as the UseCases see them, a pass-through to `StillImageDataSource`.
+        .target(name: "StillImageRepository", dependencies: dependencies),
+        .testTarget(name: "StillImageRepositoryTests", dependencies: ["StillImageRepository"] + testDependencies),
 
         // ── UseCase ──
         .target(name: "FramePipelineUseCase", dependencies: dependencies),
@@ -189,6 +234,15 @@ let package = Package(
         // Host only: the effects menu's policy (selection, hot reload, fallback).
         .target(name: "EffectCatalogUseCase", dependencies: dependencies),
         .testTarget(name: "EffectCatalogUseCaseTests", dependencies: ["EffectCatalogUseCase"] + testDependencies),
+        // Host only: the settings policy (stored schema, login item, hotkeys, reset all).
+        .target(name: "SettingsUseCase", dependencies: dependencies),
+        .testTarget(name: "SettingsUseCaseTests", dependencies: ["SettingsUseCase"] + testDependencies),
+        // Host only: the support report's text and the export of the log.
+        .target(name: "SupportLogUseCase", dependencies: dependencies),
+        .testTarget(name: "SupportLogUseCaseTests", dependencies: ["SupportLogUseCase"] + testDependencies),
+        // Host only: validating, scaffolding and rendering a `.lens` package without a camera (the command-line tool).
+        .target(name: "EffectAuthoringUseCase", dependencies: dependencies),
+        .testTarget(name: "EffectAuthoringUseCaseTests", dependencies: ["EffectAuthoringUseCase"] + testDependencies),
 
         // ── Interactor ──
         .target(name: "CameraInteractor", dependencies: dependencies),
@@ -199,6 +253,18 @@ let package = Package(
         // Host only: the effects menu's Combine pipeline; owns the task that runs the catalog.
         .target(name: "EffectInteractor", dependencies: dependencies),
         .testTarget(name: "EffectInteractorTests", dependencies: ["EffectInteractor"] + testDependencies),
+        // Host only: the bypass and frame-rate state, and the hotkey presses.
+        .target(name: "ControlsInteractor", dependencies: dependencies),
+        .testTarget(name: "ControlsInteractorTests", dependencies: ["ControlsInteractor"] + testDependencies),
+        // Host only: the settings window's state and commands.
+        .target(name: "SettingsInteractor", dependencies: dependencies),
+        .testTarget(name: "SettingsInteractorTests", dependencies: ["SettingsInteractor"] + testDependencies),
+        // Host only: the extension status, the approval pane and the support log export for the onboarding window.
+        .target(name: "OnboardingInteractor", dependencies: dependencies),
+        .testTarget(name: "OnboardingInteractorTests", dependencies: ["OnboardingInteractor"] + testDependencies),
+        // Host only: the command-line tool's entry into the authoring UseCase.
+        .target(name: "EffectAuthoringInteractor", dependencies: dependencies),
+        .testTarget(name: "EffectAuthoringInteractorTests", dependencies: ["EffectAuthoringInteractor"] + testDependencies),
 
         // ── Presenter (@Published display state; no AppKit / SwiftUI; host only) ──
         .target(name: "Presenters", dependencies: dependencies),
@@ -230,6 +296,12 @@ let package = Package(
                 "AVFoundationGateway", "MetalGateway", "MetalKitPreviewGateway", "SystemExtensionGateway",
                 "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
                 "UserDefaultsGateway",
+                "RandomSource", "HostEnvironment", "StandardStreams",
+                "HotkeyGateway", "LoginItemGateway", "LogStoreGateway", "ImageIOGateway",
+                "HotkeyDataSource", "LoginItemDataSource", "SupportLogDataSource", "StillImageDataSource", "StoreMaintenanceDataStore",
+                "SupportLogRepository", "StillImageRepository",
+                "SettingsUseCase", "SupportLogUseCase", "EffectAuthoringUseCase",
+                "ControlsInteractor", "SettingsInteractor", "OnboardingInteractor", "EffectAuthoringInteractor",
             ]
         ),
         .testTarget(
@@ -238,6 +310,9 @@ let package = Package(
                 "HostDependencyInjection", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
                 "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore", "UserDefaultsGateway",
                 "FileSystemGateway", "FileWatchGateway", "WorkspaceGateway", "AppDirectories",
+                "RandomSource", "HostEnvironment", "HotkeyGateway", "LoginItemGateway", "LogStoreGateway",
+                "LoginItemDataSource", "StoreMaintenanceDataStore", "SupportLogDataSource", "SupportLogRepository",
+                "SettingsUseCase", "SupportLogUseCase", "OnboardingInteractor",
             ] + testDependencies
         ),
         .target(
@@ -285,8 +360,18 @@ let package = Package(
                 "DevHarness", "FramePipelineUseCase", "HarnessInteractor", "HostDependencyInjection", "VirtualCameraRepository",
                 "AppRouter", "EffectInteractor", "EffectCatalogUseCase", "EffectPackageRepository", "SettingsRepository",
                 "EffectPackageDataSource", "EffectWatchDataSource", "PreferencesDataStore", "Presenters", "Views",
+                "HotkeyDataSource", "LoginItemDataSource", "StoreMaintenanceDataStore", "SettingsUseCase", "ControlsInteractor",
+                "SettingsInteractor",
             ] + testDependencies
         ),
+        // The view gallery (host graph only): opens one of the app's windows over fixture data, with no camera. No Info.plist and no
+        // linker flag; `scripts/gallery` builds it and photographs the window. Its `main.swift` starts as a comment-only file.
+        .executableTarget(name: "ViewGallery", dependencies: dependencies + ["AppRouter", "Views", "Presenters"]),
+        .testTarget(name: "ViewGalleryTests", dependencies: ["ViewGallery", "AppRouter", "Presenters"] + testDependencies),
+        // The command-line authoring tool: `main.swift` only runs `LensToolMain`; the arguments and the exit codes are tested in
+        // LensToolTests. It links the host graph's live registrations (HostDependencyInjection) like the dev harness does.
+        .executableTarget(name: "LensTool", dependencies: dependencies + ["HostDependencyInjection", "Presenters"]),
+        .testTarget(name: "LensToolTests", dependencies: ["LensTool", "Presenters", "EffectPackageDataSource"] + testDependencies),
 
         // ── GPU smoke (own process via `make test-gpu`; never in the coverage run) ──
         // Imports Metal and IOSurface directly: a test target, not a Gateway, so the
@@ -296,6 +381,7 @@ let package = Package(
             dependencies: dependencies + [
                 "MetalGateway", "MetalKitPreviewGateway", "IOSurfaceGateway", "ShaderCompilationDataSource", "GPURenderDataSource",
                 "BundledEffectDataSource", "EffectRuntimeRepository", "EffectRuntimeStateDataSource", "PreviewDataSource", "Views",
+                "HostDependencyInjection", "LensTool", "ImageIOGateway", "EffectPackageDataSource",
                 "TestDoubles", "TestSupport",
             ]
         ),

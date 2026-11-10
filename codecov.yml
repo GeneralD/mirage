@@ -24,4 +24,7 @@ ignore:
   - "Sources/MetalGateway/**"
   - "Sources/MetalKitPreviewGateway/**"
   - "Sources/WorkspaceGateway/**"
+  - "Sources/HotkeyGateway/**"
+  - "Sources/LoginItemGateway/**"
+  - "Sources/LogStoreGateway/**"
   - "Apps/**"
