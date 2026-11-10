@@ -14,12 +14,14 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
         var startError: CaptureSessionError?
         var startCount = 0
         var stopCount = 0
+        var mirrorCalls: [Bool] = []
     }
 
     private struct Handle: CaptureSessionHandle {
         let gateway: FakeCaptureSessionGateway
 
         func stop() { gateway.stopSession() }
+        func setMirrored(_ mirrored: Bool) { gateway.noteMirror(mirrored) }
     }
 
     private let state = Locked(State())
@@ -32,6 +34,8 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
     public var capture: CameraCapture? { state.current.capture }
     public var startCount: Int { state.current.startCount }
     public var stopCount: Int { state.current.stopCount }
+    /// The mirror flags set on live handles, in call order.
+    public var mirrorCalls: [Bool] { state.current.mirrorCalls }
 
     public func failStart(with error: CaptureSessionError?) {
         state.withLock { $0.startError = error }
@@ -59,6 +63,14 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
             state.stopCount += 1
             state.onFrame = nil
             state.onEnd = nil
+        }
+    }
+
+    /// Records a mirror call only while the session is live, as `stopSession` judges it.
+    private func noteMirror(_ mirrored: Bool) {
+        state.withLock { state in
+            guard state.onFrame != nil else { return }
+            state.mirrorCalls.append(mirrored)
         }
     }
 

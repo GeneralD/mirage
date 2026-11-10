@@ -21,6 +21,8 @@ public struct CapturedSurface: Sendable {
 /// keeps no record of it.
 public protocol CaptureSessionHandle: Sendable {
     func stop()
+    /// Flips the picture of the running session without restarting it.
+    func setMirrored(_ mirrored: Bool)
 }
 
 /// Thin pass-through to `AVCaptureSession`: configure the camera `capture`
