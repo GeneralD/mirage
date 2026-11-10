@@ -169,4 +169,37 @@ struct FakeEffectRuntimeRepositoryTests {
 
         #expect(await stream.prefix(64).reduce(into: [EffectPassOutcome]()) { $0.append($1) } == Array(reported.suffix(64)))
     }
+
+    @Test("an unheld compiler-message query answers with the value set by answerCompilerMessage, and is recorded")
+    func compilerMessageAnswersAtOnce() async throws {
+        runtime.answerCompilerMessage("first:1:1: error: x")
+
+        #expect(await runtime.compilerMessage(of: effect) == "first:1:1: error: x")
+        #expect(runtime.compilerMessageRequests.count == 1)
+        #expect(try #require(runtime.compilerMessageRequests.last).effect == effect)
+        #expect(runtime.pendingCount == 0)
+    }
+
+    @Test("a compiler-message query made while held waits for completeCompilerMessage, resumes with its value, and ignores a stranger's request")
+    func compilerMessageIsHeld() async throws {
+        runtime.holdCompilerMessages()
+        let task = Task { await runtime.compilerMessage(of: effect) }
+        await runtime.compilerMessageRequests.waitForCount(1)
+        let request = try #require(runtime.compilerMessageRequests.last)
+        #expect(request.effect == effect)
+        #expect(runtime.pendingCount == 1)
+
+        // A stranger's first query also has id 1, so only its origin tells it apart from the held one.
+        let stranger = FakeEffectRuntimeRepository()
+        _ = await stranger.compilerMessage(of: effect)
+        let strangerRequest = try #require(stranger.compilerMessageRequests.last)
+        #expect(strangerRequest.id == request.id)
+        #expect(!runtime.completeCompilerMessage(strangerRequest, with: "stranger"))
+        #expect(runtime.pendingCount == 1, "the held query was not resumed by the stranger's completion")
+
+        #expect(runtime.completeCompilerMessage(request, with: "first:1:1: error: x"))
+        #expect(await task.value == "first:1:1: error: x")
+        #expect(!runtime.completeCompilerMessage(request, with: "again"), "a second completion has nothing to resume")
+        #expect(runtime.pendingCount == 0)
+    }
 }
