@@ -26,6 +26,8 @@ public protocol CameraSource: Sendable {
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws
     func stop()
+    /// Names the capture the next session starts with; a live session on another capture restarts on it.
+    func configure(_ capture: CameraCapture)
 }
 
 public enum CameraSourceKey: TestDependencyKey {
@@ -51,5 +53,9 @@ private struct UnimplementedCameraSource: CameraSource {
 
     func stop() {
         reportIssue("CameraSource.stop not implemented")
+    }
+
+    func configure(_ capture: CameraCapture) {
+        reportIssue("CameraSource.configure not implemented")
     }
 }
