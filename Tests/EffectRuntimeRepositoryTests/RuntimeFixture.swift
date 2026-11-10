@@ -50,9 +50,9 @@ struct RuntimeFixture {
     }
 
     /// Starts `prepare` on its own task. Nothing runs until the executor is drained.
-    func prepare(_ effect: EffectSource) -> Call {
+    func prepare(_ effect: EffectSource, parameters: EffectParameterBlock = .none) -> Call {
         let subject = subject
-        return Call { await subject.prepare(effect) }
+        return Call { await subject.prepare(effect, parameters: parameters) }
     }
 
     /// Starts `apply` of `frame` on its own task. Nothing runs until the executor is drained.

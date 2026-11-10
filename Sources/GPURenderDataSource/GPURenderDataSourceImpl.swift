@@ -27,11 +27,13 @@ public final class GPURenderDataSourceImpl: @unchecked Sendable {
 
 extension GPURenderDataSourceImpl: GPURenderer {
     public func render(
-        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms
+        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms, parameters: EffectParameterBlock
     ) async -> Result<GPUTiming, EffectFailure> {
         await withCheckedContinuation { continuation in
             executor.run { [self] in
-                commit(library: library, input: input, output: output, uniforms: uniforms) { continuation.resume(returning: $0) }
+                commit(library: library, input: input, output: output, uniforms: uniforms, parameters: parameters) {
+                    continuation.resume(returning: $0)
+                }
             }
         }
     }
@@ -44,7 +46,10 @@ extension GPURenderDataSourceImpl {
     /// cannot be committed, otherwise from the command buffer's completion. The
     /// tokens are resolved before any gateway is asked for anything, so a stale
     /// lease costs no context, no binding and no command buffer.
-    private func commit(library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms, finish: @escaping Finish) {
+    private func commit(
+        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms, parameters: EffectParameterBlock,
+        finish: @escaping Finish
+    ) {
         guard let source = pool.handle(for: input), let target = pool.handle(for: output), let geometry = pool.descriptor(for: output) else {
             return finish(.failure(.invalidResource))
         }
@@ -57,7 +62,8 @@ extension GPURenderDataSourceImpl {
             return finish(.failure(.invalidResource))
         }
         let pass = ComputePass(
-            kernel: library, textures: bound, uniforms: uniforms, grid: .covering(width: geometry.width, height: geometry.height))
+            kernel: library, textures: bound, uniforms: uniforms, parameters: parameters,
+            grid: .covering(width: geometry.width, height: geometry.height))
         do {
             try gpu.encodeAndCommit(pass, on: context) { [self] completion in
                 unbind(bound)

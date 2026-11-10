@@ -88,7 +88,7 @@ struct FakeShaderCompilerTests {
         let gpu = FakeGPUGateway()
         let pass = ComputePass(
             kernel: handle, textures: [], uniforms: EffectUniforms(time: 0, frameIndex: 0, resolution: SIMD2(1, 1), seed: 0),
-            grid: .covering(width: 1, height: 1))
+            parameters: .none, grid: .covering(width: 1, height: 1))
         try gpu.encodeAndCommit(pass, on: try gpu.makeContext()) { _ in }
         #expect(gpu.pending.count == 1)
     }

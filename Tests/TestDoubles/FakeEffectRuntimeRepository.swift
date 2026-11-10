@@ -10,12 +10,26 @@ import TestSupport
 /// caller's cancellation: a cancelled call is still recorded and still waits
 /// for its completion, so a suite that stops the pipeline mid-pass completes
 /// the pending request itself (`pendingCount` tells what is left).
+/// `setParameters` never suspends, as the live one does not wait for anything: every
+/// write is recorded in `parameterWrites`, in call order, and nothing is applied.
 public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendable {
     public struct PrepareRequest: Sendable {
         public let id: Int
         public let effect: EffectSource
+        public let parameters: EffectParameterBlock
         /// The repository that issued it: ids restart at 1 per instance, so the id alone cannot tell a stranger's request.
         fileprivate let origin: ObjectIdentifier
+    }
+
+    /// One `setParameters` call: the block and the effect it was addressed to.
+    public struct ParameterWrite: Sendable, Hashable {
+        public let block: EffectParameterBlock
+        public let source: EffectSource
+
+        public init(block: EffectParameterBlock, source: EffectSource) {
+            self.block = block
+            self.source = source
+        }
     }
 
     public struct ApplyRequest: Sendable {
@@ -35,6 +49,7 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
 
     private let state = Locked(State())
     public let prepareRequests = Collector<PrepareRequest>()
+    public let parameterWrites = Collector<ParameterWrite>()
     public let applyRequests = Collector<ApplyRequest>()
 
     public init() {}
@@ -42,9 +57,15 @@ public final class FakeEffectRuntimeRepository: EffectRuntimeRepository, Sendabl
     /// Calls that are suspended right now.
     public var pendingCount: Int { state.current.waiting.count }
 
-    public func prepare(_ effect: EffectSource) async -> Result<Void, EffectFailure> {
+    public func prepare(_ effect: EffectSource, parameters: EffectParameterBlock) async -> Result<Void, EffectFailure> {
         let id = nextID()
-        return await suspend(id) { prepareRequests.append(PrepareRequest(id: id, effect: effect, origin: ObjectIdentifier(self))) }
+        return await suspend(id) {
+            prepareRequests.append(PrepareRequest(id: id, effect: effect, parameters: parameters, origin: ObjectIdentifier(self)))
+        }
+    }
+
+    public func setParameters(_ block: EffectParameterBlock, of source: EffectSource) {
+        parameterWrites.append(ParameterWrite(block: block, source: source))
     }
 
     public func apply(input: FrameRef, output: FrameRef, frameContext: FrameContext) async -> Result<Void, EffectFailure> {

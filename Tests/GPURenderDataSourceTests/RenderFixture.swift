@@ -60,14 +60,15 @@ struct RenderFixture {
     /// Phase one: starts a render on its own task and returns once the render has
     /// queued its hop on the executor. Nothing has run on the executor yet.
     func enqueue(
-        input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms = .sample, library: (any LibraryHandle)? = nil
+        input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms = .sample, parameters: EffectParameterBlock = .none,
+        library: (any LibraryHandle)? = nil
     ) async -> StartedRender {
         let subject = subject
         let kernel = library ?? self.library
         let answered = Collector<RenderResult>()
         let hopsBefore = executor.enqueued.count
         let task = Task {
-            let result = await subject.render(library: kernel, input: input, output: output, uniforms: uniforms)
+            let result = await subject.render(library: kernel, input: input, output: output, uniforms: uniforms, parameters: parameters)
             answered.append(result)
             return result
         }
@@ -81,10 +82,11 @@ struct RenderFixture {
     /// is only discovered on the executor. Then one drain runs the hop, so the pass
     /// is committed, or the render has its answer, by the time `start` returns.
     func start(
-        input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms = .sample, library: (any LibraryHandle)? = nil
+        input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms = .sample, parameters: EffectParameterBlock = .none,
+        library: (any LibraryHandle)? = nil
     ) async -> Task<RenderResult, Never> {
         let before = progress
-        let render = await enqueue(input: input, output: output, uniforms: uniforms, library: library)
+        let render = await enqueue(input: input, output: output, uniforms: uniforms, parameters: parameters, library: library)
         #expect(progress == before, "nothing is resolved, bound or committed before the executor runs the hop")
         #expect(render.answered.count == 0, "the render cannot answer before its hop has run")
         #expect(executor.drain() == 1)

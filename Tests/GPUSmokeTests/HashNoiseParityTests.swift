@@ -74,7 +74,7 @@ struct HashNoiseParityTests {
         let texture = try gateway.bind(surface, on: context)
         let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
         let completion = try await GPUSmokeSupport.run(
-            ComputePass(kernel: kernel, textures: [texture], uniforms: uniforms, grid: grid), on: context, through: gateway)
+            ComputePass(kernel: kernel, textures: [texture], uniforms: uniforms, parameters: .none, grid: grid), on: context, through: gateway)
         #expect(completion.error == nil)
         try gateway.unbind(texture)
         return try GPUSmokeSupport.pixels(of: surface)

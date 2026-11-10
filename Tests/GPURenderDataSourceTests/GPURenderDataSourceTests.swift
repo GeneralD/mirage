@@ -86,6 +86,30 @@ struct GPURenderDataSourceTests {
         #expect(fixture.gpu.submissions.count == 1, "one render, one command buffer")
     }
 
+    @Test("a pass carries the parameter block its render was given, verbatim: each pass in flight keeps its own")
+    func passCarriesItsParameterBlock() async throws {
+        let fixture = RenderFixture()
+        let first = EffectParameterBlock(bytes: Array(1...48))
+        let second = EffectParameterBlock(bytes: Array(101...116))
+        let firstCall = try await fixture.start(input: fixture.lease(), output: fixture.lease(), parameters: first)
+        let secondCall = try await fixture.start(input: fixture.lease(), output: fixture.lease(), parameters: second)
+        let withoutParameters = try await fixture.start(input: fixture.lease(), output: fixture.lease())
+
+        #expect(fixture.gpu.submissions.values.map(\.pass.parameters) == [first, second, .none])
+        for submission in fixture.gpu.pending { #expect(fixture.gpu.complete(submission, with: .finished)) }
+        for call in [firstCall, secondCall, withoutParameters] { #expect(await call.value == .success(GPUTiming(gpuStart: 10, gpuEnd: 10.004))) }
+    }
+
+    @Test("a stale lease commits no pass, so no block is bound for it")
+    func stalePassBindsNoBlock() async throws {
+        let fixture = RenderFixture()
+        let call = try await fixture.start(
+            input: fixture.staleLease(), output: fixture.lease(), parameters: EffectParameterBlock(bytes: Array(1...48)))
+
+        #expect(await call.value == .failure(.invalidResource))
+        #expect(fixture.gpu.submissions.count == 0)
+    }
+
     @Test("the render answers only when its command buffer completes; the textures stay bound until then")
     func answersOnCompletion() async throws {
         let fixture = RenderFixture()
