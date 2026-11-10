@@ -42,6 +42,19 @@ import Domain
 /// retry of the newest effect keeps its block, and the bundled fallback, which declares no
 /// parameters, runs with the empty one. Handing a block out copies a reference, not its bytes,
 /// so a frame allocates nothing for it.
+///
+/// **The fingerprint** (`EffectFingerprint.of`) is decided where the selection is: every settled
+/// `Selection` carries the one of the effect it settles to, and is handed out with it, so a pass is
+/// stamped with the effect whose library it runs, not with the one the user has picked by the time
+/// it ends. Hashing a source costs time in its size, so it is taken when an effect becomes the
+/// selection (a cache hit, or the end of its compile), never per frame: the selection a frame finds
+/// settled already has its stamp.
+///
+/// **The outcomes** are told to every open `outcomes()` stream from the executor, the streams being
+/// executor-confined like the rest. `report` queues and returns, so the pass that reports is never
+/// held up; a stream keeps the newest 64 outcomes nobody has read yet, so an observer that falls
+/// behind loses old outcomes and the frame path loses nothing. A stream is its own: it replays
+/// nothing, and any number may be open.
 public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     @Dependency(\.frameExecutor) private var executor
 
@@ -57,10 +70,18 @@ public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     /// `admit`s and `selected`s waiting for the selection to settle, resumed in arrival order.
     private var waiting: [@Sendable (EffectSelection) -> Void] = []
     private var session: EffectSession?
+    /// The streams `outcomes()` has opened and their consumers have not let go of.
+    private var observers: [ObjectIdentifier: OutcomeObserver] = [:]
+    /// `EffectFingerprint.of` of the last effect that needed one, kept so that taking it again for
+    /// the same effect (the end of its compile after its `begin`, a retry) hashes nothing.
+    private var stamped: (effect: EffectSource, fingerprint: EffectFingerprint)?
     /// Consecutive compiles of the newest effect that failed for the environment's
     /// reasons (no GPU context, a compiler service fault). Only a
     /// `begin` starts it over: the retries an `admit` hands back keep counting.
     private var contextFailures = 0
+
+    /// How many outcomes a stream holds for a consumer that has not read them.
+    private static let outcomeBacklog = 64
 
     public init() {}
 }
@@ -109,6 +130,27 @@ extension EffectRuntimeStateDataSourceImpl: EffectRuntimeState {
             executor.run { [self] in whenSettled { continuation.resume(returning: $0) } }
         }
     }
+
+    public func report(_ outcome: EffectPassOutcome) {
+        executor.run { [self] in
+            for observer in observers.values { observer.continuation.yield(outcome) }
+        }
+    }
+
+    public func outcomes() -> AsyncStream<EffectPassOutcome> {
+        let (stream, continuation) = AsyncStream.makeStream(of: EffectPassOutcome.self, bufferingPolicy: .bufferingNewest(Self.outcomeBacklog))
+        let observer = OutcomeObserver(continuation)
+        let key = ObjectIdentifier(observer)
+        let executor = executor
+        // Queued before the stream is returned, so a `report` made after the return runs after it:
+        // the executor is serial and keeps the order of its jobs.
+        executor.run { [self] in observers[key] = observer }
+        continuation.onTermination = { [weak self] _ in
+            guard let self else { return }
+            executor.run { [self] in observers[key] = nil }
+        }
+        return stream
+    }
 }
 
 // MARK: - Executor-confined steps
@@ -123,7 +165,7 @@ extension EffectRuntimeStateDataSourceImpl {
             selection = .compiling
             return .compile(newest)
         }
-        select(.ready(library))
+        select(.ready(library, fingerprint(of: effect)))
         return .cached
     }
 
@@ -138,31 +180,44 @@ extension EffectRuntimeStateDataSourceImpl {
             cache[CompileKey(effect)] = library
             guard isNewest else { return .compiled(selected: false) }
             let failures = contextFailures
-            select(.ready(library))
+            select(.ready(library, fingerprint(of: effect)))
             return .compiled(selected: true, afterFailures: failures)
         case .failure(let diagnostics):
             switch diagnostics.cause {
             case .source:
-                if isNewest { select(.failed) }
+                if isNewest { select(.failed(fingerprint(of: effect))) }
                 return .failed(.compileFailed)
             case .environment:
                 guard isNewest else { return .failed(.internalError) }
                 contextFailures += 1
-                select(.retry(effect))
+                select(.retry(effect, fingerprint(of: effect)))
                 return .failed(.internalError, attempt: contextFailures)
             }
         }
     }
 
     /// Sets the selection; once it has settled, every waiting caller is resumed with it
-    /// and the block of the effect it selects.
+    /// and the block and the fingerprint of the effect it selects.
     private func select(_ next: Selection) {
         selection = next
-        guard let settled = next.settled else { return }
+        guard let released = handOut(next) else { return }
         let resumed = waiting
         waiting = []
-        let released = EffectSelection(result: settled, parameters: parameterBlock)
         for resume in resumed { resume(released) }
+    }
+
+    /// The selection as a caller is given it, with the block current right now, or `nil` while
+    /// there is nothing to run yet. The one place a settled selection becomes an `EffectSelection`.
+    private func handOut(_ selection: Selection) -> EffectSelection? {
+        selection.settled.map { EffectSelection(result: $0.result, parameters: parameterBlock, fingerprint: $0.fingerprint) }
+    }
+
+    /// `EffectFingerprint.of` `effect`, hashed once for as long as it is the effect asked about.
+    private func fingerprint(of effect: EffectSource) -> EffectFingerprint {
+        if let stamped, stamped.effect == effect { return stamped.fingerprint }
+        let fingerprint = EffectFingerprint.of(effect)
+        stamped = (effect, fingerprint)
+        return fingerprint
     }
 
     /// The effect an `admit` compiles itself: the fallback while nothing has been
@@ -170,14 +225,14 @@ extension EffectRuntimeStateDataSourceImpl {
     private func compilable(fallback: @Sendable () -> EffectSource) -> EffectSource? {
         switch selection {
         case .nothing: fallback()
-        case .retry(let effect): effect
+        case .retry(let effect, _): effect
         case .compiling, .ready, .failed: nil
         }
     }
 
     private func whenSettled(_ resume: @escaping @Sendable (EffectSelection) -> Void) {
-        guard let settled = selection.settled else { return waiting.append(resume) }
-        resume(EffectSelection(result: settled, parameters: parameterBlock))
+        guard let settled = handOut(selection) else { return waiting.append(resume) }
+        resume(settled)
     }
 
     private func onExecutor<Value: Sendable>(_ body: @escaping @Sendable () -> Value) async -> Value {
@@ -202,26 +257,36 @@ private struct CompileKey: Hashable {
 }
 
 /// The effect `apply` runs, as the newest `begin` left it. It never returns to
-/// `nothing`.
+/// `nothing`. A settled case carries the fingerprint of the effect it settles, taken where the
+/// selection was decided, so the stamp cannot be read from anywhere else.
 private enum Selection {
     /// No `begin` yet: the first `admit` takes the fallback to compile.
     case nothing
     /// The newest `begin`'s compile is running.
     case compiling
-    case ready(any LibraryHandle)
+    case ready(any LibraryHandle, EffectFingerprint)
     /// The newest `begin`'s source does not compile: final until a newer `begin`.
-    case failed
+    case failed(EffectFingerprint)
     /// The newest `begin`'s compile failed for the environment's reasons (no GPU context,
     /// a compiler service fault), which are not the effect's fault: not final. The next `admit` hands this effect back to be compiled again.
-    case retry(EffectSource)
+    case retry(EffectSource, EffectFingerprint)
 
     /// What a caller gets from it, or `nil` while there is nothing to run yet.
-    var settled: Result<any LibraryHandle, EffectFailure>? {
+    var settled: (result: Result<any LibraryHandle, EffectFailure>, fingerprint: EffectFingerprint)? {
         switch self {
-        case .ready(let library): .success(library)
-        case .failed: .failure(.compileFailed)
-        case .retry: .failure(.internalError)
+        case .ready(let library, let fingerprint): (.success(library), fingerprint)
+        case .failed(let fingerprint): (.failure(.compileFailed), fingerprint)
+        case .retry(_, let fingerprint): (.failure(.internalError), fingerprint)
         case .nothing, .compiling: nil
         }
+    }
+}
+
+/// One open `outcomes()` stream. Its identity is the key it is registered under and forgotten by.
+private final class OutcomeObserver: Sendable {
+    let continuation: AsyncStream<EffectPassOutcome>.Continuation
+
+    init(_ continuation: AsyncStream<EffectPassOutcome>.Continuation) {
+        self.continuation = continuation
     }
 }

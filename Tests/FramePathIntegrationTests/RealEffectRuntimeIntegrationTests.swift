@@ -23,6 +23,8 @@ struct RealEffectRuntimeIntegrationTests {
     /// The source the compiler is handed for the bundled effect: the prelude, the line
     /// directive and the author's source.
     private static let bundledSource = ShaderSourceAssembly.assemble(BundledEffectDataSourceImpl().defaultEffect.source)
+    /// What the bundled effect compiles to: the stamp of every pass of a host that prepared nothing else.
+    private static let bundledFingerprint = EffectFingerprint.of(BundledEffectDataSourceImpl().defaultEffect)
 
     // MARK: The effect's output is what the extension streams
 
@@ -153,6 +155,53 @@ struct RealEffectRuntimeIntegrationTests {
         rig.stopHostExpectingIdleGPU()
     }
 
+    // MARK: Each pass is reported with the effect it ran
+
+    @Test func theRuntimeReportsEachPassStampedWithTheBundledEffectAndWhatTheGPUReported() async throws {
+        let rig = LoopbackRig(effects: .real)
+        let watch = OutcomeWatch(rig.host.runtime.outcomes())
+        defer { watch.stop() }
+        let relay = await rig.startExtension()
+        try await rig.startHost()
+
+        await rig.captureThroughRuntime(FakeSurfaceHandle(id: 1), at: 1_000)
+        await rig.captureThroughRuntime(FakeSurfaceHandle(id: 2), at: 2_000, completing: .failed(code: 3))
+        await rig.pumpExtension(untilReceived: 2)
+
+        let reported = try #require(await rig.outcomes(2, from: watch), "the host reports a pass after the pipeline took its answer")
+        #expect(
+            reported == [
+                EffectPassOutcome(fingerprint: Self.bundledFingerprint, result: .success(GPUTiming(gpuStart: 10, gpuEnd: 10.004))),
+                EffectPassOutcome(fingerprint: Self.bundledFingerprint, result: .failure(.pageFault)),
+            ], "the command buffer's own timing, then its fault, each for the effect that ran")
+        #expect(rig.host.pipeline.stats.effectFailures == [.pageFault: 1], "the pipeline was answered as before")
+        #expect(rig.host.pipeline.stats.effectsApplied == 1)
+
+        try await rig.stopExtension(relay)
+        rig.stopHostExpectingIdleGPU()
+    }
+
+    @Test func aSourceThatDoesNotCompileIsReportedForEveryFrameAsTheFailureOfTheEffectThatDidNotCompile() async throws {
+        let rig = LoopbackRig(effects: .real)
+        rig.host.shaders.failCompile(
+            of: Self.bundledSource, with: ShaderDiagnostics(message: "effect:3:5: error: use of undeclared identifier 'oops'", code: 3))
+        let watch = OutcomeWatch(rig.host.runtime.outcomes())
+        defer { watch.stop() }
+        let relay = await rig.startExtension()
+        try await rig.startHost()
+
+        await rig.captureThroughRuntime(FakeSurfaceHandle(id: 1), at: 1_000)
+        await rig.captureThroughRuntime(FakeSurfaceHandle(id: 2), at: 2_000)
+        await rig.pumpExtension(untilReceived: 2)
+
+        let failure = EffectPassOutcome(fingerprint: Self.bundledFingerprint, result: .failure(.compileFailed))
+        #expect(await rig.outcomes(2, from: watch) == [failure, failure])
+        #expect(rig.host.gpu.submissions.count == 0, "no command buffer: the outcomes are the selection's own")
+
+        try await rig.stopExtension(relay)
+        rig.stopHostExpectingIdleGPU()
+    }
+
     // MARK: With the real preview as well
 
     @Test func theStreamAndThePreviewShowTheSameOutputOfTheRealRuntime() async throws {
@@ -191,5 +240,34 @@ struct RealEffectRuntimeIntegrationTests {
         let textures = try #require(pass.textures as? [FakeTextureHandle], "the pass bound the fake gateway's textures")
         #expect(textures.count == 2, "an effect pass binds its input and its output")
         return (try #require(textures.first).surface, try #require(textures.last).surface)
+    }
+}
+
+/// An `outcomes()` stream and what its consumer, a task of its own, has read from it so far.
+private struct OutcomeWatch: Sendable {
+    let delivered = Collector<EffectPassOutcome>()
+    private let consumer: Task<Void, Never>
+
+    init(_ stream: AsyncStream<EffectPassOutcome>) {
+        let delivered = delivered
+        consumer = Task {
+            for await outcome in stream { delivered.append(outcome) }
+        }
+    }
+
+    /// Lets go of the stream, which ends it.
+    func stop() {
+        consumer.cancel()
+    }
+}
+
+extension LoopbackRig {
+    /// Drains the host's executor until `watch` has been delivered `count` outcomes, and returns them, or `nil` when
+    /// they never came. A pass queues its report before the pipeline takes its answer, and the drain that saw the
+    /// answer may be over by then.
+    @MainActor
+    fileprivate func outcomes(_ count: Int, from watch: OutcomeWatch) async -> [EffectPassOutcome]? {
+        let arrived = await tickUntil(tick: { host.executor.drain() }, until: { watch.delivered.count >= count })
+        return arrived ? watch.delivered.values : nil
     }
 }

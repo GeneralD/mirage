@@ -2,8 +2,10 @@ import Dependencies
 
 /// The effect runtime as the pipeline sees it: make an effect ready (compile,
 /// cache the handle) and apply it to one frame. Both run off the frame
-/// executor (`async`) and neither throws — every outcome is an `EffectFailure`
-/// the pipeline turns into a pass-through and `EffectHealthPolicy` counts.
+/// executor (`async`) and neither throws — every failure is an `EffectFailure`
+/// the pipeline turns into a pass-through. How each pass ended is also told to
+/// `outcomes()`, which is where the health judgement reads it: the pipeline keeps
+/// no memory of failure.
 /// Cancelling the caller cuts neither call short: a compile or a GPU pass that
 /// has started runs to its end and the call answers with its real outcome, so
 /// the caller holds the leases it handed in until `apply` returns.
@@ -29,6 +31,14 @@ public protocol EffectRuntimeRepository: Sendable {
     /// Runs the prepared effect from `input` into `output`. Both leases stay
     /// the caller's; the runtime only borrows the surfaces for the pass.
     func apply(input: FrameRef, output: FrameRef, frameContext: FrameContext) async -> Result<Void, EffectFailure>
+    /// How each `apply` ended from now on: its GPU timing or its failure (a selection that is itself
+    /// a failure, such as a source that did not compile, included), stamped with the fingerprint of
+    /// the effect the pass ran. The stamp comes with the selection the pass runs, so a pass that
+    /// ends after another effect was prepared is still the first effect's outcome. Each call opens a
+    /// stream of its own, which replays nothing and keeps the newest 64 outcomes it has not
+    /// delivered: an observer that falls behind loses old outcomes, and `apply` never waits for it.
+    /// An outcome arrives after the executor has run its report, so shortly after `apply` answers.
+    func outcomes() -> AsyncStream<EffectPassOutcome>
 }
 
 public enum EffectRuntimeRepositoryKey: TestDependencyKey {
@@ -55,5 +65,10 @@ private struct UnimplementedEffectRuntimeRepository: EffectRuntimeRepository {
     func apply(input: FrameRef, output: FrameRef, frameContext: FrameContext) async -> Result<Void, EffectFailure> {
         reportIssue("EffectRuntimeRepository.apply not implemented")
         return .failure(.internalError)
+    }
+
+    func outcomes() -> AsyncStream<EffectPassOutcome> {
+        reportIssue("EffectRuntimeRepository.outcomes not implemented")
+        return AsyncStream { $0.finish() }
     }
 }

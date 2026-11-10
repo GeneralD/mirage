@@ -34,6 +34,11 @@ import Dependencies
 ///   with the selection it belongs to (`EffectSelection`), read in the same step that settles it,
 ///   so a pass never runs one effect's library with another's layout. Blocks are values: a pass
 ///   that has been answered keeps the one it was given, whatever is written after.
+/// - **Outcomes.** The selection also carries the fingerprint of the effect it settles to, read in the
+///   same step as its library, so a pass is stamped with the effect it ran and not with whichever the
+///   user has picked by the time it ends. `report` queues a pass's outcome on the executor and returns;
+///   the executor hands it to every stream `outcomes()` has opened. Each stream keeps the newest 64
+///   outcomes it has not delivered, so a slow observer loses old outcomes and the frame path loses nothing.
 public protocol EffectRuntimeState: Sendable {
     /// A `prepare` begins: takes the next ticket and makes `effect` the one that owns the
     /// parameter block, which starts as `parameters`. A cached library is selected at
@@ -60,20 +65,37 @@ public protocol EffectRuntimeState: Sendable {
     /// The selection once it has settled: at once, or when the newest compile does.
     /// For the `apply` that started a compile itself (`EffectAdmission.compile`).
     func selected() async -> EffectSelection
+
+    /// A pass ended. Queues `outcome` on the executor and returns without waiting for it, as
+    /// `setParameters` does, so reporting never holds up the frame path; every stream that
+    /// `outcomes()` has open gets it, in the order the reports were made. The stamp is the caller's:
+    /// the `fingerprint` of the `EffectSelection` the pass ran.
+    func report(_ outcome: EffectPassOutcome)
+
+    /// The outcomes reported after this call. Every call opens a stream of its own and any number may
+    /// be open, each copying every outcome, so one observer cannot take another's. A stream replays
+    /// nothing, keeps the newest 64 outcomes it has not yet delivered (a slow observer loses old
+    /// ones, never a frame) and ends when its consumer lets go. A `report` made after this returns is
+    /// delivered to the stream.
+    func outcomes() -> AsyncStream<EffectPassOutcome>
 }
 
 /// What an `apply` runs once the selection has settled: the library to run or the failure
-/// to answer, and the parameter block of the effect that library belongs to. They are read
-/// in one step, so the block always fits the library, even when a newer `begin` replaced the
-/// effect between the moment the `apply` was admitted and the moment its selection settled.
+/// to answer, the parameter block of the effect that library belongs to, and what that effect
+/// compiled to. They are read in one step, so the block always fits the library and the
+/// fingerprint names the effect that ran, even when a newer `begin` replaced the effect between
+/// the moment the `apply` was admitted and the moment its selection settled.
 /// Carries a library handle, so it lives here rather than in `Entity`.
 public struct EffectSelection: Sendable {
     public let result: Result<any LibraryHandle, EffectFailure>
     public let parameters: EffectParameterBlock
+    /// The stamp of the pass: `EffectFingerprint.of` the effect `result` belongs to, a failed one included.
+    public let fingerprint: EffectFingerprint
 
-    public init(result: Result<any LibraryHandle, EffectFailure>, parameters: EffectParameterBlock) {
+    public init(result: Result<any LibraryHandle, EffectFailure>, parameters: EffectParameterBlock, fingerprint: EffectFingerprint) {
         self.result = result
         self.parameters = parameters
+        self.fingerprint = fingerprint
     }
 }
 
@@ -126,12 +148,24 @@ private struct UnimplementedEffectRuntimeState: EffectRuntimeState {
     func admit(_ context: FrameContext, output: SurfaceDescriptor, fallback: @escaping @Sendable () -> EffectSource) async -> EffectAdmission {
         reportIssue("EffectRuntimeState.admit not implemented")
         return .ready(
-            EffectSelection(result: .failure(.internalError), parameters: .none),
+            EffectSelection(result: .failure(.internalError), parameters: .none, fingerprint: Self.unstamped),
             EffectUniforms(time: 0, frameIndex: 0, resolution: SIMD2(0, 0), seed: 0))
     }
 
     func selected() async -> EffectSelection {
         reportIssue("EffectRuntimeState.selected not implemented")
-        return EffectSelection(result: .failure(.internalError), parameters: .none)
+        return EffectSelection(result: .failure(.internalError), parameters: .none, fingerprint: Self.unstamped)
     }
+
+    func report(_ outcome: EffectPassOutcome) {
+        reportIssue("EffectRuntimeState.report not implemented")
+    }
+
+    func outcomes() -> AsyncStream<EffectPassOutcome> {
+        reportIssue("EffectRuntimeState.outcomes not implemented")
+        return AsyncStream { $0.finish() }
+    }
+
+    /// The stamp of a selection nothing decided: the placeholders above answer with it.
+    private static let unstamped = EffectFingerprint(value: String(repeating: "0", count: 16))
 }
