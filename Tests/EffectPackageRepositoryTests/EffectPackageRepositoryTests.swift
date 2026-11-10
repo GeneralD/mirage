@@ -41,6 +41,10 @@ struct EffectPackageRepositoryTests {
             await base.package(id)
         }
 
+        func package(atPath path: String) async -> EffectPackageListing? {
+            nil
+        }
+
         func openFolder() {
             base.openFolder()
         }

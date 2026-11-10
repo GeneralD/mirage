@@ -10,6 +10,7 @@ public final class FakeEffectPackages: EffectPackages, Sendable {
     private struct State {
         var inventory: EffectPackageInventory
         var listings: [EffectID: EffectPackageListing] = [:]
+        var pathListings: [String: EffectPackageListing] = [:]
     }
 
     private let state: Locked<State>
@@ -17,6 +18,8 @@ public final class FakeEffectPackages: EffectPackages, Sendable {
     public let listingCalls = Collector<Void>()
     /// The ids `package(_:)` was asked for, in call order.
     public let packageRequests = Collector<EffectID>()
+    /// The paths `package(atPath:)` was asked for, in call order.
+    public let pathRequests = Collector<String>()
     /// One entry per `openFolder()` call.
     public let folderOpens = Collector<Void>()
 
@@ -35,6 +38,12 @@ public final class FakeEffectPackages: EffectPackages, Sendable {
         state.withLock { $0.listings[id] = listing }
     }
 
+    /// Makes `package(atPath:)` answer `listing` for `path`, and nothing for any other path; `nil` removes
+    /// the script.
+    public func script(_ listing: EffectPackageListing?, atPath path: String) {
+        state.withLock { $0.pathListings[path] = listing }
+    }
+
     public func packages() async -> EffectPackageInventory {
         listingCalls.append(())
         return state.withLock { $0.inventory }
@@ -43,6 +52,11 @@ public final class FakeEffectPackages: EffectPackages, Sendable {
     public func package(_ id: EffectID) async -> EffectPackageListing? {
         packageRequests.append(id)
         return state.withLock { $0.listings[id] ?? $0.inventory.listings.first { $0.id == id } }
+    }
+
+    public func package(atPath path: String) async -> EffectPackageListing? {
+        pathRequests.append(path)
+        return state.withLock { $0.pathListings[path] }
     }
 
     public func openFolder() {

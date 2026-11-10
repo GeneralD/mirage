@@ -72,15 +72,22 @@ extension EffectPackageDataSourceImpl: EffectPackages {
         guard let names = listFolder(folder) else { return Self.inventory(of: [], in: folder) }
         let reads = names.compactMap(Self.key(ofDirectoryNamed:)).sorted()
             .filter { fileSystem.isDirectory(Self.directory(of: $0, in: folder)) }
-            .map { read($0, in: folder, includingThumbnail: true) }
+            .map { read($0, directory: Self.directory(of: $0, in: folder), includingThumbnail: true) }
         return Self.inventory(of: reads, in: folder)
     }
 
     public func package(_ id: EffectID) async -> EffectPackageListing? {
         guard id.origin == .package, Self.isPackageKey(id.key) else { return nil }
         let folder = appDirectories.effectsDirectory
-        guard fileSystem.isDirectory(Self.directory(of: id.key, in: folder)) else { return nil }
-        return read(id.key, in: folder, includingThumbnail: false).listing
+        let directory = Self.directory(of: id.key, in: folder)
+        guard fileSystem.isDirectory(directory) else { return nil }
+        return read(id.key, directory: directory, includingThumbnail: false).listing
+    }
+
+    public func package(atPath path: String) async -> EffectPackageListing? {
+        let directory = Self.withoutTrailingSlashes(path)
+        guard let key = Self.key(ofPath: directory), fileSystem.isDirectory(directory) else { return nil }
+        return read(key, directory: directory, includingThumbnail: false).listing
     }
 
     public func openFolder() {
@@ -152,9 +159,8 @@ extension EffectPackageDataSourceImpl {
         }
     }
 
-    /// The package `key`, with its thumbnail read as well when `includingThumbnail`.
-    private func read(_ key: String, in folder: String, includingThumbnail: Bool) -> PackageRead {
-        let directory = Self.directory(of: key, in: folder)
+    /// The package `key` in `directory`, with its thumbnail read as well when `includingThumbnail`.
+    private func read(_ key: String, directory: String, includingThumbnail: Bool) -> PackageRead {
         let manifestPath = Self.join(directory, Self.manifestFileName)
         let sourcePath = Self.join(directory, Self.sourceFileName)
         let manifestRead = readFile(manifestPath, named: Self.manifestFileName)
@@ -284,6 +290,19 @@ extension EffectPackageDataSourceImpl {
         guard name.hasSuffix(packageSuffix) else { return nil }
         let key = String(name.dropLast(packageSuffix.count))
         return isPackageKey(key) ? key : nil
+    }
+
+    /// The id of the package at `path`: its last component without the `.lens`, whatever the name
+    /// is otherwise (`plain` is `plain`), or `nil` when the component is empty or names no package.
+    private static func key(ofPath path: String) -> String? {
+        guard let name = path.split(separator: "/").last.map(String.init) else { return nil }
+        let key = name.hasSuffix(packageSuffix) ? String(name.dropLast(packageSuffix.count)) : name
+        return isPackageKey(key) ? key : nil
+    }
+
+    /// The path without the `/` at its end, however many there are.
+    private static func withoutTrailingSlashes(_ path: String) -> String {
+        String(path.reversed().drop(while: { $0 == "/" }).reversed())
     }
 
     /// An id is a directory name without its suffix: one path component, never empty.
