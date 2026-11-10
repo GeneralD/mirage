@@ -59,6 +59,11 @@ actor EffectCatalogSession {
     /// of the same effect (a choice and a listing, say) only the newer may act on its answer:
     /// the older one may hold files that have been edited since.
     var readToken = 0
+    /// The effect health counts the outcomes of: the one the runtime was last prepared with, and the policy counting its
+    /// passes. Every `prepare` replaces it; a run clears it.
+    var armed: ArmedHealth?
+    /// The effects health has switched off in this run, each with the record its reason comes from. A run clears it.
+    var disabled: [EffectID: DisabledEntry] = [:]
 
     /// How the chosen effect's last attempt went: the problem if its source could not be read
     /// at the last look, otherwise how the runtime took what it was last handed, if that was
@@ -84,14 +89,25 @@ actor EffectCatalogSession {
         let mine = epoch
         clear()
         broadcast.forget()
-        let restored = await settings.selectedEffect()
-        guard epoch == mine else { return }
-        selection = restored
-        for await listing in packages.catalog() {
-            await reconcile(listing, in: mine)
+        // Subscribed before the first suspension: the runtime replays nothing to a subscriber that comes later.
+        let outcomes = runtime.outcomes()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { [self] in await follow(outcomes, in: mine) }
+            await listen(in: mine)
+            group.cancelAll()
         }
         guard epoch == mine else { return }
         end()
+    }
+
+    /// Restores the persisted choice, then reconciles every listing of the catalog for `run`.
+    private func listen(in run: Int) async {
+        let restored = await settings.selectedEffect()
+        guard epoch == run else { return }
+        selection = restored
+        for await listing in packages.catalog() {
+            await reconcile(listing, in: run)
+        }
     }
 
     func select(_ id: EffectID) async -> EffectSelectionOutcome {
@@ -169,6 +185,7 @@ actor EffectCatalogSession {
         generation += 1
         let mine = generation
         prepared = Prepared(id: id, source: source, answer: nil)
+        armed = ArmedHealth(id: id, fingerprint: .of(source), policy: EffectHealthPolicy())
         unreadableSource = nil
         if let verb {
             developerLog.record(.effect, "effect '\(source.name)' \(verb)")
@@ -196,7 +213,8 @@ actor EffectCatalogSession {
 
     func publish() {
         guard let selection else { return }
-        let state = EffectCatalogState(entries: entries, selection: selection, outcome: outcome)
+        let state = EffectCatalogState(
+            entries: entries, selection: selection, outcome: outcome, disabled: disabled.mapValues(\.record.reason))
         guard state != broadcast.current else { return }
         broadcast.publish(state)
     }
@@ -218,6 +236,8 @@ actor EffectCatalogSession {
         selection = nil
         prepared = nil
         unreadableSource = nil
+        armed = nil
+        disabled = [:]
     }
 }
 
