@@ -40,6 +40,7 @@ import SettingsRepository
 import SettingsUseCase
 import ShaderCompilationDataSource
 import StillImageDataSource
+import StillImageRepository
 import StoreMaintenanceDataStore
 import SystemExtensionGateway
 import UserDefaultsGateway
@@ -262,4 +263,8 @@ extension LoginItemGatewayKey: DependencyKey {
 
 extension StillImagesKey: DependencyKey {
     public static let liveValue: any StillImages = StillImageDataSourceImpl()
+}
+
+extension StillImageRepositoryKey: DependencyKey {
+    public static let liveValue: any StillImageRepository = StillImageRepositoryImpl()
 }
