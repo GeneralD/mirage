@@ -89,6 +89,92 @@ struct InMemoryPreviewSinkTests {
         #expect(completions.values == [1, 2, 3])
         #expect(sink.presented.values.map(\.frame) == [frame(1), frame(2), frame(3)])
     }
+
+    @Test("detach records the fake target and keeps the attach history")
+    func detachIsRecorded() throws {
+        let target = FakePreviewTargetHandle()
+        try sink.attach(target)
+        sink.detach(target)
+
+        #expect(sink.detached.map(ObjectIdentifier.init) == [ObjectIdentifier(target)])
+        #expect(sink.attached.map(ObjectIdentifier.init) == [ObjectIdentifier(target)])
+    }
+
+    @Test("after the attached target is detached, a frame completes inside present again, as before any attach")
+    func detachedTargetCompletesFramesAtOnce() throws {
+        let sink = InMemoryPreviewSink(holding: .onceAttached)
+        let target = FakePreviewTargetHandle()
+        try sink.attach(target)
+        sink.detach(target)
+
+        let completions = Collector<Int>()
+        sink.present(frame(1)) { completions.append(1) }
+        #expect(completions.values == [1], "completed before present returned")
+        #expect(sink.pending.isEmpty)
+    }
+
+    @Test("detaching a target other than the attached one records the call and keeps the attachment, so a later frame stays held")
+    func detachingAnotherTargetKeepsAttachment() throws {
+        let sink = InMemoryPreviewSink(holding: .onceAttached)
+        let attached = FakePreviewTargetHandle()
+        let stranger = FakePreviewTargetHandle()
+        try sink.attach(attached)
+        sink.detach(stranger)
+
+        #expect(sink.detached.map(ObjectIdentifier.init) == [ObjectIdentifier(stranger)], "the call is recorded whether or not it unbinds")
+        sink.present(frame(1)) {}
+        #expect(sink.pending.map(\.frame) == [frame(1)], "the attached target still holds the frame")
+    }
+
+    @Test("a presentation held when its target is detached stays pending until complete, which returns true exactly once")
+    func heldPresentationOutlivesDetach() throws {
+        let target = FakePreviewTargetHandle()
+        try sink.attach(target)
+        let completions = Collector<Void>()
+        sink.present(frame(1)) { completions.append(()) }
+        sink.detach(target)
+
+        #expect(completions.count == 0, "detach does not complete a held frame")
+        let presentation = try #require(sink.pending.first)
+        #expect(sink.complete(presentation))
+        #expect(!sink.complete(presentation))
+        #expect(completions.count == 1)
+    }
+
+    @Test("with holding always, detaching the attached target leaves every later frame held")
+    func alwaysHoldingIgnoresDetach() throws {
+        let target = FakePreviewTargetHandle()
+        try sink.attach(target)
+        sink.detach(target)
+        sink.present(frame(1)) {}
+
+        #expect(sink.pending.map(\.frame) == [frame(1)])
+    }
+
+    @Test("a frame presented after the target is detached and attached again is held again")
+    func reattachHoldsFramesAgain() throws {
+        let sink = InMemoryPreviewSink(holding: .onceAttached)
+        let first = FakePreviewTargetHandle()
+        try sink.attach(first)
+        sink.detach(first)
+        sink.present(frame(1)) {}
+        #expect(sink.pending.isEmpty)
+
+        try sink.attach(FakePreviewTargetHandle())
+        sink.present(frame(2)) {}
+        #expect(sink.pending.map(\.frame) == [frame(2)])
+    }
+
+    @Test("detaching a target that is not a fake records nothing and lets go of nothing")
+    func foreignDetachIsIgnored() throws {
+        let sink = InMemoryPreviewSink(holding: .onceAttached)
+        try sink.attach(FakePreviewTargetHandle())
+        sink.detach(ForeignPreviewTarget())
+
+        #expect(sink.detached.isEmpty)
+        sink.present(frame(1)) {}
+        #expect(sink.pending.map(\.frame) == [frame(1)], "the attached target is still attached, so the frame is held")
+    }
 }
 
 private final class ForeignPreviewTarget: PreviewTargetHandle, Sendable {
