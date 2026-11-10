@@ -8,6 +8,7 @@ import TestSupport
 public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
     private struct State {
         var descriptor: SurfaceDescriptor?
+        var capture: CameraCapture?
         var onFrame: (@Sendable (CapturedSurface) -> Void)?
         var onEnd: (@Sendable (CaptureEnd) -> Void)?
         var startError: CaptureSessionError?
@@ -27,6 +28,8 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
 
     public var isRunning: Bool { state.current.onFrame != nil }
     public var descriptor: SurfaceDescriptor? { state.current.descriptor }
+    /// The capture the most recent `start` received.
+    public var capture: CameraCapture? { state.current.capture }
     public var startCount: Int { state.current.startCount }
     public var stopCount: Int { state.current.stopCount }
 
@@ -36,6 +39,7 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
 
     public func start(
         descriptor: SurfaceDescriptor,
+        capture: CameraCapture,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws -> any CaptureSessionHandle {
@@ -43,6 +47,7 @@ public final class FakeCaptureSessionGateway: CaptureSessionGateway, Sendable {
             state.startCount += 1
             if let error = state.startError { throw error }
             state.descriptor = descriptor
+            state.capture = capture
             state.onFrame = onFrame
             state.onEnd = onEnd
         }

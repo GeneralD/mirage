@@ -44,6 +44,7 @@ final class LingeringCaptureGateway: CaptureSessionGateway, Sendable {
 
     func start(
         descriptor: SurfaceDescriptor,
+        capture: CameraCapture,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws -> any CaptureSessionHandle {
