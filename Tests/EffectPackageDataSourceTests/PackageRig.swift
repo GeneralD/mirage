@@ -84,6 +84,7 @@ final class MovableDirectories: AppDirectoriesProvider, Sendable {
     }
 
     var effectsDirectory: String { path.current }
+    var diagnosticsDirectory: String { "/diagnostics" }
 
     func move(to newPath: String) {
         path.set(newPath)

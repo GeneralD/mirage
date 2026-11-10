@@ -8,6 +8,10 @@ public protocol AppDirectoriesProvider: Sendable {
     /// The folder `.lens` packages are dropped into: `~/Library/Application Support/<host
     /// bundle id>/Effects` (epic #42, D2). It need not exist yet; the first listing creates it.
     var effectsDirectory: String { get }
+
+    /// The folder the app writes support reports into: `~/Library/Application Support/<host
+    /// bundle id>/Diagnostics`, a sibling of the effects folder. It need not exist yet; the writer creates it.
+    var diagnosticsDirectory: String { get }
 }
 
 public enum AppDirectoriesProviderKey: TestDependencyKey {
@@ -24,6 +28,11 @@ extension DependencyValues {
 private struct UnimplementedAppDirectoriesProvider: AppDirectoriesProvider {
     var effectsDirectory: String {
         reportIssue("AppDirectoriesProvider.effectsDirectory not implemented")
+        return ""
+    }
+
+    var diagnosticsDirectory: String {
+        reportIssue("AppDirectoriesProvider.diagnosticsDirectory not implemented")
         return ""
     }
 }
