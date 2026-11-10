@@ -124,6 +124,13 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
         try previewSink.attach(target)
     }
 
+    /// A pass-through of `PreviewSink.detach`, as `attachPreview` is of `attach`: which view
+    /// is attached is the preview's state, so this touches none of the executor-confined
+    /// state above and needs no main thread.
+    public func detachPreview(_ target: any PreviewTargetHandle) {
+        previewSink.detach(target)
+    }
+
     public func stop() {
         // First, from the caller's context: every pass of the run this ends is abandoned
         // now — one already started, or one a tick still under way starts after this

@@ -223,4 +223,83 @@ struct FramePipelinePreviewTests {
         #expect(rig.surfaces.liveCount == 0)
         #expect(rig.surfaces.refusedReleases == 0)
     }
+
+    // MARK: Detach
+
+    @Test("detachPreview hands the attached target to the sink once, unchanged")
+    func detachHandsTheTargetToTheSinkOnce() throws {
+        let rig = Rig(capacity: 4)
+        let target = FakePreviewTargetHandle()
+        try rig.preview.attach(target)
+
+        rig.subject.detachPreview(target)
+
+        #expect(rig.preview.detached.map(ObjectIdentifier.init) == [ObjectIdentifier(target)])
+    }
+
+    @Test("a frame presented after the view is detached is shown undrawn, and its lease ends with the drain")
+    func frameAfterDetachCompletesAtOnce() async throws {
+        let rig = Rig(capacity: 4)
+        try await started(rig)
+        try rig.attachPreview()
+        rig.subject.detachPreview(try #require(rig.preview.attached.first))
+
+        let request = try await pass(rig, 0, at: 1_000, answering: .success(()))
+
+        #expect(rig.preview.presented.values.map(\.frame) == [request.output], "the frame is still handed to the preview")
+        #expect(rig.preview.pending.isEmpty, "with no view attached the preview completes the frame inside present")
+        #expect(rig.surfaces.liveCount == 0)
+        #expect(rig.surfaces.refusedReleases == 0)
+    }
+
+    @Test("a frame on the preview when it is detached keeps its lease until the preview's completion")
+    func frameShownBeforeDetachOutlivesIt() async throws {
+        let rig = Rig(capacity: 4)
+        try await started(rig)
+        try rig.attachPreview()
+        _ = try await pass(rig, 0, at: 1_000, answering: .success(()))
+        let shown = try rig.presentation(0)
+
+        rig.subject.detachPreview(try #require(rig.preview.attached.first))
+        rig.executor.drain()
+        #expect(rig.surfaces.liveCount == 1, "the detach does not complete a frame the preview still holds")
+
+        #expect(rig.completePresentation(shown))
+        #expect(rig.surfaces.liveCount == 0)
+        #expect(rig.surfaces.refusedReleases == 0)
+    }
+
+    @Test("detaching before any view is attached changes nothing for the frames after it")
+    func detachWithNothingAttachedLeavesLaterFramesAlone() async throws {
+        let rig = Rig(capacity: 4)
+        try await started(rig)
+
+        rig.subject.detachPreview(FakePreviewTargetHandle())
+        let request = try await pass(rig, 0, at: 1_000, answering: .success(()))
+
+        #expect(rig.preview.presented.values.map(\.frame) == [request.output])
+        #expect(rig.preview.pending.isEmpty, "with no view attached the frame completes inside present")
+        #expect(rig.surfaces.liveCount == 0)
+        #expect(rig.surfaces.refusedReleases == 0)
+    }
+
+    @Test("stop after a detach still defers the pool reset to the completion of the frame shown before it")
+    func stopWaitsForAFrameShownBeforeDetach() async throws {
+        let rig = Rig(capacity: 4)
+        try await started(rig)
+        try rig.attachPreview()
+        let request = try await pass(rig, 0, at: 1_000, answering: .success(()))
+        let stray = try #require(rig.surfaces.inner.frame(at: HostTimestamp(nanoseconds: 9)))
+
+        rig.subject.detachPreview(try #require(rig.preview.attached.first))
+        rig.subject.stop()
+        rig.executor.drain()
+        #expect(rig.surfaces.liveCount == 2, "resetting the pool now would free the surface the preview still draws from")
+        #expect(rig.surfaces.inner.pool.handle(for: request.output.token) != nil)
+
+        #expect(rig.completePresentation(try rig.presentation(0)))
+        #expect(rig.surfaces.inner.pool.handle(for: stray.token) == nil, "the reset stop deferred ran with the completion")
+        #expect(rig.surfaces.liveCount == 0)
+        #expect(rig.surfaces.refusedReleases == 0, "the completion ended its lease before the reset, not after it")
+    }
 }
