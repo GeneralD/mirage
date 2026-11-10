@@ -53,8 +53,9 @@ public enum EffectSelectionOutcome: Sendable, Hashable {
     case unavailable(EffectPackageProblem?)
 }
 
-/// What the menu needs to know, in one value: the rows, the chosen effect and how the
-/// last attempt to run it went. The outcome is `nil` while the newest attempt has not been
+/// What the menu needs to know, in one value: the rows, the chosen effect, how the last attempt
+/// to run it went and the parameters of the chosen effect (in declaration order; empty when it
+/// declares none). The outcome is `nil` while the newest attempt has not been
 /// answered: a state can be published in that time (a listing that needs no `prepare`
 /// arrives meanwhile, or the answer for the effect chosen before arrives while the new
 /// choice is still being remembered), and the last answer then belongs to a request that
@@ -63,10 +64,18 @@ public struct EffectCatalogState: Sendable, Hashable {
     public let entries: [EffectCatalogEntry]
     public let selection: EffectID
     public let outcome: EffectSelectionOutcome?
+    /// The parameters the chosen effect declares, each with its current value, in the order the
+    /// manifest declares them; empty when it declares none. They arrive in the same state as the
+    /// selection they belong to, so the panel never pairs a parameter with another effect's choice.
+    public let parameters: [EffectParameterState]
 
-    public init(entries: [EffectCatalogEntry], selection: EffectID, outcome: EffectSelectionOutcome? = nil) {
+    public init(
+        entries: [EffectCatalogEntry], selection: EffectID, outcome: EffectSelectionOutcome? = nil,
+        parameters: [EffectParameterState] = []
+    ) {
         self.entries = entries
         self.selection = selection
         self.outcome = outcome
+        self.parameters = parameters
     }
 }

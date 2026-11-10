@@ -40,9 +40,11 @@ extension EffectThumbnail {
 }
 
 extension EffectCatalogState {
-    /// The state of a menu that lists `entries` and has chosen the first of them.
-    public static func fixture(_ entries: [EffectCatalogEntry], outcome: EffectSelectionOutcome? = nil) -> EffectCatalogState {
-        EffectCatalogState(entries: entries, selection: entries[0].id, outcome: outcome)
+    /// The state of a menu that lists `entries` and has chosen the first of them, with `parameters` for that choice.
+    public static func fixture(
+        _ entries: [EffectCatalogEntry], outcome: EffectSelectionOutcome? = nil, parameters: [EffectParameterState] = []
+    ) -> EffectCatalogState {
+        EffectCatalogState(entries: entries, selection: entries[0].id, outcome: outcome, parameters: parameters)
     }
 }
 
