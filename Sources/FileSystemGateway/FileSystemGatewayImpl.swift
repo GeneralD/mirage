@@ -38,4 +38,8 @@ public struct FileSystemGatewayImpl: FileSystemGateway {
     public func writeString(_ text: String, to path: String) throws {
         try text.write(toFile: path, atomically: true, encoding: .utf8)
     }
+
+    public func writeData(_ data: Data, to path: String) throws {
+        try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
 }

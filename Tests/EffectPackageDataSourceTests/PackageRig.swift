@@ -74,6 +74,7 @@ struct ReversingFileSystemGateway: FileSystemGateway {
     func readData(_ path: String, upTo maxLength: Int) throws -> Data { try base.readData(path, upTo: maxLength) }
     func createDirectory(_ path: String) throws { try base.createDirectory(path) }
     func writeString(_ text: String, to path: String) throws { try base.writeString(text, to: path) }
+    func writeData(_ data: Data, to path: String) throws { try base.writeData(data, to: path) }
 }
 
 /// An `AppDirectoriesProvider` whose folder the test moves between two calls.
