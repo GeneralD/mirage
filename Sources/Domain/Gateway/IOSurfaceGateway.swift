@@ -1,7 +1,7 @@
 import Dependencies
 
-/// Thin pass-through to IOSurface: allocation, Mach port rights, identity and
-/// raw fills. Pool bookkeeping (slots, generations, capacity) is
+/// Thin pass-through to IOSurface: allocation, Mach port rights, identity, raw
+/// fills and raw pixel reads and writes. Pool bookkeeping (slots, generations, capacity) is
 /// `SurfacePoolDataSource`'s job; this port never decides anything.
 public protocol IOSurfaceGateway: Sendable {
     /// `descriptor.bytesPerRow` is a minimum. IOSurface keeps an explicit stride
@@ -21,6 +21,12 @@ public protocol IOSurfaceGateway: Sendable {
     func descriptor(_ surface: any SurfaceHandle) -> SurfaceDescriptor
     /// Fills every byte of the surface (slate frames, test fixtures).
     func fill(_ surface: any SurfaceHandle, with byte: UInt8) throws
+    /// Returns the surface's memory as it is. The length is `bytesPerRow * height`: each row
+    /// keeps its stride, and the padding at the end of each row is included.
+    func readBytes(_ surface: any SurfaceHandle) throws -> [UInt8]
+    /// Writes `bytes` over the surface's memory, only when `bytes.count` equals `bytesPerRow * height`.
+    /// Otherwise throws `SurfaceError.sizeMismatch(expected:actual:)` and leaves the surface unchanged.
+    func writeBytes(_ bytes: [UInt8], to surface: any SurfaceHandle) throws
 }
 
 public enum IOSurfaceGatewayKey: TestDependencyKey {
@@ -62,6 +68,16 @@ private struct UnimplementedIOSurfaceGateway: IOSurfaceGateway {
 
     func fill(_ surface: any SurfaceHandle, with byte: UInt8) throws {
         reportIssue("IOSurfaceGateway.fill not implemented")
+        throw SurfaceError.foreignHandle
+    }
+
+    func readBytes(_ surface: any SurfaceHandle) throws -> [UInt8] {
+        reportIssue("IOSurfaceGateway.readBytes not implemented")
+        throw SurfaceError.foreignHandle
+    }
+
+    func writeBytes(_ bytes: [UInt8], to surface: any SurfaceHandle) throws {
+        reportIssue("IOSurfaceGateway.writeBytes not implemented")
         throw SurfaceError.foreignHandle
     }
 }

@@ -1,11 +1,13 @@
 import Domain
 
-/// An in-memory surface: identity, geometry and the last byte it was filled
-/// with. Identity is the object itself (`===`), as with a real `IOSurface`.
+/// An in-memory surface: identity, geometry, the last byte it was filled
+/// with and its pixel bytes. Identity is the object itself (`===`), as with a real `IOSurface`.
 public final class FakeSurfaceHandle: SurfaceHandle, Sendable {
     public let id: UInt32
     public let descriptor: SurfaceDescriptor
     private let fillByte = Locked<UInt8?>(nil)
+    /// `nil` until something is written or filled; `bytes()` reads that as zeros.
+    private let content = Locked<[UInt8]?>(nil)
 
     public init(id: UInt32, descriptor: SurfaceDescriptor = .hd720) {
         self.id = id
@@ -18,6 +20,16 @@ public final class FakeSurfaceHandle: SurfaceHandle, Sendable {
 
     func fill(with byte: UInt8) {
         fillByte.set(byte)
+        content.set([UInt8](repeating: byte, count: descriptor.byteCount))
+    }
+
+    /// The pixel bytes as they are now: `descriptor.byteCount` zeros until something is written or filled.
+    func bytes() -> [UInt8] {
+        content.current ?? [UInt8](repeating: 0, count: descriptor.byteCount)
+    }
+
+    func store(_ bytes: [UInt8]) {
+        content.set(bytes)
     }
 }
 
@@ -84,5 +96,16 @@ public final class FakeIOSurfaceGateway: IOSurfaceGateway, Sendable {
     public func fill(_ surface: any SurfaceHandle, with byte: UInt8) throws {
         if let error = state.current.fillError { throw error }
         try (surface as? FakeSurfaceHandle).orThrow(SurfaceError.foreignHandle).fill(with: byte)
+    }
+
+    public func readBytes(_ surface: any SurfaceHandle) throws -> [UInt8] {
+        try (surface as? FakeSurfaceHandle).orThrow(SurfaceError.foreignHandle).bytes()
+    }
+
+    public func writeBytes(_ bytes: [UInt8], to surface: any SurfaceHandle) throws {
+        let fake = try (surface as? FakeSurfaceHandle).orThrow(SurfaceError.foreignHandle)
+        try (bytes.count == fake.descriptor.byteCount)
+            .orThrow(SurfaceError.sizeMismatch(expected: fake.descriptor.byteCount, actual: bytes.count))
+        fake.store(bytes)
     }
 }
