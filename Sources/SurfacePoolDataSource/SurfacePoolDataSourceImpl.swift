@@ -72,6 +72,35 @@ extension SurfacePoolDataSourceImpl: SurfacePool {
         tenant(for: token)?.descriptor
     }
 
+    /// The stride is the surface's own `bytesPerRow`, so a surface allocated wider than its rows is padded
+    /// as the gateway reports it, never as `width * 4` would have it.
+    public func upload(_ image: StillImage, to token: SurfaceToken) -> Bool {
+        guard let target = tenant(for: token),
+            target.descriptor.width == image.width,
+            target.descriptor.height == image.height,
+            target.descriptor.pixelFormat == .bgra32,
+            let padded = SurfaceRows.padded(
+                image.bgra, width: target.descriptor.width, height: target.descriptor.height,
+                bytesPerRow: target.descriptor.bytesPerRow)
+        else { return false }
+        do {
+            try gateway.writeBytes(padded, to: target.handle)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public func download(from token: SurfaceToken) -> StillImage? {
+        guard let target = tenant(for: token),
+            let bytes = try? gateway.readBytes(target.handle),
+            let packed = SurfaceRows.packed(
+                bytes, width: target.descriptor.width, height: target.descriptor.height,
+                bytesPerRow: target.descriptor.bytesPerRow)
+        else { return nil }
+        return StillImage(width: target.descriptor.width, height: target.descriptor.height, bgra: packed)
+    }
+
     @discardableResult
     public func release(_ token: SurfaceToken) -> Bool {
         guard tenant(for: token) != nil else { return false }
