@@ -25,41 +25,49 @@ fi
 screen="$1"
 out="$2"
 
-lock="$(git rev-parse --git-common-dir)/hk-shot"
 pid=""
-owned=0
 
 cleanup() {
     [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
-    [ "$owned" -eq 1 ] && rm -rf "$lock"
     return 0
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Take the slot: mkdir is atomic; a slot whose holder is gone is reclaimed.
+# Take the slot: flock(2) on fd 9, a file under the repository's common git directory. macOS ships no
+# flock(1), so python3 (from the command line tools swift needs) takes the lock on the descriptor this
+# shell opened. The lock belongs to that open file, and the kernel drops it when the last process holding
+# the file is gone: a gallery that dies, even by SIGKILL, never strands the slot, and there is no holder
+# to reclaim. Nothing this starts inherits fd 9, so a view-gallery left behind does not hold the slot.
+exec 9>>"$(git rev-parse --git-common-dir)/hk-shot.lock"
 waited=0
-until mkdir "$lock" 2>/dev/null; do
-    holder="$(cat "$lock/pid" 2>/dev/null || true)"
-    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
-        rm -rf "$lock"
-        continue
+while :; do
+    status=0
+    /usr/bin/python3 -c '
+import fcntl, sys
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.exit(75)
+' || status=$?
+    [ "$status" -eq 0 ] && break
+    if [ "$status" -ne 75 ]; then
+        printf 'gallery: cannot take the screenshot slot (python3 exited %d)\n' "$status" >&2
+        exit 1
     fi
     printf 'gallery: the screenshot slot is busy, waiting (%ds)\n' "$waited" >&2
     sleep 5
     waited=$((waited + 5))
 done
-owned=1
-printf '%s\n' "$$" > "$lock/pid"
 
-swift build --product view-gallery >&2
-"$(swift build --show-bin-path)/view-gallery" "$screen" &
+swift build --product view-gallery >&2 9>&-
+"$(swift build --show-bin-path)/view-gallery" "$screen" 9>&- &
 pid=$!
 
 tries=0
 last=""
-until last="$(scripts/shot "$out" --pid "$pid" 2>&1)"; do
+until last="$(scripts/shot "$out" --pid "$pid" 9>&- 2>&1)"; do
     if ! kill -0 "$pid" 2>/dev/null; then
         printf 'gallery: view-gallery ended before a window of screen "%s" showed\n' "$screen" >&2
         exit 1
