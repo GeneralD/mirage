@@ -4,7 +4,9 @@ import Domain
 
 /// The onboarding window's Combine pipeline over `ExtensionInstallUseCase`: it owns the one
 /// task that observes the extension install status, and turns the UseCase's `updates()`
-/// stream into the `install` publisher the window subscribes to.
+/// stream into the `install` publisher the window subscribes to. It also hands the window's
+/// two one-shot actions, opening the approval settings and exporting the support log, to their
+/// UseCases.
 ///
 /// `start()` and `stop()` only queue their command and return. The commands are carried out one
 /// at a time, in call order, by the task the Interactor starts when it is made (`supervise`). A
@@ -12,6 +14,10 @@ import Domain
 /// never lands after the new one began, and a stopped Interactor forwards nothing more. `install`
 /// is a `CurrentValueSubject` underneath: it holds nothing before the first `start()`, and after
 /// that the latest status, which a subscriber that arrives later still receives first.
+///
+/// `openApprovalSettings(_:)` and `exportSupportLog(_:)` are not queued. Each awaits its UseCase
+/// and returns the answer as it is, and neither begins nor ends the observation. Both UseCases are
+/// resolved once, in `init`, so the Interactor never resolves a dependency at call time.
 public final class OnboardingInteractorImpl: Sendable {
     private enum Command: Sendable {
         case start
@@ -20,9 +26,12 @@ public final class OnboardingInteractorImpl: Sendable {
 
     private let relay: StateRelay
     private let commands: AsyncStream<Command>.Continuation
+    private let installUseCase: any ExtensionInstallUseCase
+    private let supportLogUseCase: any SupportLogUseCase
 
     public init() {
         @Dependency(\.extensionInstallUseCase) var useCase
+        @Dependency(\.supportLogUseCase) var supportLog
         let relay = StateRelay()
         let (stream, commands) = AsyncStream<Command>.makeStream()
         self.relay = relay
@@ -30,6 +39,8 @@ public final class OnboardingInteractorImpl: Sendable {
         // One immutable copy for the task: it captures a `let` (a Sendable existential), not the
         // mutable `@Dependency` binding, and nothing that reaches `self`, so `deinit` can run.
         let installs: any ExtensionInstallUseCase = useCase
+        self.installUseCase = installs
+        self.supportLogUseCase = supportLog
         Task { await Self.supervise(stream, useCase: installs, relay: relay) }
     }
 
@@ -47,6 +58,14 @@ extension OnboardingInteractorImpl: OnboardingInteractor {
 
     public func stop() {
         commands.yield(.stop)
+    }
+
+    public func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        await installUseCase.openApprovalSettings(pane)
+    }
+
+    public func exportSupportLog(_ context: SupportReportContext) async -> SupportLogExportOutcome {
+        await supportLogUseCase.export(context)
     }
 }
 

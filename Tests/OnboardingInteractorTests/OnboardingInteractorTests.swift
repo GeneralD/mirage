@@ -120,22 +120,65 @@ struct OnboardingInteractorTests {
 
         await useCase.updateTerminations.waitForCount(1)
     }
-}
 
-/// An Interactor over a `FakeExtensionInstallUseCase`, built inside `withDependencies`
-/// (the subject captures the dependencies of the scope it is made in).
-private struct InteractorRig {
-    let useCase: FakeExtensionInstallUseCase
-    let subject: OnboardingInteractorImpl
+    @Test("openApprovalSettings hands the pane to the UseCase and returns its true or false answer")
+    func openApprovalSettingsReturnsUseCaseAnswer() async {
+        let accepting = InteractorRig(opensSettings: true)
+        let refusing = InteractorRig(opensSettings: false)
 
-    init(status: InstallStatus = .notInstalled) {
-        useCase = FakeExtensionInstallUseCase(status: status)
-        subject = Self.make(useCase: useCase)
+        #expect(await accepting.subject.openApprovalSettings(.privacyAndSecurity) == true)
+        #expect(await refusing.subject.openApprovalSettings(.loginItemsAndExtensions) == false)
+        #expect(accepting.useCase.openedPanes.values == [.privacyAndSecurity])
+        #expect(refusing.useCase.openedPanes.values == [.loginItemsAndExtensions])
     }
 
-    static func make(useCase: FakeExtensionInstallUseCase) -> OnboardingInteractorImpl {
+    @Test("exportSupportLog hands the context to the UseCase and returns its saved or failed answer")
+    func exportSupportLogReturnsUseCaseAnswer() async {
+        let context = SupportReportContext(install: .installed, effectStatus: "compile failed", compilerMessage: "error: unknown type")
+        let saved = SupportLogExportOutcome.saved(path: "/fake/support-log.txt", lineCount: 3, logError: nil)
+        let failed = SupportLogExportOutcome.failed(description: "disk full")
+        let savingRig = InteractorRig(exportOutcome: saved)
+        let failingRig = InteractorRig(exportOutcome: failed)
+
+        #expect(await savingRig.subject.exportSupportLog(context) == saved)
+        #expect(await failingRig.subject.exportSupportLog(context) == failed)
+        #expect(savingRig.supportLog.contexts.values == [context])
+        #expect(failingRig.supportLog.contexts.values == [context])
+    }
+
+    @Test("openApprovalSettings and exportSupportLog work without start, and begin no observation")
+    func actionsWorkWithoutStart() async {
+        let rig = InteractorRig()
+
+        #expect(await rig.subject.openApprovalSettings(.privacyAndSecurity) == true)
+        #expect(
+            await rig.subject.exportSupportLog(SupportReportContext(install: .notInstalled))
+                == .saved(path: "/fake/support-log.txt", lineCount: 0, logError: nil))
+        #expect(rig.useCase.updateRequests.count == 0, "neither action asks the UseCase for updates")
+    }
+}
+
+/// An Interactor over a `FakeExtensionInstallUseCase` and a `FakeSupportLogUseCase`, built inside
+/// `withDependencies` (the subject captures the dependencies of the scope it is made in).
+private struct InteractorRig {
+    let useCase: FakeExtensionInstallUseCase
+    let supportLog: FakeSupportLogUseCase
+    let subject: OnboardingInteractorImpl
+
+    init(
+        status: InstallStatus = .notInstalled,
+        opensSettings: Bool = true,
+        exportOutcome: SupportLogExportOutcome = .saved(path: "/fake/support-log.txt", lineCount: 0, logError: nil)
+    ) {
+        useCase = FakeExtensionInstallUseCase(status: status, opensSettings: opensSettings)
+        supportLog = FakeSupportLogUseCase(outcome: exportOutcome)
+        subject = Self.make(useCase: useCase, supportLog: supportLog)
+    }
+
+    static func make(useCase: FakeExtensionInstallUseCase, supportLog: FakeSupportLogUseCase = FakeSupportLogUseCase()) -> OnboardingInteractorImpl {
         withDependencies {
             $0.extensionInstallUseCase = useCase
+            $0.supportLogUseCase = supportLog
         } operation: {
             OnboardingInteractorImpl()
         }
