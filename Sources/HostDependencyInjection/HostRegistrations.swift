@@ -10,6 +10,7 @@ import CommonDependencyInjection
 import ControlsInteractor
 import Dependencies
 import Domain
+import EffectAuthoringUseCase
 import EffectCatalogUseCase
 import EffectInteractor
 import EffectPackageDataSource
@@ -94,6 +95,10 @@ extension ExtensionInstallUseCaseKey: DependencyKey {
 
 extension EffectCatalogUseCaseKey: DependencyKey {
     public static let liveValue: any EffectCatalogUseCase = EffectCatalogUseCaseImpl()
+}
+
+extension EffectAuthoringUseCaseKey: DependencyKey {
+    public static let liveValue: any EffectAuthoringUseCase = EffectAuthoringUseCaseImpl()
 }
 
 extension SettingsUseCaseKey: DependencyKey {
