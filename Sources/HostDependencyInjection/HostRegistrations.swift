@@ -59,6 +59,10 @@ extension CameraControlUseCaseKey: DependencyKey {
     public static let liveValue: any CameraControlUseCase = CameraControlUseCaseImpl()
 }
 
+extension CameraSelectionUseCaseKey: DependencyKey {
+    public static let liveValue: any CameraSelectionUseCase = CameraSelectionUseCaseImpl()
+}
+
 extension ExtensionInstallUseCaseKey: DependencyKey {
     public static let liveValue: any ExtensionInstallUseCase = ExtensionInstallUseCaseImpl()
 }
