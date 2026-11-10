@@ -21,6 +21,7 @@ struct EffectCatalogOutcomeTests {
         let rig = Rig(persisted: glitch.id)
         let (run, watcher) = await rig.begin()
         rig.emit(.failure(.timeout), of: Rig.glitchSource, times: 5)
+        await rig.answer(2)  // the bundled effect is prepared in place of the switched-off one
         #expect(await rig.firstDisabled(in: watcher) == [glitch.id: .failure(.timeout)])
         await rig.stop(run)
     }
@@ -31,6 +32,7 @@ struct EffectCatalogOutcomeTests {
         let (run, watcher) = await rig.begin()
         rig.emit(.failure(.timeout), of: Rig.glitchSource, times: 4)
         rig.emit(.failure(.accessRevoked), of: Rig.glitchSource)
+        await rig.answer(2)
         #expect(await rig.firstDisabled(in: watcher) == [glitch.id: .failure(.accessRevoked)], "the four timeouts counted for nothing")
         await rig.stop(run)
     }
@@ -43,6 +45,7 @@ struct EffectCatalogOutcomeTests {
         rig.emit(.success(Rig.fast), of: Rig.glitchSource)
         rig.emit(.failure(.timeout), of: Rig.glitchSource, times: 4)
         rig.emit(.failure(.accessRevoked), of: Rig.glitchSource)
+        await rig.answer(2)
         #expect(await rig.firstDisabled(in: watcher) == [glitch.id: .failure(.accessRevoked)], "no streak of five was ever in a row")
         await rig.stop(run)
     }
@@ -52,6 +55,7 @@ struct EffectCatalogOutcomeTests {
         let rig = Rig(persisted: glitch.id)
         let (run, watcher) = await rig.begin()
         rig.emit(.success(Rig.slow), of: Rig.glitchSource, times: 30)
+        await rig.answer(2)
         #expect(await rig.firstDisabled(in: watcher) == [glitch.id: .overBudget])
         await rig.stop(run)
     }
@@ -64,6 +68,7 @@ struct EffectCatalogOutcomeTests {
         rig.emit(.success(Rig.fast), of: Rig.glitchSource)
         rig.emit(.success(Rig.slow), of: Rig.glitchSource, times: 29)
         rig.emit(.failure(.accessRevoked), of: Rig.glitchSource)
+        await rig.answer(2)
         #expect(await rig.firstDisabled(in: watcher) == [glitch.id: .failure(.accessRevoked)], "58 slow passes, but never 30 in a row")
         await rig.stop(run)
     }
@@ -76,6 +81,7 @@ struct EffectCatalogOutcomeTests {
         let (run, watcher) = await rig.begin()
         rig.emit(.failure(.timeout), of: Rig.otherSource, times: 5)
         rig.emit(.failure(.accessRevoked), of: Rig.glitchSource)
+        await rig.answer(2)
         #expect(await rig.firstDisabled(in: watcher) == [glitch.id: .failure(.accessRevoked)])
         await rig.stop(run)
     }
@@ -89,6 +95,7 @@ struct EffectCatalogOutcomeTests {
         _ = await choice.value
         rig.emit(.failure(.timeout), of: Rig.glitchSource, times: 5)
         rig.emit(.failure(.accessRevoked), of: Rig.otherSource)
+        await rig.answer(3)
         #expect(await rig.firstDisabled(in: watcher) == [other.id: .failure(.accessRevoked)], "only the chosen effect's passes count")
         await rig.stop(run)
     }
@@ -102,6 +109,7 @@ struct EffectCatalogOutcomeTests {
         await rig.answer(2)
         _ = await choice.value
         rig.emit(.failure(.accessRevoked), of: Rig.glitchSource)
+        await rig.answer(3)
         #expect(await rig.firstDisabled(in: watcher) == [glitch.id: .failure(.accessRevoked)], "the bundled timeouts switched nothing off")
         await rig.stop(run)
     }
@@ -113,11 +121,12 @@ struct EffectCatalogOutcomeTests {
         let rig = Rig(persisted: glitch.id)
         let (run, watcher) = await rig.begin()
         rig.emit(.failure(.timeout), of: Rig.glitchSource, times: 5)
+        await rig.answer(2)  // the bundled effect is prepared in place of the switched-off one
         #expect(await rig.firstDisabled(in: watcher) == [glitch.id: .failure(.timeout)])
         await rig.stop(run)
 
         let again = rig.start()
-        await rig.answer(2)  // the new run prepares the persisted choice for itself
+        await rig.answer(3)  // the new run prepares the persisted choice for itself
         let fresh = rig.watch()
         await fresh.states.waitForCount(1)
         #expect(fresh.states.values == [Rig.state(selection: glitch)], "nothing is off, so the state says nothing about health")
