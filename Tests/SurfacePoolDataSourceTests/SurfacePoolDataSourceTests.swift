@@ -198,6 +198,8 @@ private struct StrideRoundingGateway: IOSurfaceGateway {
     func resolve(_ right: MachSendRight) throws -> any SurfaceHandle { try base.resolve(right) }
     func identifier(_ surface: any SurfaceHandle) -> UInt32 { base.identifier(surface) }
     func fill(_ surface: any SurfaceHandle, with byte: UInt8) throws { try base.fill(surface, with: byte) }
+    func readBytes(_ surface: any SurfaceHandle) throws -> [UInt8] { try base.readBytes(surface) }
+    func writeBytes(_ bytes: [UInt8], to surface: any SurfaceHandle) throws { try base.writeBytes(bytes, to: surface) }
 
     func descriptor(_ surface: any SurfaceHandle) -> SurfaceDescriptor {
         let resolved = base.descriptor(surface)

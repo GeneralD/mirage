@@ -19,4 +19,6 @@ public enum SurfaceError: Error, Sendable, Hashable {
     case lockFailed(code: Int)
     /// The handle was not produced by this gateway.
     case foreignHandle
+    /// A byte array whose length is not the surface's `bytesPerRow * height`.
+    case sizeMismatch(expected: Int, actual: Int)
 }
