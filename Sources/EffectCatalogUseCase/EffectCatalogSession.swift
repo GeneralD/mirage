@@ -131,6 +131,13 @@ actor EffectCatalogSession {
         }
     }
 
+    /// Chooses the ready neighbour of the chosen effect, as `select` chooses it. The neighbour is found in the same
+    /// actor turn that `select` starts from, so no other message can move the choice in between.
+    func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome? {
+        guard let id = effectNeighbor(of: selection, in: entries, step: step) else { return nil }
+        return await select(id)
+    }
+
     /// Sets one parameter of the chosen effect (`docs/hackathon/mvp-cd/specs/parameters.md`). It prepares nothing, and it
     /// is not `async`: the turn has no suspension, so the model update, the publish and the runtime write cannot be
     /// interleaved with another message.

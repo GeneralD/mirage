@@ -50,6 +50,10 @@ public protocol EffectCatalogUseCase: Sendable {
     ///   or a new `run()`.
     func select(_ id: EffectID) async -> EffectSelectionOutcome
 
+    /// Chooses the ready effect after (or before) the chosen one in catalog order, wrapping around, and answers as
+    /// `select` does. `nil` when no other ready effect exists: nothing changes.
+    func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome?
+
     /// Lifts the switch-off of `id`, a package effect that health switched off, and chooses it again. The record is
     /// forgotten and the settings written without it before the choice is made, so the choice runs instead of being
     /// refused; its passes are counted afresh, as for any choice. An effect with no record is only chosen: nothing is written.
@@ -98,6 +102,11 @@ private struct UnimplementedEffectCatalogUseCase: EffectCatalogUseCase {
     func select(_ id: EffectID) async -> EffectSelectionOutcome {
         reportIssue("EffectCatalogUseCase.select not implemented")
         return .unavailable(nil)
+    }
+
+    func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome? {
+        reportIssue("EffectCatalogUseCase.selectAdjacent not implemented")
+        return nil
     }
 
     func reenable(_ id: EffectID) async -> EffectSelectionOutcome {

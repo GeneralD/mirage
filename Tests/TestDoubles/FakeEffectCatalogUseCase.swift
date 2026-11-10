@@ -6,7 +6,8 @@ import TestSupport
 /// opened later starts with it, as the live stream starts from the current value (a fake
 /// made without a state yields nothing until the first publish). `select` records the id
 /// and answers the outcome the test set, `.prepared` unless told otherwise. `reenable` records its id in `reenables`
-/// and answers the same outcome, without recording a selection.
+/// and answers the same outcome, without recording a selection. `selectAdjacent` records its step in `adjacentSteps`
+/// and answers what `script(adjacentOutcome:)` set (`nil` for no neighbour), `.prepared` unless told otherwise.
 ///
 /// `run()` records its start and then does what the live one does: it runs until the
 /// caller's task is cancelled (`suspendUntilCancelled`) and records that cancel, so a
@@ -45,6 +46,7 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
         var continuations: [Int: AsyncStream<EffectCatalogState>.Continuation] = [:]
         var nextStream = 0
         var selectOutcome: EffectSelectionOutcome
+        var adjacentOutcome: EffectSelectionOutcome? = .prepared
         var runCount = 0
         var holdsCancelledRuns = false
         var heldRuns: [Held] = []
@@ -70,6 +72,8 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     public let parameterCalls = Collector<ParameterCall>()
     /// The ids `reenable` was called with, in call order. A re-enable is not a `select`, so it is recorded here only.
     public let reenables = Collector<EffectID>()
+    /// The steps `selectAdjacent` was called with, in call order.
+    public let adjacentSteps = Collector<EffectStep>()
 
     public init(state: EffectCatalogState? = nil, selectOutcome: EffectSelectionOutcome = .prepared) {
         self.state = Locked(State(current: state, selectOutcome: selectOutcome))
@@ -86,6 +90,11 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     /// What `select` answers from now on.
     public func script(selectOutcome: EffectSelectionOutcome) {
         state.withLock { $0.selectOutcome = selectOutcome }
+    }
+
+    /// What `selectAdjacent` answers from now on: `nil` for a step that has no neighbour to choose.
+    public func script(adjacentOutcome: EffectSelectionOutcome?) {
+        state.withLock { $0.adjacentOutcome = adjacentOutcome }
     }
 
     public func run() async {
@@ -139,6 +148,11 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     public func select(_ id: EffectID) async -> EffectSelectionOutcome {
         selections.append(id)
         return state.withLock { $0.selectOutcome }
+    }
+
+    public func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome? {
+        adjacentSteps.append(step)
+        return state.withLock { $0.adjacentOutcome }
     }
 
     public func reenable(_ id: EffectID) async -> EffectSelectionOutcome {

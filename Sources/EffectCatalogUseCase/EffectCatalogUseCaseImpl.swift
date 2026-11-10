@@ -41,6 +41,10 @@ extension EffectCatalogUseCaseImpl: EffectCatalogUseCase {
         await session.select(id)
     }
 
+    public func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome? {
+        await session.selectAdjacent(step)
+    }
+
     public func reenable(_ id: EffectID) async -> EffectSelectionOutcome {
         await session.reenable(id)
     }
