@@ -51,10 +51,17 @@ import Foundation
 /// `.sourceMissing`; a package is read through `EffectPackages.package(_:)`, which
 /// answers `.ready` (its source), `.broken` (its problem) or nothing at all — a folder
 /// that is gone — which is `.manifestMissing`, the first thing a package lacks.
+///
+/// **`check(packageAt:)`** reads the package at a path the author gave and compiles its shader through
+/// `ShaderCompiler`, the port the runtime compiles through. A missing package is `.packageNotFound(path:)`
+/// here, where `source(of:)` answers `.manifestMissing`: the path is what the author asked for, so the path
+/// is what is missing. A successful compile is let go, and nothing is cached. **`scaffold(named:in:)`** is a
+/// pass-through to `EffectPackages.scaffold`.
 public struct EffectPackageRepositoryImpl: Sendable {
     @Dependency(\.effectPackages) private var effectPackages
     @Dependency(\.effectWatch) private var effectWatch
     @Dependency(\.bundledEffects) private var bundledEffects
+    @Dependency(\.shaderCompiler) private var shaderCompiler
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
@@ -90,6 +97,22 @@ extension EffectPackageRepositoryImpl: EffectPackageRepository {
 
     public func openEffectsFolder() {
         effectPackages.openFolder()
+    }
+
+    public func check(packageAt path: String) async -> Result<EffectSource, AuthoringFailure> {
+        switch await effectPackages.package(atPath: path) {
+        case .ready(let package):
+            switch await shaderCompiler.compile(package.source) {
+            case .success: return .success(package.source)
+            case .failure(let diagnostics): return .failure(.compile(message: diagnostics.message))
+            }
+        case .broken(_, let problem): return .failure(.package(problem))
+        case nil: return .failure(.packageNotFound(path: path))
+        }
+    }
+
+    public func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem> {
+        await effectPackages.scaffold(named: name, in: folder)
     }
 }
 
