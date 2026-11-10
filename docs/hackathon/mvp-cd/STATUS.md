@@ -1,15 +1,15 @@
-# STATUS — mvp-cd（tick 3）
+# STATUS — mvp-cd（tick 4）
 
 ## 一言
 
-スケジューラが回り、task issue は 18 件マージ済み（契約 5 件と合わせて 23/222）。worker が gate をバックグラウンドで回して結果を受け取れず止まる問題は、foreground 実行のルールで解消した。regen と research は 0 件。
+マージは 69/223 で、tick 3 から 46 件進んだ。regen は 0 件。research は 2 件出て、どちらも回答済み（#97 は画面ロック、#153 は macOS のカメラ format）。CI に新しい flake が 1 件出ている（`HostAbsenceIntegrationTests` の 60 秒制限）。worker が失敗したジョブだけを再実行してしのいでいる。
 
 ## 前回のメッセージ以降
 
-- 初回のスケジューラ（`wf_05c13c48-b92`）は、gate をバックグラウンドで回した worker が結果を受け取れずに終わり、StructuredOutput を返さない agent の例外で全体が落ちた。WORKER.md に「何もバックグラウンドで回さない」ルールを足し、agent の失敗を握る `safe()` を入れて再起動した（`wf_2e9d269f-a4c`）
-- flake（`MachLoopbackTests.swift:217`）は #301 / PR #304 で直った
-- S-TARGETS（#85）がマージされ、新しい module の器（21 library と executable 2 本）がそろった。依存していた issue が順に着手可能になっている
-- 契約 epic のマージ後レビュー（Copilot）に対応した: #81 は #83 で解決済み、#82 は運用どおり、#83 と #305 は follow-up PR #309 で修正（`as_type` を予約、組み込み名を GPU スモークで固定、正規化コメントを冪等に）
+- #97（ギャラリーの撮影）: 窓が撮れなかった原因は画面ロック（02:50 の時点で `CGSSessionScreenIsLocked = Yes`）。ロック中の UI task は、ゲートが green ならコードを先にマージし、撮影は `hk:shot-pending` で持ち越す。ロックが解けたらまとめて撮って読む（Q8、b098f4f）
+- #153（カメラ format）: macOS には `.inputPriority` がない。選んだ format を保つため、device のロックを稼働中ずっと保持する follow-up として #357 を起票した（DECISIONS、27b07c3）
+- #213: CI 待ちで時間切れになったが、修理役が「作り直さず PR を仕上げる」手順を契約に足して再投入し、マージされた
+- 新しい flake: `HostAbsenceIntegrationTests.swift:321`（`leaseBalancePropertyCoverage`）が、CI の負荷で 60 秒の制限を超える（#154、#186、#214 で発生）。50 個の seed を 1 つのテストで直列に回している。計測中で、#301 と同じく最優先の task にする
 
 ## 進捗
 
@@ -18,26 +18,26 @@
 | E1 契約 | 5/5 |
 | E12 flake | 1/1 |
 | E0 targets | 1/1 |
-| E0 gallery | 2/4 |
-| E2 parameter runtime | 5/21 |
-| E4 health | 7/26 |
-| E5 camera | 1/23 |
-| E6 menu と設定 | 1/32 |
+| E0 gallery | 3/4 |
+| E6 menu と設定 | 18/32 |
+| E7 onboarding | 12/32 |
+| E4 health | 10/26 |
+| E2 parameter runtime | 8/21 |
+| E5 camera | 8/24 |
+| E8 preview | 2/22 |
+| E9 authoring | 1/35 |
 | E3 parameter UI | 0/11 |
-| E7 onboarding | 0/32 |
-| E8 preview | 0/22 |
-| E9 authoring | 0/35 |
 | E10 hygiene | 0/6 |
 | E11 gaps | 0/3 |
-| 合計 | 23/222 |
+| 合計 | 69/223 |
 
-- 着手可能 46 件、worker は Haiku で 6 並列
+- worker は Haiku で 6 並列。スケジューラは `wf_2e9d269f-a4c`
 - differentiator 維持 · bold 0/2 · horizon 0/9
 
 ## 直近の tick
 
-- クローズ: #85 #86 #87 #88 #89 #90 #91 #92 #122 #124 #125 #126 #127 #128 #129 #148 #171 #301
-- worker の PR は各自マージ済み。うちオーケストレーターが関わったもの: PR #303（#126、衝突を worker が解消）、#304（#301）、#309（レビュー follow-up）
+- クローズ（tick 3 以降）: #93–#96、#130–#132、#149–#154、#156、#172–#187、#190、#203–#214、#235、#236、#257
+- 起票: #357（カメラ format のロック保持）
 
 ## 判断キュー（暫定で走行中）
 
@@ -50,6 +50,7 @@
 
 ## 最近の決定
 
-- worker は gate と CI を foreground で待つ（Bash timeout 600000、時間切れなら再実行）。subagent はバックグラウンドのコマンドの完了を受け取れないため（WORKER.md）
+- 選んだカメラ format は、device のロックを `startRunning` から `stop()` まで保持して保つ。preset の経路ではロックを取らない（#357）
+- ロック中の UI task は撮影を持ち越してマージする（Q8）
+- worker は gate と CI を foreground で待つ（WORKER.md）
 - 失敗は契約の修理と 1 回の再投入で扱い、worker のモデルは上げない（DECISIONS `[run]`）
-- MSL の組み込み名（`uint2`、`float2x2`、`atomic_uint`、`metal`、`abs`）は予約しない。生成 struct のテキストが使わないので、フィールド名にしてもコンパイルでき、オフセットもずれない（#309）
