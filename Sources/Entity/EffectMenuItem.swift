@@ -12,12 +12,15 @@ public struct EffectMenuItem: Sendable, Hashable, Identifiable {
     public let isSelected: Bool
     /// `false` for a package that failed to load.
     public let isEnabled: Bool
+    /// The title of the Re-enable operation for a disabled effect; `nil` when the row offers no such operation.
+    public let reenableTitle: String?
 
-    public init(id: EffectID, title: String, detail: String?, isSelected: Bool, isEnabled: Bool) {
+    public init(id: EffectID, title: String, detail: String?, isSelected: Bool, isEnabled: Bool, reenableTitle: String? = nil) {
         self.id = id
         self.title = title
         self.detail = detail
         self.isSelected = isSelected
         self.isEnabled = isEnabled
+        self.reenableTitle = reenableTitle
     }
 }

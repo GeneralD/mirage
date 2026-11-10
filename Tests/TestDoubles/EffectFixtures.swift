@@ -40,11 +40,15 @@ extension EffectThumbnail {
 }
 
 extension EffectCatalogState {
-    /// The state of a menu that lists `entries` and has chosen the first of them, with `parameters` for that choice.
+    /// The state of a menu that lists `entries` and has chosen the first of them, with `parameters` for that choice, nothing
+    /// switched off and the GPU available unless `disabled` or `isGPUUnavailable` says otherwise.
     public static func fixture(
-        _ entries: [EffectCatalogEntry], outcome: EffectSelectionOutcome? = nil, parameters: [EffectParameterState] = []
+        _ entries: [EffectCatalogEntry], outcome: EffectSelectionOutcome? = nil, parameters: [EffectParameterState] = [],
+        disabled: [EffectID: EffectDisableReason] = [:], isGPUUnavailable: Bool = false
     ) -> EffectCatalogState {
-        EffectCatalogState(entries: entries, selection: entries[0].id, outcome: outcome, parameters: parameters)
+        EffectCatalogState(
+            entries: entries, selection: entries[0].id, outcome: outcome, parameters: parameters, disabled: disabled,
+            isGPUUnavailable: isGPUUnavailable)
     }
 }
 
