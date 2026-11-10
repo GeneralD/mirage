@@ -55,6 +55,7 @@ struct AppRouterTests {
         let interactor = FakeEffectInteractor(state: .fixture([chromatic]))
         let router = withDependencies {
             $0.effectInteractor = interactor
+            $0.controlsInteractor = FakeControlsInteractor()
         } operation: {
             AppRouter()
         }
@@ -165,6 +166,7 @@ private struct RouterRig {
 private func makePresenter(over interactor: FakeEffectInteractor) -> MenuBarPresenter {
     withDependencies {
         $0.effectInteractor = interactor
+        $0.controlsInteractor = FakeControlsInteractor()
     } operation: {
         MenuBarPresenter()
     }
@@ -176,6 +178,7 @@ private func makePresenter(over interactor: FakeEffectInteractor) -> MenuBarPres
 private func startedRouter(over interactor: FakeEffectInteractor) async -> AppRouter {
     let router = withDependencies {
         $0.effectInteractor = interactor
+        $0.controlsInteractor = FakeControlsInteractor()
     } operation: {
         AppRouter()
     }

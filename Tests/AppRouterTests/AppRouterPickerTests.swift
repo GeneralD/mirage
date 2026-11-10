@@ -226,6 +226,7 @@ private struct PickerRig {
             makeMenuBarPresenter: {
                 withDependencies {
                     $0.effectInteractor = interactor
+                    $0.controlsInteractor = FakeControlsInteractor()
                 } operation: {
                     MenuBarPresenter()
                 }

@@ -339,6 +339,7 @@ private struct PresenterRig {
 private func makePresenter(over interactor: SpyEffectInteractor) -> MenuBarPresenter {
     withDependencies {
         $0.effectInteractor = interactor
+        $0.controlsInteractor = FakeControlsInteractor()
     } operation: {
         MenuBarPresenter()
     }
