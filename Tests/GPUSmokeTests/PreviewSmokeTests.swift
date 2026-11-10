@@ -121,10 +121,11 @@ struct PreviewSmokeTests {
 
     /// Draws once and waits for its one completion.
     private func drawOnce(
-        _ texture: any TextureHandle, with kernel: any LibraryHandle, into layer: any PreviewLayerHandle, on context: any GPUContextHandle
+        _ texture: any TextureHandle, original: any TextureHandle, with kernel: any LibraryHandle,
+        into layer: any PreviewLayerHandle, on context: any GPUContextHandle
     ) async throws -> GPUCompletion {
         let completions = Collector<GPUCompletion>()
-        try preview.draw(texture, with: kernel, into: layer, on: context) { completions.append($0) }
+        try preview.draw(texture, original: original, with: kernel, into: layer, on: context) { completions.append($0) }
         await completions.waitForCount(1)
         #expect(completions.count == 1)
         return try #require(completions.values.first)
@@ -141,21 +142,32 @@ struct PreviewSmokeTests {
         let surface = try surfaces.create(.bgra(width: 64, height: 36))
         try surfaces.fill(surface, with: 0xFF)
         let texture = try metal.bind(surface, on: context)
+        let originalSurface = try surfaces.create(.bgra(width: 64, height: 36))
+        try surfaces.fill(originalSurface, with: 0x80)
+        let original = try metal.bind(originalSurface, on: context)
 
-        let completion = try await drawOnce(texture, with: kernel, into: layer, on: context)
+        let completion = try await drawOnce(texture, original: original, with: kernel, into: layer, on: context)
 
         #expect(completion.error == nil)
         // Only a drawable actually taken sizes the layer; without one the pass is never encoded.
         #expect(metalLayer.drawableSize == CGSize(width: 32, height: 18))
         // The frame is bound read-only at index 0: a swapped binding would write into it.
         #expect(try Self.rows(of: surface).allSatisfy { $0.allSatisfy { $0 == [0xFF, 0xFF, 0xFF, 0xFF] } })
-        #expect(throws: GPUError.foreignHandle) { try preview.draw(texture, with: kernel, into: layer, on: FakeGPUContextHandle()) { _ in } }
+        // The original, bound at index 2, is only read: it comes back as it went in.
+        #expect(try Self.rows(of: originalSurface).allSatisfy { $0.allSatisfy { $0 == [0x80, 0x80, 0x80, 0x80] } })
         #expect(throws: GPUError.foreignHandle) {
-            try preview.draw(texture, with: FakeLibraryHandle(source: "x"), into: layer, on: context) { _ in }
+            try preview.draw(texture, original: original, with: kernel, into: layer, on: FakeGPUContextHandle()) { _ in }
+        }
+        #expect(throws: GPUError.foreignHandle) {
+            try preview.draw(texture, original: original, with: FakeLibraryHandle(source: "x"), into: layer, on: context) { _ in }
+        }
+        #expect(throws: GPUError.foreignHandle) {
+            try preview.draw(texture, original: ForeignTexture(), with: kernel, into: layer, on: context) { _ in }
         }
         #expect(throws: PreviewError.foreignTarget) {
-            try preview.draw(texture, with: kernel, into: ForeignLayer(), on: context) { _ in }
+            try preview.draw(texture, original: original, with: kernel, into: ForeignLayer(), on: context) { _ in }
         }
+        try metal.unbind(original)
         try metal.unbind(texture)
     }
 
@@ -168,16 +180,18 @@ struct PreviewSmokeTests {
         let metalLayer = try #require(layer.backing as? CAMetalLayer)
         let kernel = try metal.compile(source: PreviewKernel.source, options: PreviewKernel.options, on: context).get()
         let texture = try metal.bind(try surfaces.create(.bgra(width: 64, height: 36)), on: context)
+        let original = try metal.bind(try surfaces.create(.bgra(width: 64, height: 36)), on: context)
 
-        #expect(try await drawOnce(texture, with: kernel, into: layer, on: context).error == nil)
+        #expect(try await drawOnce(texture, original: original, with: kernel, into: layer, on: context).error == nil)
         #expect(metalLayer.drawableSize == CGSize(width: 32, height: 18))
 
         view.setFrameSize(NSSize(width: 18, height: 32))
-        #expect(try await drawOnce(texture, with: kernel, into: layer, on: context).error == nil)
+        #expect(try await drawOnce(texture, original: original, with: kernel, into: layer, on: context).error == nil)
         // The drawable follows the view's backing scale, which is not the layer's contentsScale here (1 while
         // the drawable came out at 2 x the points on the host this failed on), so the expectation is the view's
         // own backing size for its new bounds.
         #expect(metalLayer.drawableSize == view.convertToBacking(view.bounds).size)
+        try metal.unbind(original)
         try metal.unbind(texture)
     }
 
@@ -263,6 +277,10 @@ struct PreviewSmokeTests {
             (0..<IOSurfaceGetWidth(raw)).map { x in (0..<4).map { base[y * stride + x * 4 + $0] } }
         }
     }
+}
+
+private final class ForeignTexture: TextureHandle, Sendable {
+    var backing: AnyObject { self }
 }
 
 private final class ForeignLayer: PreviewLayerHandle, Sendable {
