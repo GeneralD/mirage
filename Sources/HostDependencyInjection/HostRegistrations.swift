@@ -7,6 +7,7 @@ import CameraInteractor
 import CameraPermissionDataSource
 import CameraRepository
 import CommonDependencyInjection
+import ControlsInteractor
 import Dependencies
 import Domain
 import EffectCatalogUseCase
@@ -25,13 +26,20 @@ import FramePipelineUseCase
 import FrameTransportDataSource
 import GPURenderDataSource
 import HarnessInteractor
+import HotkeyDataSource
+import HotkeyGateway
+import LoginItemDataSource
+import LoginItemGateway
 import MetalGateway
 import MetalKitPreviewGateway
 import PreferencesDataStore
 import PreviewDataSource
 import PreviewRepository
+import SettingsInteractor
 import SettingsRepository
+import SettingsUseCase
 import ShaderCompilationDataSource
+import StoreMaintenanceDataStore
 import SystemExtensionGateway
 import UserDefaultsGateway
 import VirtualCameraRepository
@@ -51,6 +59,14 @@ extension EffectInteractorKey: DependencyKey {
     public static let liveValue: any EffectInteractor = EffectInteractorImpl()
 }
 
+extension ControlsInteractorKey: DependencyKey {
+    public static let liveValue: any ControlsInteractor = ControlsInteractorImpl()
+}
+
+extension SettingsInteractorKey: DependencyKey {
+    public static let liveValue: any SettingsInteractor = SettingsInteractorImpl()
+}
+
 extension FramePipelineUseCaseKey: DependencyKey {
     public static let liveValue: any FramePipelineUseCase = FramePipelineUseCaseImpl()
 }
@@ -65,6 +81,10 @@ extension ExtensionInstallUseCaseKey: DependencyKey {
 
 extension EffectCatalogUseCaseKey: DependencyKey {
     public static let liveValue: any EffectCatalogUseCase = EffectCatalogUseCaseImpl()
+}
+
+extension SettingsUseCaseKey: DependencyKey {
+    public static let liveValue: any SettingsUseCase = SettingsUseCaseImpl()
 }
 
 extension CameraRepositoryKey: DependencyKey {
@@ -155,6 +175,18 @@ extension CameraPreferencesKey: DependencyKey {
     public static let liveValue: any CameraPreferences = CameraPreferencesDataStoreImpl()
 }
 
+extension StoreMaintenanceKey: DependencyKey {
+    public static let liveValue: any StoreMaintenance = StoreMaintenanceDataStoreImpl()
+}
+
+extension HotkeysKey: DependencyKey {
+    public static let liveValue: any Hotkeys = HotkeyDataSourceImpl()
+}
+
+extension LoginItemKey: DependencyKey {
+    public static let liveValue: any LoginItem = LoginItemDataSourceImpl()
+}
+
 extension CaptureSessionGatewayKey: DependencyKey {
     public static let liveValue: any CaptureSessionGateway = CaptureSessionGatewayImpl()
 }
@@ -205,4 +237,12 @@ extension AppDirectoriesProviderKey: DependencyKey {
 
 extension KeyValueStoreGatewayKey: DependencyKey {
     public static let liveValue: any KeyValueStoreGateway = KeyValueStoreGatewayImpl()
+}
+
+extension HotkeyGatewayKey: DependencyKey {
+    public static let liveValue: any HotkeyGateway = HotkeyGatewayImpl()
+}
+
+extension LoginItemGatewayKey: DependencyKey {
+    public static let liveValue: any LoginItemGateway = LoginItemGatewayImpl()
 }
