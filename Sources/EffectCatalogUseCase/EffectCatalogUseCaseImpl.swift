@@ -41,6 +41,14 @@ extension EffectCatalogUseCaseImpl: EffectCatalogUseCase {
         await session.select(id)
     }
 
+    public func setParameter(_ id: String, to value: EffectParameterValue) async {
+        await session.setParameter(id, to: value)
+    }
+
+    public func resetParameters() async {
+        await session.resetParameters()
+    }
+
     public func openEffectsFolder() {
         packages.openEffectsFolder()
     }

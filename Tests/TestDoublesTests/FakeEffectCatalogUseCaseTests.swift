@@ -174,6 +174,16 @@ struct FakeEffectCatalogUseCaseTests {
         #expect(useCase.selections.values == [.package("glitch"), .package("broken"), .package("gone")])
     }
 
+    @Test("setParameter and resetParameters are recorded in the order they were called, with the id and the value")
+    func parameterCallsAreRecordedInOrder() async {
+        let useCase = FakeEffectCatalogUseCase()
+        await useCase.setParameter("strength", to: .float(0.25))
+        await useCase.resetParameters()
+        await useCase.setParameter("rings", to: .int(9))
+
+        #expect(useCase.parameterCalls.values == [.set("strength", .float(0.25)), .reset, .set("rings", .int(9))])
+    }
+
     @Test("openEffectsFolder is recorded")
     func openFolderIsRecorded() {
         let useCase = FakeEffectCatalogUseCase()

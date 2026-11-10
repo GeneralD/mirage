@@ -50,6 +50,19 @@ public protocol EffectCatalogUseCase: Sendable {
     ///   or a new `run()`.
     func select(_ id: EffectID) async -> EffectSelectionOutcome
 
+    /// Sets the parameter `id` of the chosen effect to `value`. The value is clamped and snapped by
+    /// its declaration, the state shows the result, and the runtime is handed the new block in the
+    /// same step. It prepares nothing, and a value the parameter already has changes nothing.
+    ///
+    /// Ignored, with a developer log line, while no effect is chosen (no run yet, or a choice still
+    /// being made). Rejected the same way, and never handed to the runtime, when `id` is not a
+    /// parameter the chosen effect declares or `value` is not of its kind.
+    func setParameter(_ id: String, to value: EffectParameterValue) async
+
+    /// Puts every parameter of the chosen effect back to its default, under the rules of
+    /// `setParameter(_:to:)`: nothing changes when they already are the defaults.
+    func resetParameters() async
+
     /// Shows the effects folder to the user.
     func openEffectsFolder()
 }
@@ -78,6 +91,14 @@ private struct UnimplementedEffectCatalogUseCase: EffectCatalogUseCase {
     func select(_ id: EffectID) async -> EffectSelectionOutcome {
         reportIssue("EffectCatalogUseCase.select not implemented")
         return .unavailable(nil)
+    }
+
+    func setParameter(_ id: String, to value: EffectParameterValue) async {
+        reportIssue("EffectCatalogUseCase.setParameter not implemented")
+    }
+
+    func resetParameters() async {
+        reportIssue("EffectCatalogUseCase.resetParameters not implemented")
     }
 
     func openEffectsFolder() {

@@ -23,7 +23,14 @@ import TestSupport
 /// The streams end when the run returns, as live, so a held run still has its streams open.
 /// `runEvents` records when each run began and returned, in one order, so a test can tell
 /// "the next run began after the old one returned" from "while it was still returning".
+/// `setParameter` and `resetParameters` are recorded in `parameterCalls`, one order for both, and answer at once.
 public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
+    /// One call to `setParameter` or `resetParameters`, in the order the calls were made.
+    public enum ParameterCall: Sendable, Equatable {
+        case set(String, EffectParameterValue)
+        case reset
+    }
+
     /// When a `run()` call began or returned, counting the calls from 1.
     public enum RunEvent: Equatable, Sendable {
         case started(Int)
@@ -58,6 +65,8 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     public let selections = Collector<EffectID>()
     /// One entry per `openEffectsFolder()` call.
     public let folderOpens = Collector<Void>()
+    /// The parameter calls, in call order.
+    public let parameterCalls = Collector<ParameterCall>()
 
     public init(state: EffectCatalogState? = nil, selectOutcome: EffectSelectionOutcome = .prepared) {
         self.state = Locked(State(current: state, selectOutcome: selectOutcome))
@@ -127,6 +136,14 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     public func select(_ id: EffectID) async -> EffectSelectionOutcome {
         selections.append(id)
         return state.withLock { $0.selectOutcome }
+    }
+
+    public func setParameter(_ id: String, to value: EffectParameterValue) async {
+        parameterCalls.append(.set(id, value))
+    }
+
+    public func resetParameters() async {
+        parameterCalls.append(.reset)
     }
 
     public func openEffectsFolder() {
