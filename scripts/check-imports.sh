@@ -30,6 +30,12 @@ gateway_allow() {
         HostTime)                 echo "Darwin" ;;
         RandomSource)             echo "" ;;
         AppDirectories)           echo "" ;;
+        HostEnvironment)          echo "" ;;
+        StandardStreams)          echo "" ;;
+        HotkeyGateway)            echo "Carbon" ;;
+        LoginItemGateway)         echo "ServiceManagement" ;;
+        LogStoreGateway)          echo "OSLog" ;;
+        ImageIOGateway)           echo "ImageIO CoreGraphics" ;;
         *)                        return 1 ;;
     esac
 }
@@ -44,6 +50,8 @@ allowed_for() {
         AppRouter)                    echo "$COMMON $UI_FRAMEWORKS Views" ;;  # the wireframe builds the windows it opens
         App)                          echo "$COMMON $UI_FRAMEWORKS HostDependencyInjection AppRouter Views" ;;
         DevHarness)                   echo "$COMMON AppKit SwiftUI Views AppRouter HostDependencyInjection" ;;
+        ViewGallery)                  echo "$COMMON AppKit SwiftUI Views AppRouter Presenters" ;;  # the app's windows over fixture data
+        LensTool)                     echo "$COMMON Presenters HostDependencyInjection" ;;  # the command-line tool: its text and the live graph
         ExtensionApp)                 echo "$COMMON $UI_FRAMEWORKS ExtensionDependencyInjection" ;;
         Presenters)                   echo "$COMMON" ;;  # display state: no AppKit / SwiftUI / MetalKit
         *)
