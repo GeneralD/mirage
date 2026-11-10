@@ -15,16 +15,35 @@ struct FakeEffectRuntimeRepositoryTests {
 
     @Test("prepare suspends until the test completes it, with the result the test chooses")
     func prepareIsManual() async throws {
-        let task = Task { await runtime.prepare(effect) }
+        let block = EffectParameterBlock(bytes: Array(1...32))
+        let task = Task { await runtime.prepare(effect, parameters: block) }
         await runtime.prepareRequests.waitForCount(1)
         let request = try #require(runtime.prepareRequests.last)
         #expect(request.effect == effect)
+        #expect(request.parameters == block, "the initial block is recorded with the selection")
         #expect(runtime.pendingCount == 1)
 
         #expect(runtime.completePrepare(request, with: .failure(.compileFailed)))
         #expect(await task.value.failure == .compileFailed)
         #expect(!runtime.completePrepare(request, with: .success(())), "a second completion has nothing to resume")
         #expect(runtime.pendingCount == 0)
+    }
+
+    @Test("setParameters never suspends: every write is recorded in call order and nothing is pending")
+    func parameterWritesAreRecorded() {
+        let first = EffectParameterBlock(bytes: Array(1...16))
+        let second = EffectParameterBlock(bytes: Array(17...32))
+        let other = EffectSource(name: "other", source: "kernel void effect() {}")
+        runtime.setParameters(first, of: effect)
+        runtime.setParameters(second, of: other)
+
+        #expect(
+            runtime.parameterWrites.values == [
+                FakeEffectRuntimeRepository.ParameterWrite(block: first, source: effect),
+                FakeEffectRuntimeRepository.ParameterWrite(block: second, source: other),
+            ])
+        #expect(runtime.pendingCount == 0)
+        #expect(runtime.prepareRequests.count == 0, "a write is not a prepare")
     }
 
     @Test("applies complete in the order the test chooses")
@@ -74,7 +93,7 @@ struct FakeEffectRuntimeRepositoryTests {
         let gate = Collector<Void>()
         let task = Task {
             await gate.waitForCount(1)
-            return await runtime.prepare(effect)
+            return await runtime.prepare(effect, parameters: .none)
         }
         task.cancel()
         gate.append(())
@@ -92,13 +111,13 @@ struct FakeEffectRuntimeRepositoryTests {
     func foreignRequestsAreRefused() async throws {
         let other = FakeEffectRuntimeRepository()
         // One caller at a time, so each repository numbers its prepare 1 and its apply 2.
-        let preparing = Task { await runtime.prepare(effect) }
+        let preparing = Task { await runtime.prepare(effect, parameters: .none) }
         await runtime.prepareRequests.waitForCount(1)
         let applying = Task {
             await runtime.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))
         }
         await runtime.applyRequests.waitForCount(1)
-        let strangerPreparing = Task { await other.prepare(effect) }
+        let strangerPreparing = Task { await other.prepare(effect, parameters: .none) }
         await other.prepareRequests.waitForCount(1)
         let strangerApplying = Task {
             await other.apply(input: frame(1), output: frame(2), frameContext: FrameContext(presentationTime: .zero, frameIndex: 1))

@@ -19,13 +19,15 @@ struct FakeGPURendererTests {
 
     @Test("a render suspends until the test completes it, with the answer the test chooses, exactly once")
     func renderIsManual() async throws {
-        let task = Task { await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(7)) }
+        let block = EffectParameterBlock(bytes: Array(1...48))
+        let task = Task { await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(7), parameters: block) }
         await renderer.requests.waitForCount(1)
         let request = try #require(renderer.requests.last)
         #expect(ObjectIdentifier(request.library) == ObjectIdentifier(library))
         #expect(request.input == token(1))
         #expect(request.output == token(2))
         #expect(request.uniforms == uniforms(7))
+        #expect(request.parameters == block, "the block the render was given is recorded as it came")
         #expect(renderer.pendingCount == 1)
 
         #expect(renderer.complete(request, with: .failure(.pageFault)))
@@ -40,7 +42,7 @@ struct FakeGPURendererTests {
         let render = { (frame: UInt32) in
             Task {
                 let answer = await renderer.render(
-                    library: library, input: token(Int(frame)), output: token(Int(frame) + 10), uniforms: uniforms(frame))
+                    library: library, input: token(Int(frame)), output: token(Int(frame) + 10), uniforms: uniforms(frame), parameters: .none)
                 answers.append((frame, answer))
             }
         }
@@ -65,14 +67,14 @@ struct FakeGPURendererTests {
     func scriptedAnswer() async throws {
         renderer.respond(with: .failure(.invalidResource))
 
-        let answer = await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1))
+        let answer = await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1), parameters: .none)
 
         #expect(answer == .failure(.invalidResource))
         #expect(renderer.requests.count == 1)
         #expect(renderer.pendingCount == 0)
 
         renderer.respond(with: nil)
-        let task = Task { await renderer.render(library: library, input: token(3), output: token(4), uniforms: uniforms(2)) }
+        let task = Task { await renderer.render(library: library, input: token(3), output: token(4), uniforms: uniforms(2), parameters: .none) }
         await renderer.requests.waitForCount(2)
         #expect(renderer.pendingCount == 1)
         renderer.complete(try #require(renderer.requests.last), with: .success(timing))
@@ -81,7 +83,7 @@ struct FakeGPURendererTests {
 
     @Test("a caller cancelled while suspended keeps waiting, as the live renderer does, and receives the answer the test completes")
     func cancellationDoesNotResume() async throws {
-        let task = Task { await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1)) }
+        let task = Task { await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1), parameters: .none) }
         await renderer.requests.waitForCount(1)
         let request = try #require(renderer.requests.last)
 
@@ -100,7 +102,7 @@ struct FakeGPURendererTests {
         let gate = Collector<Void>()
         let task = Task {
             await gate.waitForCount(1)
-            return await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1))
+            return await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1), parameters: .none)
         }
         task.cancel()
         gate.append(())
@@ -116,8 +118,8 @@ struct FakeGPURendererTests {
     @Test("a request another FakeGPURenderer issued is refused, and the renders of both fakes stay suspended")
     func foreignRequestIsRefused() async throws {
         let other = FakeGPURenderer()
-        let mine = Task { await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1)) }
-        let theirs = Task { await other.render(library: library, input: token(3), output: token(4), uniforms: uniforms(2)) }
+        let mine = Task { await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1), parameters: .none) }
+        let theirs = Task { await other.render(library: library, input: token(3), output: token(4), uniforms: uniforms(2), parameters: .none) }
         await renderer.requests.waitForCount(1)
         await other.requests.waitForCount(1)
         let own = try #require(renderer.requests.last)
@@ -137,9 +139,9 @@ struct FakeGPURendererTests {
     @Test("requests are recorded in call order: the ids count up from 1 whether answered at once or suspended")
     func requestsAreNumberedInCallOrder() async throws {
         renderer.respond(with: .success(timing))
-        _ = await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1))
+        _ = await renderer.render(library: library, input: token(1), output: token(2), uniforms: uniforms(1), parameters: .none)
         renderer.respond(with: nil)
-        let task = Task { await renderer.render(library: library, input: token(3), output: token(4), uniforms: uniforms(2)) }
+        let task = Task { await renderer.render(library: library, input: token(3), output: token(4), uniforms: uniforms(2), parameters: .none) }
         await renderer.requests.waitForCount(2)
 
         #expect(renderer.requests.values.map(\.id) == [1, 2])

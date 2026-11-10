@@ -41,7 +41,8 @@ struct PreviewSmokeTests {
         let textures = [try metal.bind(input, on: context), try metal.bind(output, on: context)]
         let size = surfaces.descriptor(output)
         let uniforms = EffectUniforms(time: 0, frameIndex: 0, resolution: SIMD2(Float(size.width), Float(size.height)), seed: 0)
-        let pass = ComputePass(kernel: kernel, textures: textures, uniforms: uniforms, grid: .covering(width: size.width, height: size.height))
+        let pass = ComputePass(
+            kernel: kernel, textures: textures, uniforms: uniforms, parameters: .none, grid: .covering(width: size.width, height: size.height))
         let completion = try await GPUSmokeSupport.run(pass, on: context, through: metal)
         #expect(completion.error == nil)
         try textures.forEach(metal.unbind)

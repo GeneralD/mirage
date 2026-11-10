@@ -9,12 +9,18 @@ public struct ComputePass: Sendable {
     public let textures: [any TextureHandle]
     /// Bound at buffer index 0.
     public let uniforms: EffectUniforms
+    /// Bound at buffer index 1 by value, on every pass: an effect without parameters binds
+    /// `EffectParameterBlock.none`, so the Gateway has no case to tell apart.
+    public let parameters: EffectParameterBlock
     public let grid: DispatchGrid
 
-    public init(kernel: any LibraryHandle, textures: [any TextureHandle], uniforms: EffectUniforms, grid: DispatchGrid) {
+    public init(
+        kernel: any LibraryHandle, textures: [any TextureHandle], uniforms: EffectUniforms, parameters: EffectParameterBlock, grid: DispatchGrid
+    ) {
         self.kernel = kernel
         self.textures = textures
         self.uniforms = uniforms
+        self.parameters = parameters
         self.grid = grid
     }
 }

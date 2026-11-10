@@ -196,7 +196,8 @@ actor EffectCatalogSession {
             developerLog.record(.effect, "effect '\(source.name)' \(verb)")
         }
 
-        let answer = await runtime.prepare(source).selectionOutcome
+        // The empty block: this session keeps no parameter values for the effect.
+        let answer = await runtime.prepare(source, parameters: .none).selectionOutcome
         guard generation == mine else { return answer }
         prepared?.answer = answer
         publish()

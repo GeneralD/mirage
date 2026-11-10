@@ -27,9 +27,15 @@ struct StateFixture {
     // MARK: - The port's calls, started on their own task
 
     /// Starts `begin` on its own task. Nothing reaches the state until the executor is drained.
-    func begin(_ effect: EffectSource) -> Pending<EffectBegin> {
+    func begin(_ effect: EffectSource, parameters: EffectParameterBlock = .none) -> Pending<EffectBegin> {
         let subject = subject
-        return Pending { await subject.begin(effect) }
+        return Pending { await subject.begin(effect, parameters: parameters) }
+    }
+
+    /// Calls `setParameters` here and now: the port returns at once, so there is no task to start,
+    /// and what it queued on the executor runs at the next drain.
+    func setParameters(_ block: EffectParameterBlock, of effect: EffectSource) {
+        subject.setParameters(block, of: effect)
     }
 
     func settle(
@@ -63,7 +69,7 @@ struct StateFixture {
         return call
     }
 
-    func selected() -> Pending<Result<any LibraryHandle, EffectFailure>> {
+    func selected() -> Pending<EffectSelection> {
         let subject = subject
         return Pending { await subject.selected() }
     }
@@ -91,8 +97,8 @@ struct StateFixture {
 
     /// `begin` for an effect that is not cached: the ticket its compile settles under.
     @MainActor
-    func startCompile(_ effect: EffectSource) async throws -> Compile {
-        let ticket = try #require(try await answer(begin(effect)).ticket, "\(effect.name) was expected to need a compile")
+    func startCompile(_ effect: EffectSource, parameters: EffectParameterBlock = .none) async throws -> Compile {
+        let ticket = try #require(try await answer(begin(effect, parameters: parameters)).ticket, "\(effect.name) was expected to need a compile")
         return Compile(effect: effect, ticket: ticket)
     }
 
@@ -112,8 +118,8 @@ struct StateFixture {
 
     /// Prepares `effect` from scratch: begins it and settles a successful compile.
     @MainActor
-    func prepared(_ effect: EffectSource) async throws -> FakeLibraryHandle {
-        try await succeed(startCompile(effect)).library
+    func prepared(_ effect: EffectSource, parameters: EffectParameterBlock = .none) async throws -> FakeLibraryHandle {
+        try await succeed(startCompile(effect, parameters: parameters)).library
     }
 }
 
@@ -173,14 +179,20 @@ extension EffectAdmission {
 
     /// The library an `apply` would run, or `nil` when it is told a failure or has to compile.
     var library: (any LibraryHandle)? {
-        guard case .ready(.success(let library), _) = self else { return nil }
-        return library
+        guard case .ready(let selection, _) = self else { return nil }
+        return selection.library
     }
 
     /// The failure an `apply` would answer, or `nil` when it runs a library or has to compile.
     var failure: EffectFailure? {
-        guard case .ready(.failure(let failure), _) = self else { return nil }
-        return failure
+        guard case .ready(let selection, _) = self else { return nil }
+        return selection.failure
+    }
+
+    /// The block the pass runs with, or `nil` when the admission has to compile first.
+    var parameters: EffectParameterBlock? {
+        guard case .ready(let selection, _) = self else { return nil }
+        return selection.parameters
     }
 
     /// The effect to compile and its ticket, or `nil` when the selection has settled.
@@ -188,6 +200,11 @@ extension EffectAdmission {
         guard case .compile(let effect, let ticket, _) = self else { return nil }
         return Compile(effect: effect, ticket: ticket)
     }
+}
+
+extension EffectSelection {
+    var library: (any LibraryHandle)? { result.library }
+    var failure: EffectFailure? { result.failure }
 }
 
 extension Result where Success == any LibraryHandle, Failure == EffectFailure {

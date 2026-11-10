@@ -21,6 +21,7 @@ public final class FakeGPURenderer: GPURenderer, Sendable {
         public let input: SurfaceToken
         public let output: SurfaceToken
         public let uniforms: EffectUniforms
+        public let parameters: EffectParameterBlock
         /// The renderer that issued it: ids restart at 1 per instance, so the id alone cannot tell a stranger's request.
         fileprivate let origin: ObjectIdentifier
     }
@@ -57,13 +58,14 @@ public final class FakeGPURenderer: GPURenderer, Sendable {
     /// answered at once or waiting. (`Collector` takes its own lock and never calls
     /// back into `state`, so the nesting cannot deadlock.)
     public func render(
-        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms
+        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms, parameters: EffectParameterBlock
     ) async -> Answer {
         let origin = ObjectIdentifier(self)
         return await withCheckedContinuation { (continuation: Continuation) in
             let scripted = state.withLock { state -> Answer? in
                 let request = Request(
-                    id: state.nextID, library: library, input: input, output: output, uniforms: uniforms, origin: origin)
+                    id: state.nextID, library: library, input: input, output: output, uniforms: uniforms, parameters: parameters,
+                    origin: origin)
                 state.nextID += 1
                 requests.append(request)
                 guard let answer = state.scripted else {

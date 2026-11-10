@@ -2,10 +2,10 @@ import Dependencies
 import Domain
 
 /// The effect runtime's memory, confined to `FrameExecutor`: the compile cache, the
-/// selection, the ticket counter, the applies waiting for the selection and the
-/// session clock. Every transition runs as one executor step, so no two of them
-/// interleave and there is no lock and no actor (as in `GPURenderDataSource` and
-/// `SurfacePoolDataSource`). The rules are the `EffectRuntimeState` port's.
+/// selection, the parameter block of the effect it selects, the ticket counter, the applies
+/// waiting for the selection and the session clock. Every transition runs as one executor
+/// step, so no two of them interleave and there is no lock and no actor (as in
+/// `GPURenderDataSource` and `SurfacePoolDataSource`). The rules are the `EffectRuntimeState` port's.
 ///
 /// **The cache** is keyed by `(source, compile options, parameter layout)` — a `Hashable`
 /// key of the three, so two sources never share a library even if their hashes collide — and
@@ -31,6 +31,17 @@ import Domain
 /// the camera's pace, so each settlement says where it falls in its streak of
 /// consecutive failures and how long the streak was when it ended: the caller logs
 /// the first and the recovery, and the rest is only counted.
+///
+/// **The parameter block** is the newest `begin`'s: it arrives with the effect, `setParameters`
+/// replaces it, and a write addressed to any other effect is dropped (the whole `EffectSource`
+/// is compared, so an edited source is another effect to write to). It is handed out only
+/// together with a settled selection, read in the step that settles it: an `admit` that finds
+/// the selection settled gets the block as it is, and one that waits (or an `apply` waiting in
+/// `selected()`) gets the block of whatever it is released with, so a newer `begin` between the
+/// admission and the release can never pair its library with the older effect's layout. A
+/// retry of the newest effect keeps its block, and the bundled fallback, which declares no
+/// parameters, runs with the empty one. Handing a block out copies a reference, not its bytes,
+/// so a frame allocates nothing for it.
 public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     @Dependency(\.frameExecutor) private var executor
 
@@ -39,8 +50,12 @@ public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     private var selection = Selection.nothing
     /// The newest `begin`'s ticket; a compile settles the selection only under it.
     private var newest = EffectTicket(number: 0)
+    /// The effect of the newest `begin` (or of the fallback, or the retry, an `admit` took a
+    /// ticket for), and the block that effect runs with: the only effect a write may address.
+    private var newestEffect: EffectSource?
+    private var parameterBlock = EffectParameterBlock.none
     /// `admit`s and `selected`s waiting for the selection to settle, resumed in arrival order.
-    private var waiting: [@Sendable (Result<any LibraryHandle, EffectFailure>) -> Void] = []
+    private var waiting: [@Sendable (EffectSelection) -> Void] = []
     private var session: EffectSession?
     /// Consecutive compiles of the newest effect that failed for the environment's
     /// reasons (no GPU context, a compiler service fault). Only a
@@ -51,10 +66,19 @@ public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
 }
 
 extension EffectRuntimeStateDataSourceImpl: EffectRuntimeState {
-    public func begin(_ effect: EffectSource) async -> EffectBegin {
+    public func begin(_ effect: EffectSource, parameters block: EffectParameterBlock) async -> EffectBegin {
         await onExecutor { [self] in
             contextFailures = 0
+            // Before the ticket: a cache hit selects at once, and releases waiting callers with this block.
+            parameterBlock = block
             return takeTicket(for: effect)
+        }
+    }
+
+    public func setParameters(_ block: EffectParameterBlock, of effect: EffectSource) {
+        executor.run { [self] in
+            guard effect == newestEffect else { return }
+            parameterBlock = block
         }
     }
 
@@ -80,7 +104,7 @@ extension EffectRuntimeStateDataSourceImpl: EffectRuntimeState {
         }
     }
 
-    public func selected() async -> Result<any LibraryHandle, EffectFailure> {
+    public func selected() async -> EffectSelection {
         await withCheckedContinuation { continuation in
             executor.run { [self] in whenSettled { continuation.resume(returning: $0) } }
         }
@@ -94,6 +118,7 @@ extension EffectRuntimeStateDataSourceImpl {
     /// selection waiting for a compile that only this ticket may settle.
     private func takeTicket(for effect: EffectSource) -> EffectBegin {
         newest = EffectTicket(number: newest.number + 1)
+        newestEffect = effect
         guard let library = cache[CompileKey(effect)] else {
             selection = .compiling
             return .compile(newest)
@@ -129,13 +154,15 @@ extension EffectRuntimeStateDataSourceImpl {
         }
     }
 
-    /// Sets the selection; once it has settled, every waiting caller is resumed with it.
+    /// Sets the selection; once it has settled, every waiting caller is resumed with it
+    /// and the block of the effect it selects.
     private func select(_ next: Selection) {
         selection = next
         guard let settled = next.settled else { return }
         let resumed = waiting
         waiting = []
-        for resume in resumed { resume(settled) }
+        let released = EffectSelection(result: settled, parameters: parameterBlock)
+        for resume in resumed { resume(released) }
     }
 
     /// The effect an `admit` compiles itself: the fallback while nothing has been
@@ -148,9 +175,9 @@ extension EffectRuntimeStateDataSourceImpl {
         }
     }
 
-    private func whenSettled(_ resume: @escaping @Sendable (Result<any LibraryHandle, EffectFailure>) -> Void) {
+    private func whenSettled(_ resume: @escaping @Sendable (EffectSelection) -> Void) {
         guard let settled = selection.settled else { return waiting.append(resume) }
-        resume(settled)
+        resume(EffectSelection(result: settled, parameters: parameterBlock))
     }
 
     private func onExecutor<Value: Sendable>(_ body: @escaping @Sendable () -> Value) async -> Value {

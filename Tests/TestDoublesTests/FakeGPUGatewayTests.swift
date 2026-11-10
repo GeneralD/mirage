@@ -8,11 +8,12 @@ struct FakeGPUGatewayTests {
     private let gateway = FakeGPUGateway()
     private let textures = FakeTextureCacheGateway()
 
-    private func pass(seed: UInt32, on context: any GPUContextHandle) throws -> ComputePass {
+    private func pass(seed: UInt32, parameters: EffectParameterBlock = .none, on context: any GPUContextHandle) throws -> ComputePass {
         let texture = try textures.bind(FakeSurfaceHandle(id: seed), on: context)
         let uniforms = EffectUniforms(time: 0, frameIndex: 0, resolution: SIMD2(1280, 720), seed: seed)
         return ComputePass(
-            kernel: FakeLibraryHandle(source: "effect"), textures: [texture], uniforms: uniforms, grid: .covering(width: 1280, height: 720))
+            kernel: FakeLibraryHandle(source: "effect"), textures: [texture], uniforms: uniforms, parameters: parameters,
+            grid: .covering(width: 1280, height: 720))
     }
 
     @Test("passes complete in the order the test chooses, each exactly once")
@@ -91,8 +92,10 @@ struct FakeGPUGatewayTests {
     func foreignHandlesAreRefused() throws {
         let context = try gateway.makeContext()
         let valid = try pass(seed: 1, on: context)
-        let foreignKernel = ComputePass(kernel: ForeignLibraryHandle(), textures: valid.textures, uniforms: valid.uniforms, grid: valid.grid)
-        let foreignTexture = ComputePass(kernel: valid.kernel, textures: [ForeignTextureHandle()], uniforms: valid.uniforms, grid: valid.grid)
+        let foreignKernel = ComputePass(
+            kernel: ForeignLibraryHandle(), textures: valid.textures, uniforms: valid.uniforms, parameters: valid.parameters, grid: valid.grid)
+        let foreignTexture = ComputePass(
+            kernel: valid.kernel, textures: [ForeignTextureHandle()], uniforms: valid.uniforms, parameters: valid.parameters, grid: valid.grid)
 
         #expect(throws: GPUError.foreignHandle) { try gateway.encodeAndCommit(valid, on: ForeignContextHandle()) { _ in } }
         #expect(throws: GPUError.foreignHandle) { try gateway.encodeAndCommit(foreignKernel, on: context) { _ in } }
@@ -103,7 +106,8 @@ struct FakeGPUGatewayTests {
     @Test("a submission records the pass exactly as it was handed in")
     func submissionRecordsThePass() throws {
         let context = try gateway.makeContext()
-        let pass = try pass(seed: 42, on: context)
+        let block = EffectParameterBlock(bytes: Array(1...48))
+        let pass = try pass(seed: 42, parameters: block, on: context)
 
         try gateway.encodeAndCommit(pass, on: context) { _ in }
 
@@ -111,6 +115,7 @@ struct FakeGPUGatewayTests {
         #expect(ObjectIdentifier(recorded.kernel) == ObjectIdentifier(pass.kernel))
         #expect(recorded.textures.map { ObjectIdentifier($0) } == pass.textures.map { ObjectIdentifier($0) })
         #expect(recorded.uniforms == pass.uniforms)
+        #expect(recorded.parameters == block)
         #expect(recorded.grid == pass.grid)
     }
 

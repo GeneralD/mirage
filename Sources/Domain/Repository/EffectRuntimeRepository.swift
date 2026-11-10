@@ -11,10 +11,21 @@ import Dependencies
 /// compile and the render; the in-process compile cache, newest-wins and the
 /// bundled effect while nothing has been prepared live in `EffectRuntimeState`.
 public protocol EffectRuntimeRepository: Sendable {
-    /// Compiles `effect` (or finds it in the cache) so `apply` can run it.
-    /// Never on the main thread; a slow compile overtaken by a newer `prepare`
-    /// loses ("newest wins").
-    func prepare(_ effect: EffectSource) async -> Result<Void, EffectFailure>
+    /// Compiles `effect` (or finds it in the cache) so `apply` can run it, with `parameters`
+    /// as the block it runs with from its first pass: the selection and its initial block are
+    /// handed over in one step, so no pass runs the new effect with the old one's block. The
+    /// block is the one packed for `effect`'s layout (`EffectParameterBlock.none` for an effect
+    /// without parameters). Never on the main thread; a slow compile overtaken by a newer
+    /// `prepare` loses ("newest wins").
+    func prepare(_ effect: EffectSource, parameters: EffectParameterBlock) async -> Result<Void, EffectFailure>
+    /// Replaces the block `source` runs with, packed for its layout. It prepares and compiles
+    /// nothing, and returns as soon as the write is queued, without waiting for the frame
+    /// executor, so a slider can call it at its own rate. A write for any effect but the one
+    /// the newest `prepare` was given is dropped, and so is one that reaches the executor before
+    /// that `prepare` does: a caller that must not lose a write sends it after `prepare` has
+    /// returned. A write lands in the executor's order, ahead of every pass admitted after it; a
+    /// pass `apply` has already admitted keeps the block it was given.
+    func setParameters(_ block: EffectParameterBlock, of source: EffectSource)
     /// Runs the prepared effect from `input` into `output`. Both leases stay
     /// the caller's; the runtime only borrows the surfaces for the pass.
     func apply(input: FrameRef, output: FrameRef, frameContext: FrameContext) async -> Result<Void, EffectFailure>
@@ -32,9 +43,13 @@ extension DependencyValues {
 }
 
 private struct UnimplementedEffectRuntimeRepository: EffectRuntimeRepository {
-    func prepare(_ effect: EffectSource) async -> Result<Void, EffectFailure> {
+    func prepare(_ effect: EffectSource, parameters: EffectParameterBlock) async -> Result<Void, EffectFailure> {
         reportIssue("EffectRuntimeRepository.prepare not implemented")
         return .failure(.internalError)
+    }
+
+    func setParameters(_ block: EffectParameterBlock, of source: EffectSource) {
+        reportIssue("EffectRuntimeRepository.setParameters not implemented")
     }
 
     func apply(input: FrameRef, output: FrameRef, frameContext: FrameContext) async -> Result<Void, EffectFailure> {

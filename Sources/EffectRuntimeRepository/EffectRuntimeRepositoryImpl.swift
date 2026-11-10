@@ -13,7 +13,8 @@ import Domain
 /// outcome; the state decides that it does not become the effect `apply` runs.
 ///
 /// **`apply`** is admitted by the state, which also builds the pass's uniforms
-/// (`EffectUniforms.pass`). Until something is prepared, the first `apply` prepares
+/// (`EffectUniforms.pass`) and hands out the parameter block that goes with the library it
+/// runs (`EffectSelection`). Until something is prepared, the first `apply` prepares
 /// `BundledEffects.defaultEffect` itself, so the pipeline runs the bundled effect
 /// without knowing it exists (the effects menu prepares the chosen effect once its
 /// run has listed the catalog; until then the bundled one runs); an `apply` that
@@ -47,29 +48,36 @@ public struct EffectRuntimeRepositoryImpl: Sendable {
 }
 
 extension EffectRuntimeRepositoryImpl: EffectRuntimeRepository {
-    public func prepare(_ effect: EffectSource) async -> Result<Void, EffectFailure> {
-        switch await state.begin(effect) {
+    public func prepare(_ effect: EffectSource, parameters: EffectParameterBlock) async -> Result<Void, EffectFailure> {
+        switch await state.begin(effect, parameters: parameters) {
         case .cached: .success(())
         case .compile(let ticket): await compile(effect, under: ticket)
         }
     }
 
+    public func setParameters(_ block: EffectParameterBlock, of source: EffectSource) {
+        state.setParameters(block, of: source)
+    }
+
     public func apply(input: FrameRef, output: FrameRef, frameContext: FrameContext) async -> Result<Void, EffectFailure> {
         let bundled = bundledEffects
-        let library: Result<any LibraryHandle, EffectFailure>
+        let selection: EffectSelection
         let uniforms: EffectUniforms
         switch await state.admit(frameContext, output: output.descriptor, fallback: { bundled.defaultEffect }) {
         case .ready(let admitted, let passUniforms):
-            (library, uniforms) = (admitted, passUniforms)
+            (selection, uniforms) = (admitted, passUniforms)
         case .compile(let effect, let ticket, let passUniforms):
             // Started, not awaited, and not cancellable: the compile settles the state
-            // when it ends, and `selected()` answers when the newest effect has.
+            // when it ends, and `selected()` answers when the newest effect has, with the
+            // block that effect owns.
             _ = workRunner.run { [self] in _ = await compile(effect, under: ticket) }
-            (library, uniforms) = (await state.selected(), passUniforms)
+            (selection, uniforms) = (await state.selected(), passUniforms)
         }
-        switch library {
+        switch selection.result {
         case .success(let kernel):
-            return await renderer.render(library: kernel, input: input.token, output: output.token, uniforms: uniforms).map { _ in () }
+            return await renderer.render(
+                library: kernel, input: input.token, output: output.token, uniforms: uniforms, parameters: selection.parameters
+            ).map { _ in () }
         case .failure(let failure):
             return .failure(failure)
         }

@@ -7,6 +7,7 @@ import Metal
 extension MetalGatewayImpl {
     /// `errorOptions = .encoderExecutionStatus` so a fault names its encoder (ADR "Untrusted shaders").
     /// Handles are resolved before the encoder exists, so a foreign handle never leaves an encoder un-ended.
+    /// Buffer 0 is the uniforms and buffer 1 the parameter block; `setBytes` copies at encode time, so neither outlives the call.
     public func encodeAndCommit(
         _ pass: ComputePass, on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
     ) throws {
@@ -20,6 +21,7 @@ extension MetalGatewayImpl {
         encoder.setComputePipelineState(pipeline)
         encoder.setTextures(textures, range: 0..<textures.count)
         withUnsafePointer(to: pass.uniforms) { encoder.setBytes($0, length: MemoryLayout<EffectUniforms>.stride, index: 0) }
+        encoder.setBytes(pass.parameters.bytes, length: pass.parameters.bytes.count, index: 1)
         encoder.dispatchThreadgroups(pass.grid.threadgroups.metalSize(), threadsPerThreadgroup: pass.grid.threadsPerThreadgroup.metalSize())
         encoder.endEncoding()
         commandBuffer.addCompletedHandler { finished in

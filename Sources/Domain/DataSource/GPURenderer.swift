@@ -12,7 +12,9 @@ import Dependencies
 /// `EffectHealthPolicy`'s (MVP-D).
 public protocol GPURenderer: Sendable {
     /// Runs `library` with `input` at texture index 0 and `output` at index 1,
-    /// `uniforms` at buffer index 0, over a grid covering the output surface.
+    /// `uniforms` at buffer index 0 and `parameters` at buffer index 1, over a grid
+    /// covering the output surface. The block is bound as given: it is the one packed
+    /// for `library`'s layout, which `EffectRuntimeState` hands out together with it.
     /// Both leases stay the caller's; the renderer only borrows the surfaces
     /// until the command buffer completes and never releases either.
     ///
@@ -22,7 +24,7 @@ public protocol GPURenderer: Sendable {
     /// pass and receives its real outcome. The caller keeps both leases until
     /// `render` returns.
     func render(
-        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms
+        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms, parameters: EffectParameterBlock
     ) async -> Result<GPUTiming, EffectFailure>
 }
 
@@ -39,7 +41,7 @@ extension DependencyValues {
 
 private struct UnimplementedGPURenderer: GPURenderer {
     func render(
-        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms
+        library: any LibraryHandle, input: SurfaceToken, output: SurfaceToken, uniforms: EffectUniforms, parameters: EffectParameterBlock
     ) async -> Result<GPUTiming, EffectFailure> {
         reportIssue("GPURenderer.render not implemented")
         return .failure(.internalError)

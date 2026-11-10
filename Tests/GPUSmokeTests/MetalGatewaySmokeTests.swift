@@ -24,7 +24,9 @@ import Testing
 /// Every kernel is assembled the way `ShaderCompilationDataSource` assembles an
 /// effect (the prelude's `Uniforms`, the `Parameters` line, then `#line 1 "effect"`), so the
 /// suite also proves the prelude compiles and that `#line` maps diagnostics on this compiler.
-/// None of these effects declares a parameter; `ParametersStructSmokeTests` compiles ones that do.
+/// Apart from the parameter probe (*The parameter block* below), none of these effects declares a
+/// parameter; `ParametersStructSmokeTests` compiles ones that do, and the probe is the one place that
+/// reads the block a pass binds at buffer 1 back from the GPU.
 /// The bundled effect is compiled the same way and its pixels compared with
 /// `ChromaticGrainReference`, once through the gateway and once through
 /// `EffectRuntimeRepository` over the live DataSources.
@@ -92,7 +94,8 @@ struct MetalGatewaySmokeTests {
         let texture = try gateway.bind(surface, on: context)
 
         let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
-        let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), grid: grid), on: context)
+        let completion = try await run(
+            ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), parameters: .none, grid: grid), on: context)
         #expect(completion.error == nil)
         #expect(completion.gpuEnd >= completion.gpuStart)
 
@@ -115,7 +118,8 @@ struct MetalGatewaySmokeTests {
         let texture = try gateway.bind(surface, on: context)
 
         let grid = DispatchGrid.covering(width: unaligned.width, height: unaligned.height)
-        let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), grid: grid), on: context)
+        let completion = try await run(
+            ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), parameters: .none, grid: grid), on: context)
         #expect(completion.error == nil)
 
         let image = try GPUSmokeSupport.pixels(of: surface)
@@ -134,7 +138,8 @@ struct MetalGatewaySmokeTests {
         let uniforms = Self.uniforms(time: 3.25, seed: 0x1_0040)
 
         let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
-        let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: uniforms, grid: grid), on: context)
+        let completion = try await run(
+            ComputePass(kernel: kernel, textures: [texture], uniforms: uniforms, parameters: .none, grid: grid), on: context)
         #expect(completion.error == nil)
 
         let image = try GPUSmokeSupport.pixels(of: surface)
@@ -160,7 +165,9 @@ struct MetalGatewaySmokeTests {
         let second = try surfaces.create(Self.descriptor)
         let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
         let passes = try [(first, UInt32(10)), (second, UInt32(200))].map { surface, seed in
-            ComputePass(kernel: kernel, textures: [try gateway.bind(surface, on: context)], uniforms: Self.uniforms(seed: seed), grid: grid)
+            ComputePass(
+                kernel: kernel, textures: [try gateway.bind(surface, on: context)], uniforms: Self.uniforms(seed: seed), parameters: .none, grid: grid
+            )
         }
 
         let completions = try await passes.asyncMap { try await run($0, on: context) }
@@ -222,7 +229,8 @@ struct MetalGatewaySmokeTests {
         let surface = try surfaces.create(Self.descriptor)
         let texture = try gateway.bind(surface, on: context)
         let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
-        let completion = try await run(ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), grid: grid), on: context)
+        let completion = try await run(
+            ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), parameters: .none, grid: grid), on: context)
         #expect(completion.error == nil)
         #expect(try GPUSmokeSupport.pixels(of: surface).pixel(x: 17, y: 201) == [64, 128, 255, 255])
         try gateway.unbind(texture)
@@ -278,18 +286,18 @@ struct MetalGatewaySmokeTests {
         let uniforms = Self.effectUniforms(time: time, frameIndex: frameIndex, seed: seed)
 
         let grid = DispatchGrid.covering(width: Self.effectDescriptor.width, height: Self.effectDescriptor.height)
-        let completion = try await run(ComputePass(kernel: kernel, textures: textures, uniforms: uniforms, grid: grid), on: context)
+        let completion = try await run(
+            ComputePass(kernel: kernel, textures: textures, uniforms: uniforms, parameters: .none, grid: grid), on: context)
         #expect(completion.error == nil)
         try textures.forEach(gateway.unbind)
         try Self.expectBundledEffect(in: output, uniforms: uniforms)
     }
 
-    @Test("EffectRuntimeRepository over the live stack: with nothing prepared, apply compiles the bundled effect once and renders it")
-    @MainActor
-    func runtimeOverLiveStack() async throws {
-        let executor = ManualFrameExecutor()
-        let pool = FakeSurfacePool(capacity: 2)
-        let log = RecordingLog()
+    /// The runtime over the live compiler, renderer and Metal gateway, on one manual executor and a fake pool. The
+    /// compile an `apply` starts itself runs on the returned work runner, so a test can wait for it to end.
+    private func liveRuntime(
+        executor: ManualFrameExecutor, pool: FakeSurfacePool, log: RecordingLog
+    ) -> (runtime: EffectRuntimeRepositoryImpl, work: RecordingWorkRunner) {
         let gateway = gateway
         let (compiler, renderer) = withDependencies {
             $0.gpuGateway = gateway
@@ -307,11 +315,10 @@ struct MetalGatewaySmokeTests {
         } operation: {
             EffectRuntimeStateDataSourceImpl()
         }
-        // The compile the first `apply` starts runs here; the test waits for it to end before it reads the log.
-        let runtimeWork = RecordingWorkRunner()
+        let work = RecordingWorkRunner()
         let runtime = withDependencies {
             $0.effectRuntimeState = state
-            $0.workRunner = runtimeWork
+            $0.workRunner = work
             $0.shaderCompiler = compiler
             $0.gpuRenderer = renderer
             $0.bundledEffects = BundledEffectDataSourceImpl()
@@ -320,6 +327,17 @@ struct MetalGatewaySmokeTests {
         } operation: {
             EffectRuntimeRepositoryImpl()
         }
+        return (runtime, work)
+    }
+
+    @Test("EffectRuntimeRepository over the live stack: with nothing prepared, apply compiles the bundled effect once and renders it")
+    @MainActor
+    func runtimeOverLiveStack() async throws {
+        let executor = ManualFrameExecutor()
+        let pool = FakeSurfacePool(capacity: 2)
+        let log = RecordingLog()
+        // The compile the first `apply` starts runs on `runtimeWork`; the test waits for it to end before it reads the log.
+        let (runtime, runtimeWork) = liveRuntime(executor: executor, pool: pool, log: log)
         let descriptor = Self.effectDescriptor
         let output = try surfaces.create(descriptor)
         let input = try #require(pool.adopt(try effectInput(), descriptor: descriptor))
@@ -345,6 +363,156 @@ struct MetalGatewaySmokeTests {
         #expect(pool.release(input) && pool.release(target), "the leases stayed the caller's")
     }
 
+    // MARK: - The parameter block
+
+    /// One parameter of every kind, which the layout places at 0, 4, 8, 16, 32 and 40 (the padding in between is
+    /// never read), 48 bytes in all.
+    private static let probeSpecs = [
+        EffectParameterSpec(id: "strength", label: "Strength", kind: .float(min: 0, max: 1, step: nil, defaultValue: 0.5)),
+        EffectParameterSpec(id: "rings", label: "Rings", kind: .int(min: -9, max: 16, defaultValue: 4)),
+        EffectParameterSpec(id: "inverted", label: "Inverted", kind: .bool(defaultValue: false)),
+        EffectParameterSpec(id: "tint", label: "Tint", kind: .color(defaultValue: SIMD4<Float>(1, 0.8, 0.6, 1))),
+        EffectParameterSpec(
+            id: "center", label: "Center",
+            kind: .vector2(min: SIMD2<Float>(-100, -100), max: SIMD2<Float>(2000, 2000), defaultValue: SIMD2<Float>(0.5, 0.5))),
+        EffectParameterSpec(id: "mode", label: "Mode", kind: .choice(options: ["Soft", "Hard", "Wet"], defaultIndex: 0)),
+    ]
+    private static let probeDescriptor = SurfaceDescriptor.bgra(width: 16, height: 16)
+
+    /// What the probe is given, field by field. No word is zero and no word of one set equals the same word of the
+    /// other, so a block read from the wrong offset, a block of zeros and a block left over from the pass before
+    /// each show up as a different word.
+    private struct ProbeValues {
+        let strength: Float
+        let rings: Int32
+        let inverted: UInt32
+        let tint: SIMD4<Float>
+        let center: SIMD2<Float>
+        let mode: UInt32
+
+        static let first = ProbeValues(
+            strength: 0.37, rings: -7, inverted: 1, tint: SIMD4<Float>(0.2, 0.4, 0.6, 0.8), center: SIMD2<Float>(-12.5, 1024.25), mode: 2)
+        static let second = ProbeValues(
+            strength: 0.9141, rings: 12, inverted: 0x0102_0304, tint: SIMD4<Float>(0.9, 0.7, 0.5, 0.3), center: SIMD2<Float>(3.75, -88.125),
+            mode: 0x0A0B_0C0D)
+
+        /// The words of each field, by id, in the order the layout lists the fields.
+        private var wordsByField: [(id: String, words: [UInt32])] {
+            [
+                ("strength", [strength.bitPattern]), ("rings", [UInt32(bitPattern: rings)]), ("inverted", [inverted]),
+                ("tint", [tint.x, tint.y, tint.z, tint.w].map(\.bitPattern)), ("center", [center.x, center.y].map(\.bitPattern)),
+                ("mode", [mode]),
+            ]
+        }
+
+        /// What the probe reads back: all the words, field after field.
+        var words: [UInt32] { wordsByField.flatMap(\.words) }
+
+        /// The block a packer would build: every word written little-endian at its field's offset, the padding left zero.
+        var block: EffectParameterBlock {
+            let layout = EffectParameterLayout(MetalGatewaySmokeTests.probeSpecs)
+            let offsets = Dictionary(uniqueKeysWithValues: layout.fields.map { ($0.id, $0.offset) })
+            let zeros = [UInt8](repeating: 0, count: max(layout.stride, EffectParameterBlock.minimumLength))
+            let bytes = wordsByField.reduce(into: zeros) { bytes, field in
+                for (index, word) in field.words.enumerated() {
+                    for byte in 0..<4 {
+                        bytes[(offsets[field.id] ?? 0) + index * 4 + byte] = UInt8(truncatingIfNeeded: word >> UInt32(8 * byte))
+                    }
+                }
+            }
+            return EffectParameterBlock(bytes: bytes)
+        }
+    }
+
+    /// A kernel that writes the 32-bit word of each field it reads through `params` into the pixel at (word index, 0) as
+    /// its four bytes, so the CPU can compare bit patterns instead of 8-bit colours. `outputTexture` is the texture index
+    /// of the surface it writes: 0 when it is the only one bound, 1 behind the input of a runtime pass.
+    private static func probeEffect(outputTexture: Int) -> String {
+        let input = outputTexture == 0 ? "" : "texture2d<float, access::read> source [[texture(0)]],\n                   "
+        return """
+            kernel void effect(\(input)texture2d<float, access::write> out [[texture(\(outputTexture))]],
+                               constant Parameters &params [[buffer(1)]], uint2 gid [[thread_position_in_grid]]) {
+                if (gid.y != 0 || gid.x >= 10u) { return; }
+                const uint words[10] = {
+                    as_type<uint>(params.strength), as_type<uint>(params.rings), params.inverted,
+                    as_type<uint>(params.tint.x), as_type<uint>(params.tint.y), as_type<uint>(params.tint.z), as_type<uint>(params.tint.w),
+                    as_type<uint>(params.center.x), as_type<uint>(params.center.y), params.mode
+                };
+                const uint word = words[gid.x];
+                out.write(float4(word & 255u, (word >> 8) & 255u, (word >> 16) & 255u, word >> 24) / 255.0, gid);
+            }
+            """
+    }
+
+    /// The words the probe wrote, from the pixels `[B, G, R, A]` of row 0: the word's lowest byte went to red.
+    private static func probedWords(in image: SurfacePixels) -> [UInt32] {
+        (0..<10).map { x in
+            let pixel = image.pixel(x: x, y: 0).map(UInt32.init)
+            return pixel[2] | pixel[1] << 8 | pixel[0] << 16 | pixel[3] << 24
+        }
+    }
+
+    @Test("a pass binds its parameter block at buffer 1: every field is read back bit for bit from the offset the layout gives it")
+    func parameterBlockReachesTheKernel() async throws {
+        let layout = EffectParameterLayout(Self.probeSpecs)
+        #expect(layout.fields.map(\.offset) == [0, 4, 8, 16, 32, 40])
+        #expect(layout.stride == 48)
+        let (kernel, context) = try compile(ShaderSourceAssembly.assemble(Self.probeEffect(outputTexture: 0), layout: layout))
+        let surface = try surfaces.create(Self.probeDescriptor)
+        let texture = try gateway.bind(surface, on: context)
+        let grid = DispatchGrid.covering(width: Self.probeDescriptor.width, height: Self.probeDescriptor.height)
+
+        // Two passes on one kernel and one surface: the second block replaces the first, nothing is left bound from it.
+        for values in [ProbeValues.first, ProbeValues.second] {
+            let pass = ComputePass(kernel: kernel, textures: [texture], uniforms: Self.uniforms(), parameters: values.block, grid: grid)
+            let completion = try await run(pass, on: context)
+            #expect(completion.error == nil)
+            #expect(Self.probedWords(in: try GPUSmokeSupport.pixels(of: surface)) == values.words)
+        }
+        try gateway.unbind(texture)
+    }
+
+    @Test("through the live stack, prepare delivers the block and setParameters changes it for the next frame, never for another effect")
+    @MainActor
+    func parameterBlockThroughTheLiveStack() async throws {
+        let executor = ManualFrameExecutor()
+        let pool = FakeSurfacePool(capacity: 2)
+        let (runtime, _) = liveRuntime(executor: executor, pool: pool, log: RecordingLog())
+        let effect = EffectSource(name: "probe", source: Self.probeEffect(outputTexture: 1), parameters: Self.probeSpecs)
+        let stranger = EffectSource(name: "stranger", source: effect.source + "\n", parameters: Self.probeSpecs)
+        let descriptor = Self.probeDescriptor
+        let output = try surfaces.create(descriptor)
+        let input = try #require(pool.adopt(try surfaces.create(descriptor), descriptor: descriptor))
+        let target = try #require(pool.adopt(output, descriptor: descriptor))
+
+        let prepared = Collector<EffectFailure?>()
+        Task { prepared.append(await runtime.prepare(effect, parameters: ProbeValues.first.block).failure) }
+        #expect(await tickUntil(tick: { executor.drain() }, until: { prepared.count == 1 }))
+        #expect(prepared.values == [nil])
+
+        let applied = Collector<EffectFailure?>()
+        func renderFrame(_ index: UInt32) async throws -> [UInt32] {
+            let time = HostTimestamp.seconds(5 + Double(index) * 0.04)
+            Task {
+                let result = await runtime.apply(
+                    input: FrameRef(token: input, descriptor: descriptor, presentationTime: time),
+                    output: FrameRef(token: target, descriptor: descriptor, presentationTime: time),
+                    frameContext: FrameContext(presentationTime: time, frameIndex: index))
+                applied.append(result.failure)
+            }
+            #expect(await tickUntil(tick: { executor.drain() }, until: { applied.count == Int(index) + 1 }))
+            return Self.probedWords(in: try GPUSmokeSupport.pixels(of: output))
+        }
+
+        #expect(try await renderFrame(0) == ProbeValues.first.words, "the block that came with the selection")
+        runtime.setParameters(ProbeValues.second.block, of: effect)
+        #expect(try await renderFrame(1) == ProbeValues.second.words, "the write, with no prepare in between")
+        runtime.setParameters(ProbeValues.first.block, of: stranger)
+        #expect(try await renderFrame(2) == ProbeValues.second.words, "a write for another effect changes nothing")
+        #expect(applied.values == [nil, nil, nil])
+        #expect(pool.release(input) && pool.release(target), "the leases stayed the caller's")
+    }
+
     @Test("a surface can be bound again after unbind, and foreign handles are refused")
     func rebindAndProvenance() throws {
         let (kernel, context) = try compile(Self.fillSource)
@@ -362,7 +530,7 @@ struct MetalGatewaySmokeTests {
             try gateway.unbind(ForeignTextureHandle())
         }
         let grid = DispatchGrid.covering(width: Self.descriptor.width, height: Self.descriptor.height)
-        let pass = ComputePass(kernel: kernel, textures: [], uniforms: Self.uniforms(), grid: grid)
+        let pass = ComputePass(kernel: kernel, textures: [], uniforms: Self.uniforms(), parameters: .none, grid: grid)
         #expect(throws: GPUError.foreignHandle) {
             try gateway.encodeAndCommit(pass, on: ForeignContextHandle()) { _ in }
         }
