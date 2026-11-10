@@ -315,21 +315,10 @@ struct HostAbsenceIntegrationTests {
 
     @Test("any interleaving of host and extension events keeps leases balanced and the stream strictly increasing", arguments: Seeds.range(0..<50))
     func leaseBalanceProperty(seed: UInt64) async throws {
-        _ = try await runLeaseScenario(seed: seed)
+        _ = try await Self.runLeaseScenario(seed: seed)
     }
 
-    @Test("across the seeds every absence path is actually taken: slate, relaunch, frame gap, real frames")
-    func leaseBalancePropertyCoverage() async throws {
-        var all: [Coverage] = []
-        for seed in Seeds.range(0..<50) { all.append(try await runLeaseScenario(seed: seed)) }
-        #expect(all.map(\.slateEntries).reduce(0, +) > 0, "no seed ever entered slate")
-        #expect(all.map(\.relaunches).reduce(0, +) > 0, "no seed ever relaunched the host")
-        #expect(all.map(\.frameGaps).reduce(0, +) > 0, "no seed ever hit the frame gap")
-        #expect(all.map(\.hostLosses).reduce(0, +) > 0, "no seed ever lost the host")
-        #expect(all.map(\.realFramesStreamed).reduce(0, +) > 0, "no seed ever streamed a real frame")
-    }
-
-    private struct Coverage {
+    struct Coverage {
         var slateEntries = 0
         var relaunches = 0
         var frameGaps = 0
@@ -337,7 +326,7 @@ struct HostAbsenceIntegrationTests {
         var realFramesStreamed = 0
     }
 
-    private func runLeaseScenario(seed: UInt64) async throws -> Coverage {
+    static func runLeaseScenario(seed: UInt64) async throws -> Coverage {
         var coverage = Coverage()
         var generator = SeededGenerator(seed: seed)
         let rig = LoopbackRig()
