@@ -23,6 +23,13 @@ public protocol FramePipelineUseCase: Sendable {
     /// before `start` or after: until a view is attached the preview gives every
     /// frame back undrawn. A refusal is thrown and the previous view stays.
     @MainActor func attachPreview(_ target: any PreviewTargetHandle) throws
+
+    /// A pass-through of `PreviewSink.detach`, callable from any context: the preview
+    /// lets go of `target` only when it is the view attached now, and a call naming any
+    /// other target does nothing. Frames presented after the detach complete undrawn,
+    /// as they do before any attach. A frame already handed to the preview keeps its
+    /// lease until its completion, detach or not.
+    func detachPreview(_ target: any PreviewTargetHandle)
 }
 
 public enum FramePipelineUseCaseKey: TestDependencyKey {
@@ -58,5 +65,9 @@ private struct UnimplementedFramePipelineUseCase: FramePipelineUseCase {
     @MainActor func attachPreview(_ target: any PreviewTargetHandle) throws {
         reportIssue("FramePipelineUseCase.attachPreview not implemented")
         throw PreviewError.foreignTarget
+    }
+
+    func detachPreview(_ target: any PreviewTargetHandle) {
+        reportIssue("FramePipelineUseCase.detachPreview not implemented")
     }
 }

@@ -19,6 +19,8 @@ public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     public let bypasses = Collector<Bool>()
     /// The views handed to `attachPreview`, by identity.
     public let attached = Collector<ObjectIdentifier>()
+    /// The views handed to `detachPreview`, by identity.
+    public let detached = Collector<ObjectIdentifier>()
     private let order: Collector<String>
 
     public init(failure: (any Error)? = nil, attachRefusal: PreviewError? = nil, order: Collector<String> = Collector()) {
@@ -53,5 +55,9 @@ public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     public func attachPreview(_ target: any PreviewTargetHandle) throws {
         if let attachRefusal { throw attachRefusal }
         attached.append(ObjectIdentifier(target))
+    }
+
+    public func detachPreview(_ target: any PreviewTargetHandle) {
+        detached.append(ObjectIdentifier(target))
     }
 }
