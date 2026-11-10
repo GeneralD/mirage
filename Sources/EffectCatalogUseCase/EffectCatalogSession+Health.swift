@@ -22,14 +22,25 @@ extension EffectCatalogSession {
         for await outcome in stream { await receive(outcome, in: run) }
     }
 
-    /// Counts `outcome` if it is a pass of the effect the runtime holds in this run. A verdict to switch off a package effect
-    /// is remembered in the settings, logged, and answered by preparing the bundled effect in its place (`holdBundled`), which
-    /// publishes the state that shows it. A bundled effect is never switched off here (#133 decides what happens to it).
+    /// Counts `outcome` if it is a pass of the effect the runtime holds in this run. A pass that succeeds lowers
+    /// `isGPUUnavailable`, whichever effect ran it. A verdict to switch off a package effect is remembered in the settings,
+    /// logged, and answered by preparing the bundled effect in its place (`holdBundled`), which publishes the state that
+    /// shows it. A verdict to switch off the bundled effect records nothing and falls back to nothing: there is no effect
+    /// left to move frames, so it raises `isGPUUnavailable`.
     func receive(_ outcome: EffectPassOutcome, in run: Int) async {
         guard epoch == run, var health = armed, health.fingerprint == outcome.fingerprint else { return }
+        if case .success = outcome.result, isGPUUnavailable {
+            isGPUUnavailable = false
+            publish()
+        }
         let verdict = health.policy.record(outcome.result)
         armed = health
-        guard case .disable(let reason, let retryAfter) = verdict, health.id.origin == .package else { return }
+        guard case .disable(let reason, let retryAfter) = verdict else { return }
+        guard health.id.origin == .package else {
+            isGPUUnavailable = true
+            publish()
+            return
+        }
         disabled[health.id] = DisabledEntry(
             record: DisabledEffectRecord(
                 id: health.id, fingerprint: health.fingerprint, reason: reason, retriesAutomatically: retryAfter != nil))

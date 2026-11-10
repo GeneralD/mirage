@@ -66,6 +66,9 @@ actor EffectCatalogSession {
     var armed: ArmedHealth?
     /// The effects health has switched off in this run, each with the record its reason comes from. A run clears it.
     var disabled: [EffectID: DisabledEntry] = [:]
+    /// Set when the bundled effect itself is switched off by health: no effect can move frames, so the menu says the GPU is
+    /// unavailable. A passing pass of any effect lowers it again; a run clears it.
+    var isGPUUnavailable = false
 
     /// How the chosen effect's last attempt went: the problem if its source could not be read
     /// at the last look, otherwise how the runtime took what it was last handed, if that was
@@ -273,7 +276,7 @@ actor EffectCatalogSession {
         let parameters = prepared?.id == selection ? (prepared?.model.states ?? []) : []
         let state = EffectCatalogState(
             entries: entries, selection: selection, outcome: outcome, parameters: parameters,
-            disabled: disabled.mapValues(\.record.reason))
+            disabled: disabled.mapValues(\.record.reason), isGPUUnavailable: isGPUUnavailable)
         guard state != broadcast.current else { return }
         broadcast.publish(state)
     }
@@ -297,6 +300,7 @@ actor EffectCatalogSession {
         unreadableSource = nil
         armed = nil
         disabled = [:]
+        isGPUUnavailable = false
     }
 }
 
