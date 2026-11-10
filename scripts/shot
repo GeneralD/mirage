@@ -5,6 +5,7 @@
 //   scripts/shot out.png                       # the dev harness window (owner "dev-harness")
 //   scripts/shot out.png --owner Finder        # any app, by process name
 //   scripts/shot out.png --title "Dev Harness" # by window title (needs Screen Recording for other apps)
+//   scripts/shot out.png --pid 4242            # the windows of one process (what scripts/gallery uses)
 //   scripts/shot out.png --list                # print the on-screen windows and exit
 //
 // It finds the window with CoreGraphics and captures it with screencapture(1);
@@ -16,13 +17,14 @@ import Foundation
 
 var arguments = Array(CommandLine.arguments.dropFirst())
 guard let output = arguments.first else {
-    FileHandle.standardError.write(Data("shot: usage: scripts/shot <out.png> [--owner <name>] [--title <text>] [--list]\n".utf8))
+    FileHandle.standardError.write(Data("shot: usage: scripts/shot <out.png> [--owner <name>] [--title <text>] [--pid <n>] [--list]\n".utf8))
     exit(2)
 }
 arguments.removeFirst()
 
 var owner: String? = "dev-harness"
 var title: String?
+var pid: Int?
 var listOnly = false
 var index = 0
 while index < arguments.count {
@@ -32,6 +34,14 @@ while index < arguments.count {
         index += 2
     case "--title":
         title = arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+        owner = nil
+        index += 2
+    case "--pid":
+        guard arguments.indices.contains(index + 1), let value = Int(arguments[index + 1]) else {
+            FileHandle.standardError.write(Data("shot: --pid needs an integer process id\n".utf8))
+            exit(2)
+        }
+        pid = value
         owner = nil
         index += 2
     case "--list":
@@ -55,6 +65,7 @@ struct Candidate {
     let title: String
     let layer: Int
     let area: Double
+    let pid: Int
 }
 
 let candidates = windows.compactMap { info -> Candidate? in
@@ -66,7 +77,8 @@ let candidates = windows.compactMap { info -> Candidate? in
         owner: info[kCGWindowOwnerName as String] as? String ?? "",
         title: info[kCGWindowName as String] as? String ?? "",
         layer: info[kCGWindowLayer as String] as? Int ?? 0,
-        area: area)
+        area: area,
+        pid: info[kCGWindowOwnerPID as String] as? Int ?? 0)
 }
 
 if listOnly {
@@ -80,12 +92,22 @@ let matches = candidates.filter { candidate in
     guard candidate.layer == 0, candidate.area > 0 else { return false }
     if let owner, candidate.owner != owner { return false }
     if let title, !candidate.title.contains(title) { return false }
+    if let pid, candidate.pid != pid { return false }
     return true
 }
 
 guard let target = matches.max(by: { $0.area < $1.area }) else {
-    let wanted = [owner.map { "owner \"\($0)\"" }, title.map { "title containing \"\($0)\"" }].compactMap { $0 }.joined(separator: ", ")
+    let wanted = [owner.map { "owner \"\($0)\"" }, title.map { "title containing \"\($0)\"" }, pid.map { "pid \($0)" }].compactMap { $0 }
+        .joined(separator: ", ")
     FileHandle.standardError.write(Data("shot: no on-screen window with \(wanted); try --list\n".utf8))
+    exit(1)
+}
+
+let destination = URL(fileURLWithPath: output).deletingLastPathComponent()
+do {
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+} catch {
+    FileHandle.standardError.write(Data("shot: cannot create \(destination.path): \(error)\n".utf8))
     exit(1)
 }
 

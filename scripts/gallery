@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# One command for a picture of one screen of the view gallery, so a worker can look at the window it built
+# without a camera (docs/hackathon/mvp-cd/PRODUCT.md → UI check). The gallery opens the app's own windows
+# over fixture data; it never touches the capture path or prompts for the camera.
+#
+#   scripts/gallery <screen> <out.png>   # build view-gallery, open the screen, capture its window, quit it
+#   scripts/gallery --list               # the screen names, each with its one-line summary
+#
+# Exit 0 with the image written; exit 1 when the gallery ends before a window shows, or none shows within
+# 30 tries; exit 2 for a wrong command line. The gallery it started is always quit, and the one screenshot
+# slot (a screenshot is one at a time: PRODUCT.md → Machine budget) is always given back.
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+if [ "${1:-}" = "--list" ] && [ $# -eq 1 ]; then
+    swift build --product view-gallery >&2
+    exec "$(swift build --show-bin-path)/view-gallery" --list
+fi
+if [ $# -ne 2 ] || [ "${1#-}" != "$1" ]; then
+    printf 'usage: scripts/gallery <screen> <out.png> | scripts/gallery --list\n' >&2
+    exit 2
+fi
+screen="$1"
+out="$2"
+
+lock="$(git rev-parse --git-common-dir)/hk-shot"
+pid=""
+owned=0
+
+cleanup() {
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    [ "$owned" -eq 1 ] && rm -rf "$lock"
+    return 0
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Take the slot: mkdir is atomic; a slot whose holder is gone is reclaimed.
+waited=0
+until mkdir "$lock" 2>/dev/null; do
+    holder="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+        rm -rf "$lock"
+        continue
+    fi
+    printf 'gallery: the screenshot slot is busy, waiting (%ds)\n' "$waited" >&2
+    sleep 5
+    waited=$((waited + 5))
+done
+owned=1
+printf '%s\n' "$$" > "$lock/pid"
+
+swift build --product view-gallery >&2
+"$(swift build --show-bin-path)/view-gallery" "$screen" &
+pid=$!
+
+tries=0
+last=""
+until last="$(scripts/shot "$out" --pid "$pid" 2>&1)"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+        printf 'gallery: view-gallery ended before a window of screen "%s" showed\n' "$screen" >&2
+        exit 1
+    fi
+    tries=$((tries + 1))
+    if [ "$tries" -ge 30 ]; then
+        printf 'gallery: no window of screen "%s" after %d tries; last: %s\n' "$screen" "$tries" "$last" >&2
+        exit 1
+    fi
+    sleep 1
+done
+printf '%s\n' "$last"
