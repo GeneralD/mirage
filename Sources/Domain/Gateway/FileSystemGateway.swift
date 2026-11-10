@@ -34,6 +34,12 @@ public protocol FileSystemGateway: Sendable {
     /// Makes the directory at `path` and any missing parents. A directory that is
     /// already there is not an error; a file in the way is.
     func createDirectory(_ path: String) throws
+
+    /// Writes `text` as UTF-8 to the file at `path`, replacing a file that is there already. It does not
+    /// make the parent directories (`createDirectory` does). Throws a `CocoaError` with the code
+    /// `.fileNoSuchFile` when the parent directory is missing, and `.fileWriteUnknown` when a file lies
+    /// above `path` or a directory is at `path`; a write that throws leaves the tree as it was.
+    func writeString(_ text: String, to path: String) throws
 }
 
 public enum FileSystemGatewayKey: TestDependencyKey {
@@ -70,6 +76,11 @@ private struct UnimplementedFileSystemGateway: FileSystemGateway {
 
     func createDirectory(_ path: String) throws {
         reportIssue("FileSystemGateway.createDirectory not implemented")
+        throw CocoaError(.fileWriteUnknown)
+    }
+
+    func writeString(_ text: String, to path: String) throws {
+        reportIssue("FileSystemGateway.writeString not implemented")
         throw CocoaError(.fileWriteUnknown)
     }
 }
