@@ -90,11 +90,11 @@ struct ParametersStructSmokeTests {
     }
 
     @Test(
-        "a field named for a vector type, an atomic type or the namespace Metal builds in, none of which the struct text uses, compiles and sits at the layout's offset"
+        "a field named for a vector or matrix type, an atomic type, the namespace or a library function Metal builds in, none of which the struct text uses, compiles and sits at the layout's offset"
     )
     func builtinNamesAreFields() async throws {
-        let kinds = [LayoutCase.float, LayoutCase.vector2, LayoutCase.color]
-        let specs = zip(["uint2", "atomic_uint", "metal"], kinds).map { EffectParameterSpec(id: $0, label: $0, kind: $1) }
+        let kinds = [LayoutCase.float, LayoutCase.vector2, LayoutCase.color, LayoutCase.int, LayoutCase.float]
+        let specs = zip(["uint2", "float2x2", "atomic_uint", "metal", "abs"], kinds).map { EffectParameterSpec(id: $0, label: $0, kind: $1) }
         let source = Self.kernel(reading: EffectParameterLayout(specs))
         let result = await compiler().compile(EffectSource(name: "builtin names", source: source, parameters: specs))
         #expect(result.failure == nil, "\(result.failure?.message ?? "")")

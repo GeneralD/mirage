@@ -14,7 +14,8 @@
 ///   `half`, `bfloat`): a field named for one hides it from the fields after it, or is refused.
 ///   The other names Metal builds in (vector and matrix types such as `uint2`, atomic types, the
 ///   `metal` namespace, library functions such as `abs`) stay free: the struct text uses none of
-///   them, so a field named for one compiles and binds, which the GPU smoke suite pins.
+///   them, so a field named for one compiles and sits at the layout's offset. The GPU smoke suite
+///   pins one name of each family: `uint2`, `float2x2`, `atomic_uint`, `metal` and `abs`.
 ///
 /// Names are case-sensitive, as the language is: `Kernel` is not `kernel`. The macros of the
 /// standard headers (`NAN`, `FLT_MAX`, `M_PI_F`, ...) are not here; they are not keywords, there are
