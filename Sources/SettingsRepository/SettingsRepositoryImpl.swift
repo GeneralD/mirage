@@ -9,9 +9,15 @@ import Domain
 /// flag and the version never share a store. Caching or policy would belong here, and these
 /// settings need neither. The readers are the effect catalog and `SettingsUseCase`, which serves
 /// the settings window and the global hotkeys.
+///
+/// The system integrations go the same way (hackathon #183): the launch-at-login status and its
+/// toggle to `LoginItem`, and the global hotkeys registration, presses and release to `Hotkeys`,
+/// each call forwarded once and its answer returned as it came.
 public struct SettingsRepositoryImpl: Sendable {
     @Dependency(\.preferences) private var preferences
     @Dependency(\.storeMaintenance) private var storeMaintenance
+    @Dependency(\.loginItem) private var loginItem
+    @Dependency(\.hotkeys) private var hotkeys
 
     public init() {}
 }
@@ -51,5 +57,35 @@ extension SettingsRepositoryImpl: SettingsRepository {
 
     public func resetAll() async {
         await storeMaintenance.resetAll()
+    }
+
+    public var launchAtLoginStatus: LaunchAtLoginStatus {
+        loginItem.status
+    }
+
+    public func setLaunchAtLogin(_ on: Bool) -> LaunchAtLoginStatus {
+        loginItem.setEnabled(on)
+    }
+
+    public func openLoginItemsSettings() {
+        loginItem.openSystemSettings()
+    }
+
+    public func registerHotkeys(_ bindings: [HotkeyBinding]) async -> HotkeyRegistration {
+        await hotkeys.register(bindings)
+    }
+
+    public func unregisterHotkeys() async {
+        await hotkeys.unregisterAll()
+    }
+
+    public var hotkeyRegistration: HotkeyRegistration {
+        get async {
+            await hotkeys.registration
+        }
+    }
+
+    public func hotkeyPresses() async -> AsyncStream<HotkeyAction> {
+        await hotkeys.presses()
     }
 }
