@@ -89,6 +89,25 @@ struct ParametersStructSmokeTests {
         #expect(result.failure == nil, "\(result.failure?.message ?? "")")
     }
 
+    @Test(
+        "a field named for a vector type, an atomic type or the namespace Metal builds in, none of which the struct text uses, compiles and sits at the layout's offset"
+    )
+    func builtinNamesAreFields() async throws {
+        let kinds = [LayoutCase.float, LayoutCase.vector2, LayoutCase.color]
+        let specs = zip(["uint2", "atomic_uint", "metal"], kinds).map { EffectParameterSpec(id: $0, label: $0, kind: $1) }
+        let source = Self.kernel(reading: EffectParameterLayout(specs))
+        let result = await compiler().compile(EffectSource(name: "builtin names", source: source, parameters: specs))
+        #expect(result.failure == nil, "\(result.failure?.message ?? "")")
+    }
+
+    @Test("a field named as_type, Metal's reinterpreting cast, is refused by the compiler: the reserved list has to hold it")
+    func asTypeIsNotAField() async throws {
+        let specs = [EffectParameterSpec(id: "as_type", label: "As type", kind: LayoutCase.float)]
+        let diagnostics = try #require(
+            await compiler().compile(EffectSource(name: "as_type", source: "kernel void effect() {}", parameters: specs)).failure)
+        #expect(diagnostics.message.contains("expected member name"), "\(diagnostics.message)")
+    }
+
     @Test("an error on the author's third line is reported as effect:3 with every kind of parameter declared")
     func authorLinesAreKept() async throws {
         let broken = """

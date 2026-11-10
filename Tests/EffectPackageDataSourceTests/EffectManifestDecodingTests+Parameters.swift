@@ -180,6 +180,14 @@ extension EffectManifestDecodingTests {
                 spec("Float", .float(min: 0, max: 1, step: nil, defaultValue: 0.5)),
             ])),
         Row(
+            name: "a name Metal builds in that the struct text does not use is an id",
+            text: manifest([float(id: "uint2"), float(id: "atomic_uint"), float(id: "metal")]),
+            expected: accepted([
+                spec("uint2", .float(min: 0, max: 1, step: nil, defaultValue: 0.5)),
+                spec("atomic_uint", .float(min: 0, max: 1, step: nil, defaultValue: 0.5)),
+                spec("metal", .float(min: 0, max: 1, step: nil, defaultValue: 0.5)),
+            ])),
+        Row(
             name: "32 parameters are the most",
             text: manifest((0..<32).map { float(id: "p\($0)") }),
             expected: accepted((0..<32).map { spec("p\($0)", .float(min: 0, max: 1, step: nil, defaultValue: 0.5)) })),
@@ -441,6 +449,9 @@ extension EffectManifestDecodingTests {
             expected: rejected("\"parameters[0].id\" is a reserved word of the shader language")),
         Row(
             name: "an id that is a keyword of C++", text: manifest([float(id: "class")]),
+            expected: rejected("\"parameters[0].id\" is a reserved word of the shader language")),
+        Row(
+            name: "an id that is the as_type operator of Metal", text: manifest([float(id: "as_type")]),
             expected: rejected("\"parameters[0].id\" is a reserved word of the shader language")),
         Row(
             name: "an id that repeats an earlier one names it",

@@ -7,10 +7,14 @@
 ///   `typedef` and `volatile` it reads as a declaration without a field, so the struct is one field
 ///   short. A size check does not see that when padding absorbs it (a dropped `float` before another
 ///   `float` and a `float4`), and the field after it then binds to the wrong offset, silently.
-/// - Metal's own qualifiers. The current compiler takes them as field names, but they are the
+/// - Metal's own words: the qualifiers and the `as_type` operator, its reinterpreting cast. The
+///   compiler already refuses `as_type` as a field name; it takes the qualifiers, but they are the
 ///   language's words and a later one may not, so a package that uses one should not be ready.
 /// - The names of the types the struct text uses or Metal builds in (`uint`, `float2`, `float4`,
 ///   `half`, `bfloat`): a field named for one hides it from the fields after it, or is refused.
+///   The other names Metal builds in (vector and matrix types such as `uint2`, atomic types, the
+///   `metal` namespace, library functions such as `abs`) stay free: the struct text uses none of
+///   them, so a field named for one compiles and binds, which the GPU smoke suite pins.
 ///
 /// Names are case-sensitive, as the language is: `Kernel` is not `kernel`. The macros of the
 /// standard headers (`NAN`, `FLT_MAX`, `M_PI_F`, ...) are not here; they are not keywords, there are
@@ -34,7 +38,8 @@ enum MSLReservedWords {
     ]
 
     static let metalKeywords = [
-        "constant", "device", "fragment", "kernel", "object_data", "ray_data", "thread", "threadgroup", "threadgroup_imageblock", "vertex",
+        "as_type", "constant", "device", "fragment", "kernel", "object_data", "ray_data", "thread", "threadgroup", "threadgroup_imageblock",
+        "vertex",
     ]
 
     static let typeNames = ["bfloat", "float2", "float4", "half", "uint"]
