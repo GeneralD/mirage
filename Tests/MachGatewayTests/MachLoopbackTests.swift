@@ -210,11 +210,15 @@ struct MachLoopbackTests {
         defer { loopback.tearDown() }
         let before = Set(receiveNames())
 
-        #expect(throws: MachError.registerFailed(code: 1101)) { try loopback.bootstrap.register(serviceName: loopback.serviceName) }
+        for _ in 0..<64 {
+            #expect(throws: MachError.registerFailed(code: 1101)) { try loopback.bootstrap.register(serviceName: loopback.serviceName) }
+        }
 
-        // No receive right that did not exist before may exist now; a bare count would also
-        // move when another suite tears a port down in the meantime and mask a leak.
-        #expect(Set(receiveNames()).subtracting(before).isEmpty)
+        // Other suites in this test process (MachPresenceTests runs in parallel with this one)
+        // allocate receive rights while this test runs, so a single call's set difference can see
+        // their rights. A leak of one right per call leaves at least 64 new rights, which the
+        // threshold of 32 catches, while the few rights a concurrent suite holds at once cannot reach it.
+        #expect(Set(receiveNames()).subtracting(before).count < 32)
     }
 
     @Test("a successful register keeps no send right of its own; look-up hands out one per call")
