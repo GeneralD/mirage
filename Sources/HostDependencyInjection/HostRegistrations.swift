@@ -147,6 +147,10 @@ extension CaptureSessionGatewayKey: DependencyKey {
     public static let liveValue: any CaptureSessionGateway = CaptureSessionGatewayImpl()
 }
 
+extension CameraDeviceGatewayKey: DependencyKey {
+    public static let liveValue: any CameraDeviceGateway = CameraDeviceGatewayImpl()
+}
+
 extension CameraAuthorizationGatewayKey: DependencyKey {
     public static let liveValue: any CameraAuthorizationGateway = CameraAuthorizationGatewayImpl()
 }
