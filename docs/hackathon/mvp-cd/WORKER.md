@@ -35,8 +35,10 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
    `![agent](https://img.shields.io/badge/agent-claude-D97757) ![issue](https://img.shields.io/badge/issue-%23<n>-grey)`,
    a blank line, `Closes #<n>`, the line `Gate: GREEN`, and `Decision:` lines if any. A UI PR commits
    `docs/shots/<n>/after.png` and embeds
-   `https://github.com/GeneralD/mirage/blob/task/<n>/docs/shots/<n>/after.png?raw=true`; with the
-   screen locked it writes the line `Shot: pending (screen locked)` instead.
+   `https://github.com/GeneralD/mirage/blob/<sha>/docs/shots/<n>/after.png?raw=true`, where `<sha>` is
+   the full hash of the commit that added the image (`git rev-parse HEAD` right after committing it): a
+   link through `task/<n>` dies when the merge deletes the branch. With the screen locked it writes the
+   line `Shot: pending (screen locked)` instead.
 6. CI: `gh pr checks <pr> -R GeneralD/mirage --watch --interval 30`, in the foreground (rerun it if
    the call times out). A red check goes to step 8. No checks at all after 5 minutes: proceed; the
    local gate is green and CI absence does not block.
