@@ -6,11 +6,13 @@ import TestSupport
 /// values set and the views attached to its preview — and appends `"start"` to `order` so a launch
 /// that shares the collector with other fakes can be checked for order.
 /// `start` throws `failure` when given one; `attachPreview` throws `attachRefusal`
-/// (recording nothing), like a sink that refuses a foreign target.
+/// (recording nothing), like a sink that refuses a foreign target, and then `attachFailure`
+/// (also recording nothing) for any other error the pipeline gives back.
 /// `stats` reads what `script(stats:)` last set, `.empty` until then.
 public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     private let failure: (any Error)?
     private let attachRefusal: PreviewError?
+    private let attachFailure: (any Error)?
     private let scriptedStats = Locked(PipelineStats.empty)
     public let starts = Collector<SurfaceDescriptor>()
     public let rates = Collector<FrameRate>()
@@ -23,9 +25,15 @@ public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     public let detached = Collector<ObjectIdentifier>()
     private let order: Collector<String>
 
-    public init(failure: (any Error)? = nil, attachRefusal: PreviewError? = nil, order: Collector<String> = Collector()) {
+    public init(
+        failure: (any Error)? = nil,
+        attachRefusal: PreviewError? = nil,
+        order: Collector<String> = Collector(),
+        attachFailure: (any Error)? = nil
+    ) {
         self.failure = failure
         self.attachRefusal = attachRefusal
+        self.attachFailure = attachFailure
         self.order = order
     }
 
@@ -54,6 +62,7 @@ public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     @MainActor
     public func attachPreview(_ target: any PreviewTargetHandle) throws {
         if let attachRefusal { throw attachRefusal }
+        if let attachFailure { throw attachFailure }
         attached.append(ObjectIdentifier(target))
     }
 
