@@ -111,3 +111,57 @@ struct EffectPackageListingTests {
         #expect(EffectPackageInventory.empty.watchSet == EffectWatchSet(directories: [], files: []))
     }
 }
+
+@Suite("EffectCatalogState")
+struct EffectCatalogStateTests {
+    private let chromatic = EffectCatalogEntry(
+        id: EffectID(origin: .bundled, key: "chromatic"), displayName: "Chromatic", origin: .bundled, availability: .ready)
+    private let glitch = EffectCatalogEntry(
+        id: EffectID(origin: .package, key: "glitch"), displayName: "Glitch", origin: .package, availability: .ready)
+    private let parameters = [
+        EffectParameterState(spec: EffectParameterSpec(id: "strength", label: "Strength", kind: Kinds.float), value: .float(0.25)),
+        EffectParameterState(spec: EffectParameterSpec(id: "rings", label: "Rings", kind: Kinds.int), value: .int(6)),
+    ]
+
+    @Test("a state given no parameters declares none")
+    func noParametersByDefault() {
+        let state = EffectCatalogState(entries: [chromatic], selection: chromatic.id)
+        #expect(state.parameters == [])
+    }
+
+    @Test("a state keeps the parameters it was given, in the order it was given them")
+    func parametersKeepTheirOrder() {
+        let state = EffectCatalogState(entries: [chromatic], selection: chromatic.id, parameters: parameters)
+        #expect(state.parameters == parameters)
+        #expect(state.parameters.map(\.spec.id) == ["strength", "rings"])
+    }
+
+    @Test("two states that differ only in their parameters are different states")
+    func differentParametersAreDifferentStates() {
+        let bare = EffectCatalogState(entries: [chromatic], selection: chromatic.id)
+        let withParameters = EffectCatalogState(entries: [chromatic], selection: chromatic.id, parameters: parameters)
+        #expect(bare != withParameters)
+        #expect(EffectCatalogState(entries: [chromatic], selection: chromatic.id, parameters: Array(parameters.reversed())) != withParameters)
+    }
+
+    @Test("two states with the same parameters are the same value, so a set keeps one of them")
+    func equalParametersAreOneValue() {
+        let first = EffectCatalogState(entries: [chromatic], selection: chromatic.id, parameters: parameters)
+        let second = EffectCatalogState(entries: [chromatic], selection: chromatic.id, parameters: parameters)
+        #expect(first == second)
+        #expect(first.hashValue == second.hashValue)
+        #expect(Set([first, second]).count == 1)
+    }
+
+    @Test("the parameters do not hide a difference in the entries, the selection or the outcome")
+    func parametersDoNotMaskOtherFields() {
+        let base = EffectCatalogState(entries: [chromatic], selection: chromatic.id, outcome: .prepared, parameters: parameters)
+        #expect(base != EffectCatalogState(entries: [glitch], selection: chromatic.id, outcome: .prepared, parameters: parameters))
+        #expect(base != EffectCatalogState(entries: [chromatic], selection: glitch.id, outcome: .prepared, parameters: parameters))
+        #expect(base != EffectCatalogState(entries: [chromatic], selection: chromatic.id, outcome: nil, parameters: parameters))
+        #expect(
+            base
+                != EffectCatalogState(
+                    entries: [chromatic], selection: chromatic.id, outcome: .failed(.compileFailed), parameters: parameters))
+    }
+}
