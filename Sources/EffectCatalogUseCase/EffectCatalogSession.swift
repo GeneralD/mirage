@@ -64,7 +64,7 @@ actor EffectCatalogSession {
     /// The effect health counts the outcomes of: the one the runtime was last prepared with, and the policy counting its
     /// passes. Every `prepare` replaces it; a run clears it.
     var armed: ArmedHealth?
-    /// The effects health has switched off in this run, each with the record its reason comes from. A run clears it.
+    /// The effects health has switched off, each with the record its reason comes from. A run starts it from the records the settings hold.
     var disabled: [EffectID: DisabledEntry] = [:]
     /// Set when the bundled effect itself is switched off by health: no effect can move frames, so the menu says the GPU is
     /// unavailable. A passing pass of any effect lowers it again; a run clears it.
@@ -105,11 +105,16 @@ actor EffectCatalogSession {
         end()
     }
 
-    /// Restores the persisted choice, then reconciles every listing of the catalog for `run`.
+    /// Restores the persisted choice and the switched-off effects, then reconciles every listing of the catalog for `run`.
     private func listen(in run: Int) async {
         let restored = await settings.selectedEffect()
+        let stored = await settings.disabledEffects()
         guard epoch == run else { return }
         selection = restored
+        // The records of the bundled effect come from another build: they are read away, and never written back.
+        disabled = Dictionary(
+            stored.filter { $0.id.origin == .package }.map { ($0.id, DisabledEntry(record: $0)) },
+            uniquingKeysWith: { _, last in last })
         for await listing in packages.catalog() {
             await reconcile(listing, in: run)
         }
