@@ -91,6 +91,11 @@ Read the image yourself: overlaps, clipping, overflow, controls off-screen. A UI
 `docs/shots/<issue>/after.png` and embeds it. Windows are opened with fixture data by the view
 gallery (arrives with the first UI issue), never through the camera path.
 
+While the screen is locked (`ioreg -n Root -d1 | grep -q '"CGSSessionScreenIsLocked"=Yes'` exits 0), no window can be captured
+(`could not create image from window`). A UI PR then lands on a green gate with the line
+`Shot: pending (screen locked)`, and its issue carries the label `hk:shot-pending`. Once the screen is
+unlocked the orchestrator captures and reads every pending screen; a visual defect becomes a regen issue.
+
 ## External services
 
 None. Sparkle, Homebrew and notarization wait for Apple Developer signing (#3).

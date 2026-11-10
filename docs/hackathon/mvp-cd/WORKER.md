@@ -26,14 +26,17 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
    spec sentence. If `Off-limits` or a hot file must be touched: do not implement; comment why, add
    the label `hk:regen`, stop.
 4. `make format`, commit what it rewrites, then `scripts/gate -- <the issue's Done command>`.
-   UI changes also need the image check in PRODUCT.md; any visual defect is red.
+   UI changes also need the image check in PRODUCT.md; any visual defect is red. While the screen is
+   locked (`ioreg -n Root -d1 | grep -q '"CGSSessionScreenIsLocked"=Yes'` exits 0) no window can be captured: take no image,
+   add the label `hk:shot-pending` to the issue, and go on. Never commit a capture taken while locked.
 5. Green: commit, `git push origin HEAD:refs/heads/task/<n>`, then
    `gh pr create -R GeneralD/mirage --base hackathon/mvp-cd --head task/<n> --assignee @me --title "<type(scope): summary>" --body-file <file>`.
    The body is the badge row
    `![agent](https://img.shields.io/badge/agent-claude-D97757) ![issue](https://img.shields.io/badge/issue-%23<n>-grey)`,
    a blank line, `Closes #<n>`, the line `Gate: GREEN`, and `Decision:` lines if any. A UI PR commits
    `docs/shots/<n>/after.png` and embeds
-   `https://github.com/GeneralD/mirage/blob/task/<n>/docs/shots/<n>/after.png?raw=true`.
+   `https://github.com/GeneralD/mirage/blob/task/<n>/docs/shots/<n>/after.png?raw=true`; with the
+   screen locked it writes the line `Shot: pending (screen locked)` instead.
 6. CI: `gh pr checks <pr> -R GeneralD/mirage --watch --interval 30`, in the foreground (rerun it if
    the call times out). A red check goes to step 8. No checks at all after 5 minutes: proceed; the
    local gate is green and CI absence does not block.
