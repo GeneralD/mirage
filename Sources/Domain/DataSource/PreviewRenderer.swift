@@ -23,7 +23,11 @@ public protocol PreviewRenderer: Sendable {
     /// attached, is a no-op. Not on the main thread: it hands the release to the
     /// `FrameExecutor`, the same place the frames are ordered.
     func detach(_ target: any PreviewTargetHandle)
-    func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void)
+    /// Presents `frame`, with `original` (the frame as its source delivered it,
+    /// when there is one) alongside it. A non-nil `original` is borrowed until
+    /// `completion`, as `frame` is: `completion` ends both leases and runs
+    /// exactly once, drawn or not.
+    func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void)
 }
 
 public enum PreviewRendererKey: TestDependencyKey {
@@ -47,7 +51,7 @@ private struct UnimplementedPreviewRenderer: PreviewRenderer {
         reportIssue("PreviewRenderer.detach not implemented")
     }
 
-    func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
+    func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
         reportIssue("PreviewRenderer.present not implemented")
         completion()
     }

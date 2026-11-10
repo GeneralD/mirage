@@ -221,7 +221,9 @@ struct PreviewSmokeTests {
         let token = try #require(pool.adopt(try surfaces.create(descriptor), descriptor: descriptor))
         // As the pipeline does: the caller gives the lease back once the frame completes.
         let released = Collector<Bool>()
-        subject.present(FrameRef(token: token, descriptor: descriptor, presentationTime: .zero)) { released.append(pool.release(token)) }
+        subject.present(FrameRef(token: token, descriptor: descriptor, presentationTime: .zero), original: nil) {
+            released.append(pool.release(token))
+        }
 
         #expect(await tickUntil(tick: { executor.drain() }, until: { released.count == 1 }))
         executor.drain()

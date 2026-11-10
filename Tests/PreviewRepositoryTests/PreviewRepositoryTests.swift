@@ -34,14 +34,16 @@ struct PreviewRepositoryTests {
         await #expect(throws: GPUError.noDevice) { try await MainActor.run { try subject.attach(FakePreviewTargetHandle()) } }
     }
 
-    @Test("present forwards the frame, and the renderer's completion reaches the caller exactly once")
+    @Test("present forwards the frame with no original, and the renderer's completion reaches the caller exactly once")
     func presentForwards() throws {
         let completions = Collector<Void>()
         makeSubject().present(frame) { completions.append(()) }
 
+        let presentation = try #require(renderer.presented.values.first)
         #expect(renderer.presented.values.map(\.frame) == [frame])
+        #expect(presentation.original == nil, "the source sink carries no original")
         #expect(completions.count == 0, "the repository adds no completion of its own")
-        try #require(renderer.presented.values.first).completion()
+        presentation.completion()
         #expect(completions.count == 1)
     }
 
@@ -60,6 +62,7 @@ struct PreviewRepositoryTests {
 private final class SpyPreviewRenderer: PreviewRenderer, Sendable {
     struct Presentation: Sendable {
         let frame: FrameRef
+        let original: FrameRef?
         let completion: @Sendable () -> Void
     }
 
@@ -77,7 +80,7 @@ private final class SpyPreviewRenderer: PreviewRenderer, Sendable {
         detached.append(ObjectIdentifier(target))
     }
 
-    func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
-        presented.append(Presentation(frame: frame, completion: completion))
+    func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
+        presented.append(Presentation(frame: frame, original: original, completion: completion))
     }
 }

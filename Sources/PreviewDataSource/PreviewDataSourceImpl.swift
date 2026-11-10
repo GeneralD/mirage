@@ -27,9 +27,12 @@ public final class PreviewDataSourceImpl: @unchecked Sendable {
         let kernel: any LibraryHandle
     }
 
-    /// A presented frame and the completion that ends its borrow of the surface.
+    /// A presented frame, its original when there is one, and the completion
+    /// that ends the borrow of both surfaces. The original is carried, not yet
+    /// drawn: nothing reads it here.
     private struct Request: Sendable {
         let frame: FrameRef
+        let original: FrameRef?
         let completion: @Sendable () -> Void
     }
 
@@ -70,8 +73,8 @@ extension PreviewDataSourceImpl: PreviewRenderer {
         frameExecutor.run { [self] in release(identity) }
     }
 
-    public func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
-        let request = Request(frame: frame, completion: completion)
+    public func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
+        let request = Request(frame: frame, original: original, completion: completion)
         frameExecutor.run { [self] in submit(request) }
     }
 }

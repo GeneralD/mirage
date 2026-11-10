@@ -23,6 +23,6 @@ extension PreviewRepositoryImpl: PreviewSink {
     }
 
     public func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
-        renderer.present(frame, completion: completion)
+        renderer.present(frame, original: nil, completion: completion)
     }
 }
