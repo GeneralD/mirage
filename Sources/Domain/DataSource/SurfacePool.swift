@@ -21,6 +21,14 @@ public protocol SurfacePool: Sendable {
     func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken?
     func handle(for token: SurfaceToken) -> (any SurfaceHandle)?
     func descriptor(for token: SurfaceToken) -> SurfaceDescriptor?
+    /// Writes `image` into the surface behind `token`, its packed rows padded with zeros to the surface's
+    /// stride. `false` when the token is stale, the surface's width, height or `pixelFormat` is not the
+    /// image's (`.bgra32`), the byte count is not `width * height * 4`, or the gateway's write fails; the
+    /// surface is then left as it was.
+    func upload(_ image: StillImage, to token: SurfaceToken) -> Bool
+    /// Reads the surface behind `token` back as a packed image: the padding of each row is dropped.
+    /// `nil` when the token is stale or the gateway's read fails.
+    func download(from token: SurfaceToken) -> StillImage?
     /// `false` when the token is stale (already released or never issued).
     @discardableResult
     func release(_ token: SurfaceToken) -> Bool
@@ -71,6 +79,16 @@ private struct UnimplementedSurfacePool: SurfacePool {
 
     func descriptor(for token: SurfaceToken) -> SurfaceDescriptor? {
         reportIssue("SurfacePool.descriptor(for:) not implemented")
+        return nil
+    }
+
+    func upload(_ image: StillImage, to token: SurfaceToken) -> Bool {
+        reportIssue("SurfacePool.upload not implemented")
+        return false
+    }
+
+    func download(from token: SurfaceToken) -> StillImage? {
+        reportIssue("SurfacePool.download not implemented")
         return nil
     }
 
