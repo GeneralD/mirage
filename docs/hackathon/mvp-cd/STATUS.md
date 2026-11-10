@@ -1,24 +1,26 @@
-# STATUS — mvp-cd（tick 1）
+# STATUS — mvp-cd（tick 2）
 
 ## 一言
 
-contract epic（#75 から #79）が全部マージ済み。パラメータの ABI と pass の outcome stream が統合ブランチに入った。次は残り 10 epic の起票と worker の投入。
+残り 11 epic を 217 issue（#85 から #301）に分解して起票し、スケジューラを起動した。worker は Haiku で 6 並列、依存が片付いた issue から順に着手する。
 
 ## 前回のメッセージ以降
 
-- worker は jam squad ではなく、この会話の Workflow スケジューラから起動する方式に変更（DECISIONS `[run]`）。「jam で」で戻す
-- 使用量上限で 3 回止まり、そのたびに途中のコミットや PR から再開した（作業の捨て直しはなし）
-- #77 の worker は PR #81 を作ったところで止まったので、CI 全緑を確認して orchestrator がマージした
+- 分解は epic ごとに起草、検証、全体の critic の 3 段で行った。critic が穴を 3 件見つけて追加した（E11: 無効な effect を cycle で飛ばす、設定リセットでカメラのメニューを再起動、無効な effect のメニュー画面）
+- 新しい module は S-TARGETS（#85）1 件だけが `Package.swift` と lint の許可表に入れる（21 library と executable 2 本）
+- 失敗した issue は、判断役の agent が契約（issue 本文）を直してから Haiku に 1 回だけ再投入する。2 回目も駄目なら保留にして、ここに書く
+- gate の既知の flake（`MachLoopbackTests.swift:217`）は #301 が最優先で直す。直るまでは、その 1 件だけで赤なら worker が gate をもう 1 回だけ回す
 
 ## 進捗
 
 - contract 5/5（PR #80 から #84）
+- 起票 217 件、着手可能 42 件、マージ 0 件
 - boring 3/31 · differentiator 維持 · bold 0/2 · horizon 0/9
-- 分解: 6 epic の契約を検証済み、残りは E4・E8 の検証、E9 の起草、新 target issue、全体の網羅チェック
 
 ## 直近の tick
 
-- #75 merged (#80) / #77 merged (#81) / #78 merged (#82) / #76 merged (#83) / #79 merged (#84)
+- 起票: #85 から #300（216 件）、#301（flake）
+- スケジューラ起動（Workflow `wf_05c13c48-b92`、並列 6）
 
 ## 判断キュー（暫定で走行中）
 
@@ -30,6 +32,6 @@ contract epic（#75 から #79）が全部マージ済み。パラメータの A
 
 ## 最近の決定
 
+- 失敗は契約の修理と 1 回の再投入で扱い、worker のモデルは上げない（DECISIONS `[run]`）
+- flake は増幅で直す: register を 64 回失敗させて、新しい receive right が 32 未満（#301）
 - `EffectAdmission.compile` は block を持たず、`selected()` が library と block の組（`EffectSelection`）を返す（#78）
-- 指紋は選択が決まる時点で刻む（#79）
-- 既知の flake: `MachLoopbackTests.swift:217` が全体テストで約 2 割落ちる（パラメータ作業とは無関係、E0 の検証で判明）
