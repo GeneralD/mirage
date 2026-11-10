@@ -313,4 +313,119 @@ struct ExtensionInstallDataSourceTests {
         #expect(messages.count == 3)
         #expect(messages.allSatisfy { $0.contains("extension install status") })
     }
+
+    @Test("a new watcher first receives the current status, notInstalled at the start")
+    func watcherStartsWithCurrentStatus() async {
+        var watch = await makeSubject().updates().makeAsyncIterator()
+        #expect(await watch.next() == .notInstalled)
+    }
+
+    @Test("a watcher receives installing, needsApproval and installed in order as install runs")
+    func watcherFollowsInstallTransitions() async {
+        let subject = makeSubject()
+        var watch = await subject.updates().makeAsyncIterator()
+        #expect(await watch.next() == .notInstalled)
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.needsApproval)
+        gateway.emit(.completed)
+        #expect(await watch.next() == .installing)
+        #expect(await watch.next() == .needsApproval)
+        #expect(await watch.next() == .installed)
+        #expect(await drain(stream) == [.installing, .needsApproval, .installed])
+    }
+
+    @Test("a failure does not end a watcher, and a retried install reaches it again with installing")
+    func watcherSurvivesFailureAndRetry() async {
+        let subject = makeSubject()
+        var watch = await subject.updates().makeAsyncIterator()
+        #expect(await watch.next() == .notInstalled)
+        let failure = InstallStatus.failed(.other(code: 1, description: "boom"))
+        let first = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.failed(code: 1, description: "boom"))
+        #expect(await drain(first) == [.installing, failure])
+        #expect(await watch.next() == .installing)
+        #expect(await watch.next() == failure)
+
+        let second = await subject.install()
+        #expect(await watch.next() == .installing)
+        await gateway.activations.waitForCount(2)
+        gateway.emit(.completed)
+        #expect(await watch.next() == .installed)
+        #expect(await drain(second) == [.installing, .installed])
+    }
+
+    @Test("a watcher that arrives after a terminal status first receives that terminal status")
+    func lateWatcherStartsWithTerminal() async {
+        let subject = makeSubject()
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.completed)
+        #expect(await drain(stream) == [.installing, .installed])
+        var late = await subject.updates().makeAsyncIterator()
+        #expect(await late.next() == .installed)
+    }
+
+    @Test("two watchers receive the same sequence")
+    func twoWatchersReceiveSameSequence() async {
+        let subject = makeSubject()
+        var first = await subject.updates().makeAsyncIterator()
+        var second = await subject.updates().makeAsyncIterator()
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.needsApproval)
+        gateway.emit(.completed)
+        #expect(await drain(stream) == [.installing, .needsApproval, .installed])
+        #expect(await first.next() == .notInstalled)
+        #expect(await first.next() == .installing)
+        #expect(await first.next() == .needsApproval)
+        #expect(await first.next() == .installed)
+        #expect(await second.next() == .notInstalled)
+        #expect(await second.next() == .installing)
+        #expect(await second.next() == .needsApproval)
+        #expect(await second.next() == .installed)
+    }
+
+    @Test("updates does not submit an activation")
+    func updatesDoesNotSubmitActivation() async {
+        let subject = makeSubject()
+        var watch = await subject.updates().makeAsyncIterator()
+        #expect(await watch.next() == .notInstalled)
+        // A stray install() would flip the status to .installing synchronously; the activation
+        // count is checked after a hop so a gateway call from a spawned task would also show.
+        #expect(await subject.status == .notInstalled)
+        await Task.yield()
+        #expect(gateway.activations.count == 0)
+    }
+
+    @Test("a watcher that stops reading is detached while the others keep receiving transitions")
+    func stoppedWatcherIsDetached() async {
+        let subject = makeSubject()
+        var survivor = await subject.updates().makeAsyncIterator()
+        do {
+            var abandoned = await subject.updates().makeAsyncIterator()
+            #expect(await abandoned.next() == .notInstalled)
+            #expect(await subject.watcherCount == 2)
+        }
+        #expect(await pollUntilWatchers(subject, equal: 1))
+        let stream = await subject.install()
+        await gateway.activations.waitForCount(1)
+        gateway.emit(.completed)
+        #expect(await drain(stream) == [.installing, .installed])
+        #expect(await survivor.next() == .notInstalled)
+        #expect(await survivor.next() == .installing)
+        #expect(await survivor.next() == .installed)
+        #expect(await subject.watcherCount == 1)
+    }
+
+    private func pollUntilWatchers(_ subject: ExtensionInstallDataSourceImpl, equal target: Int) async -> Bool {
+        // Same reason as pollUntilSubscribers: the count is readable only on the actor, so the
+        // detach hop is observed by yielding between reads.
+        while !Task.isCancelled {
+            guard await subject.watcherCount != target else { return true }
+            await Task.yield()
+        }
+        return false
+    }
 }

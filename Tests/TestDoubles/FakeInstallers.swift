@@ -7,11 +7,14 @@ import TestSupport
 public final class FakeCameraExtensionInstaller: CameraExtensionInstaller, ExtensionInstallRepository, Sendable {
     private let current: Locked<InstallStatus>
     private let script: Locked<[InstallStatus]>
+    // Consumers of `updates()`, fed by every status `install()` yields; this double never finishes them.
+    private let watchers: Locked<[AsyncStream<InstallStatus>.Continuation]>
     public let installs = Collector<Void>()
 
     public init(status: InstallStatus = .notInstalled, script: [InstallStatus] = [.installing, .installed]) {
         current = Locked(status)
         self.script = Locked(script)
+        watchers = Locked([])
     }
 
     public var status: InstallStatus { current.current }
@@ -27,8 +30,26 @@ public final class FakeCameraExtensionInstaller: CameraExtensionInstaller, Exten
             for status in statuses {
                 current.set(status)
                 continuation.yield(status)
+                for watcher in watchers.current { watcher.yield(status) }
             }
             continuation.finish()
+        }
+    }
+
+    /// The current status first, then every status `install()` yields, until `finishUpdates()`.
+    public func updates() async -> AsyncStream<InstallStatus> {
+        let (stream, continuation) = AsyncStream<InstallStatus>.makeStream()
+        watchers.withLock { list in
+            continuation.yield(current.current)
+            list.append(continuation)
+        }
+        return stream
+    }
+
+    public func finishUpdates() {
+        watchers.withLock { list in
+            for watcher in list { watcher.finish() }
+            list = []
         }
     }
 }

@@ -11,6 +11,10 @@ public protocol CameraExtensionInstaller: Sendable {
     /// transition until a terminal status. A second call while one is in
     /// flight joins the running request instead of submitting again.
     func install() async -> AsyncStream<InstallStatus>
+    /// Streams the current status first, then every later transition, terminal ones included.
+    /// It never finishes on its own: a retried `install()` reaches it again, and it is detached
+    /// when the consumer stops reading. It submits no activation; only `install()` does.
+    func updates() async -> AsyncStream<InstallStatus>
 }
 
 public enum CameraExtensionInstallerKey: TestDependencyKey {
@@ -34,6 +38,11 @@ private struct UnimplementedCameraExtensionInstaller: CameraExtensionInstaller {
 
     func install() async -> AsyncStream<InstallStatus> {
         reportIssue("CameraExtensionInstaller.install not implemented")
+        return AsyncStream { $0.finish() }
+    }
+
+    func updates() async -> AsyncStream<InstallStatus> {
+        reportIssue("CameraExtensionInstaller.updates not implemented")
         return AsyncStream { $0.finish() }
     }
 }
