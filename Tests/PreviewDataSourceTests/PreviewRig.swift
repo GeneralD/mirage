@@ -64,12 +64,14 @@ final class PreviewRig: Sendable {
         return FrameRef(token: token, descriptor: .hd720, presentationTime: HostTimestamp(nanoseconds: UInt64(number)))
     }
 
-    /// Presents `frame` the way the pipeline does: the completion ends the lease.
-    func present(_ frame: FrameRef) {
+    /// Presents `frame`, with `original` alongside when given, the way the pipeline does:
+    /// the completion ends the lease on each.
+    func present(_ frame: FrameRef, original: FrameRef? = nil) {
         let number = Int(frame.presentationTime.nanoseconds)
-        subject.present(frame) { [completed, pool] in
+        subject.present(frame, original: original) { [completed, pool] in
             completed.append(number)
             pool.release(frame.token)
+            if let original { pool.release(original.token) }
         }
     }
 
