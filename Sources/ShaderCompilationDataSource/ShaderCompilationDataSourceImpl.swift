@@ -2,7 +2,8 @@ import Dependencies
 import Domain
 import Foundation
 
-/// The runtime compile of one effect: assemble (`ShaderSourceAssembly`), compile
+/// The runtime compile of one effect: assemble (`ShaderSourceAssembly`, with the layout of
+/// the effect's parameters, which is what its `Parameters` struct is made of), compile
 /// through `ShaderLibraryGateway`, bring the diagnostics back to the author's
 /// lines. Stateless, and so free of locks.
 ///
@@ -46,8 +47,11 @@ extension ShaderCompilationDataSourceImpl: ShaderCompiler {
         Result { try gpuGateway.makeContext() }
             .mapError(ShaderDiagnostics.contextUnavailable)
             .flatMap {
-                libraryGateway.compile(source: ShaderSourceAssembly.assemble(effect.source), options: effect.options, on: $0)
-                    .mapError(LibraryErrorMapping.classified)
+                libraryGateway.compile(
+                    source: ShaderSourceAssembly.assemble(effect.source, layout: EffectParameterLayout(effect.parameters)),
+                    options: effect.options, on: $0
+                )
+                .mapError(LibraryErrorMapping.classified)
             }
             .mapError(ShaderSourceAssembly.authorRelative)
     }

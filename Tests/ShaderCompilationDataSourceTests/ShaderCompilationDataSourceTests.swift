@@ -35,6 +35,29 @@ struct ShaderCompilationDataSourceTests {
         #expect(gpu.contextCount == 1, "one context for the compile")
     }
 
+    @Test("the compiler gets the Parameters struct of the effect's parameter layout, between the prelude and the #line directive")
+    func compilesWithTheParametersStruct() async throws {
+        let ripple = EffectSource(name: "ripple", source: "kernel void effect() {}\n", parameters: everyKindSpecs)
+        let handle = try await makeSubject().compile(ripple).get()
+
+        let compiled = try #require(handle as? FakeLibraryHandle)
+        #expect(compiled.source == ShaderSourceAssembly.assemble(ripple.source, layout: EffectParameterLayout(everyKindSpecs)))
+        #expect(compiled.source.contains(ShaderPrelude.source + everyKindParametersLine + "\n#line 1 \"effect\"\n"))
+        #expect(library.calls.values.map(\.source) == [compiled.source])
+    }
+
+    @Test("with parameters declared, an error on the author's third line still comes back as effect:3")
+    func diagnosticsKeepAuthorLinesWithParameters() async throws {
+        let author = "// one\n// two\nbroken\n// four\n"
+        let ripple = EffectSource(name: "ripple", source: author, parameters: everyKindSpecs)
+        let assembled = ShaderSourceAssembly.assemble(author, layout: EffectParameterLayout(everyKindSpecs))
+        let lines = assembled.split(separator: "\n", omittingEmptySubsequences: false)
+        let compilerLine = try #require(lines.firstIndex(of: "broken")) + 1
+        library.failCompile(of: assembled, with: ShaderDiagnostics(message: "program_source:\(compilerLine):1: error: x", code: 3))
+
+        #expect(await makeSubject().compile(ripple).failure == ShaderDiagnostics(message: "effect:3:1: error: x", code: 3))
+    }
+
     @Test("the compile runs inside a WorkRunner item, off the main thread, even for a caller on the main actor")
     @MainActor
     func compilesOffMain() async throws {
