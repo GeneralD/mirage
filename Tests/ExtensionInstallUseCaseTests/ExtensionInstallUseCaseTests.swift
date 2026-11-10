@@ -63,4 +63,55 @@ struct ExtensionInstallUseCaseTests {
         let repository = FakeCameraExtensionInstaller(status: .installed)
         #expect(await makeSubject(repository).status == .installed)
     }
+
+    @Test("updates reports consecutive equal statuses as one")
+    func updatesMergesConsecutiveDuplicates() async {
+        let repository = FakeCameraExtensionInstaller(status: .installing, script: [.installing, .needsApproval])
+        let subject = makeSubject(repository)
+        let stream = await subject.updates()
+        _ = await subject.install { _ in }
+        repository.finishUpdates()
+        let statuses = await stream.reduce(into: [InstallStatus]()) { $0.append($1) }
+        #expect(statuses == [.installing, .needsApproval])
+    }
+
+    @Test("updates keeps a status that returns after another status")
+    func updatesKeepsRepeatAfterOther() async {
+        let repository = FakeCameraExtensionInstaller(status: .installing, script: [.needsApproval, .installing])
+        let subject = makeSubject(repository)
+        let stream = await subject.updates()
+        _ = await subject.install { _ in }
+        repository.finishUpdates()
+        let statuses = await stream.reduce(into: [InstallStatus]()) { $0.append($1) }
+        #expect(statuses == [.installing, .needsApproval, .installing])
+    }
+
+    @Test("updates always starts with the current status")
+    func updatesStartsWithCurrentStatus() async {
+        let repository = FakeCameraExtensionInstaller(status: .needsApproval, script: [])
+        let stream = await makeSubject(repository).updates()
+        repository.finishUpdates()
+        let statuses = await stream.reduce(into: [InstallStatus]()) { $0.append($1) }
+        #expect(statuses == [.needsApproval])
+    }
+
+    @Test("updates finishes when its source finishes")
+    func updatesFinishesWithSource() async {
+        let repository = FakeCameraExtensionInstaller(status: .notInstalled)
+        let stream = await makeSubject(repository).updates()
+        repository.finishUpdates()
+        let statuses = await stream.reduce(into: [InstallStatus]()) { $0.append($1) }
+        #expect(statuses == [.notInstalled])
+    }
+
+    @Test("openApprovalSettings hands the pane to the repository and returns its answer")
+    func openApprovalSettingsForwardsAnswer() async {
+        let accepting = FakeCameraExtensionInstaller()
+        #expect(await makeSubject(accepting).openApprovalSettings(.privacyAndSecurity) == true)
+        #expect(accepting.openedPanes.values == [.privacyAndSecurity])
+
+        let refusing = FakeCameraExtensionInstaller(opensSettings: false)
+        #expect(await makeSubject(refusing).openApprovalSettings(.loginItemsAndExtensions) == false)
+        #expect(refusing.openedPanes.values == [.loginItemsAndExtensions])
+    }
 }

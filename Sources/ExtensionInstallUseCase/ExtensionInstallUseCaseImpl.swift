@@ -23,4 +23,32 @@ extension ExtensionInstallUseCaseImpl: ExtensionInstallUseCase {
         }
         return last.flatMap { $0.isTerminal ? $0 : nil } ?? .failed(.other(code: -1, description: "no terminal status"))
     }
+
+    public func updates() async -> AsyncStream<InstallStatus> {
+        // The repository is asked before the relay starts, so its snapshot and registration happen in order.
+        await repository.updates().distinct()
+    }
+
+    public func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        await repository.openApprovalSettings(pane)
+    }
+}
+
+extension AsyncStream where Element: Equatable & Sendable {
+    /// Drops an element equal to the one before it; a repeat after another status is kept.
+    /// The `previous` var lives only in the relay Task, which is cancelled when the consumer stops reading.
+    fileprivate func distinct() -> AsyncStream<Element> {
+        let (stream, continuation) = AsyncStream<Element>.makeStream()
+        let relay = Task {
+            var previous: Element?
+            for await element in self {
+                guard element != previous else { continue }
+                previous = element
+                continuation.yield(element)
+            }
+            continuation.finish()
+        }
+        continuation.onTermination = { _ in relay.cancel() }
+        return stream
+    }
 }
