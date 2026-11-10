@@ -26,10 +26,22 @@ import Domain
 /// choice back behind the older one's compile. The price is that two calls made in the same
 /// instant may reach the UseCase in either order, which a person choosing from a menu does not
 /// produce.
+///
+/// `setParameter(_:to:)` and `resetParameters()` have a queue of their own, which neither waits
+/// for nor holds back the run commands or a `select`. A slider makes many calls a second, so they
+/// are not a `Task` each as `select` is: one task (`applyParameters`) carries them out one at a
+/// time, in the order they were made, which keeps a later slider value from overtaking an earlier
+/// one. What a call made while no effect is chosen, or while the catalog is stopped, does is the
+/// UseCase's to decide.
 public final class EffectInteractorImpl: Sendable {
     private enum Command: Sendable {
         case start
         case stop
+    }
+
+    private enum ParameterCommand: Sendable {
+        case set(String, EffectParameterValue)
+        case reset
     }
 
     private let catalog: any EffectCatalogUseCase
@@ -37,6 +49,7 @@ public final class EffectInteractorImpl: Sendable {
     private let developerLog: any DeveloperLog
     private let relay: StateRelay
     private let commands: AsyncStream<Command>.Continuation
+    private let parameterCommands: AsyncStream<ParameterCommand>.Continuation
 
     public init() {
         @Dependency(\.effectCatalogUseCase) var catalog
@@ -44,16 +57,23 @@ public final class EffectInteractorImpl: Sendable {
         @Dependency(\.developerLog) var developerLog
         let relay = StateRelay()
         let (stream, commands) = AsyncStream<Command>.makeStream()
+        let (parameterStream, parameterCommands) = AsyncStream<ParameterCommand>.makeStream()
         self.catalog = catalog
         self.errorLog = errorLog
         self.developerLog = developerLog
         self.relay = relay
         self.commands = commands
-        Task { await Self.supervise(stream, catalog: catalog, relay: relay) }
+        self.parameterCommands = parameterCommands
+        // One immutable copy for both tasks: each closure captures a `let` (a Sendable existential),
+        // not the mutable `@Dependency` binding, which two concurrent tasks may not share.
+        let useCase: any EffectCatalogUseCase = catalog
+        Task { await Self.supervise(stream, catalog: useCase, relay: relay) }
+        Task { await Self.applyParameters(parameterStream, catalog: useCase) }
     }
 
     deinit {
         commands.finish()
+        parameterCommands.finish()
     }
 }
 
@@ -74,6 +94,14 @@ extension EffectInteractorImpl: EffectInteractor {
             let outcome = await catalog.select(id)
             Self.record(outcome, of: id, errorLog: errorLog, developerLog: developerLog)
         }
+    }
+
+    public func setParameter(_ id: String, to value: EffectParameterValue) {
+        parameterCommands.yield(.set(id, value))
+    }
+
+    public func resetParameters() {
+        parameterCommands.yield(.reset)
     }
 
     public func openEffectsFolder() {
@@ -103,6 +131,20 @@ extension EffectInteractorImpl {
                     guard !Task.isCancelled else { return }
                     relay.publish(state)
                 }
+            }
+        }
+    }
+
+    /// Carries out the parameter calls one at a time, in the order they were queued, until the
+    /// Interactor is gone. It holds the catalog and the stream, never the Interactor, so that
+    /// `deinit` is what ends it.
+    private static func applyParameters(_ commands: AsyncStream<ParameterCommand>, catalog: any EffectCatalogUseCase) async {
+        for await command in commands {
+            switch command {
+            case .set(let id, let value):
+                await catalog.setParameter(id, to: value)
+            case .reset:
+                await catalog.resetParameters()
             }
         }
     }
