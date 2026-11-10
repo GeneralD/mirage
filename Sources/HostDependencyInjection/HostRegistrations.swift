@@ -71,6 +71,10 @@ extension CameraRepositoryKey: DependencyKey {
     public static let liveValue: any CameraRepository = CameraRepositoryImpl()
 }
 
+extension CameraSelectionRepositoryKey: DependencyKey {
+    public static let liveValue: any CameraSelectionRepository = CameraSelectionRepositoryImpl()
+}
+
 extension VirtualCameraSinkKey: DependencyKey {
     public static let liveValue: any VirtualCameraSink = VirtualCameraRepositoryImpl()
 }
