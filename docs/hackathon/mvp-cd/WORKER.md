@@ -10,6 +10,9 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
 - One plain command per Bash call around `git` and `gh`: no `cd`, `for`, `$(...)`, `git -C`, no shell
   variables, no pipelines into `git`. Use absolute paths. A loop goes in a script.
 - Commit messages and PR titles are English Conventional Commits with a scope. No attribution lines.
+- Nothing runs in the background: a subagent never receives a background command's completion, so
+  it ends without a result. Long commands run in the foreground with the Bash timeout at 600000; one
+  that times out before its verdict is run again (builds are incremental).
 
 ## Steps
 
@@ -31,9 +34,9 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
    a blank line, `Closes #<n>`, the line `Gate: GREEN`, and `Decision:` lines if any. A UI PR commits
    `docs/shots/<n>/after.png` and embeds
    `https://github.com/GeneralD/mirage/blob/task/<n>/docs/shots/<n>/after.png?raw=true`.
-6. CI: `gh pr checks <pr> -R GeneralD/mirage`, every 60 seconds. A red check goes to step 8. All
-   pending for 5 minutes, or no checks at all: proceed; the local gate is green and CI absence does
-   not block.
+6. CI: `gh pr checks <pr> -R GeneralD/mirage --watch --interval 30`, in the foreground (rerun it if
+   the call times out). A red check goes to step 8. No checks at all after 5 minutes: proceed; the
+   local gate is green and CI absence does not block.
 7. `gh pr merge <pr> -R GeneralD/mirage --squash --delete-branch`, then
    `gh issue close <n> -R GeneralD/mirage --reason completed` (a closing keyword does not fire on a
    non-default base). A conflict: `git rebase origin/hackathon/mvp-cd` once, gate, push with a new
