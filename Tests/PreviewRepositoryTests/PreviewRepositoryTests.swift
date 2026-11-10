@@ -55,12 +55,17 @@ private final class SpyPreviewRenderer: PreviewRenderer, Sendable {
     }
 
     let attached = Collector<FakePreviewTargetHandle>()
+    let detached = Collector<ObjectIdentifier>()
     let presented = Collector<Presentation>()
     let attachError = Locked<(any Error)?>(nil)
 
     nonisolated func attach(_ target: any PreviewTargetHandle) throws {
         if let error = attachError.current { throw error }
         attached.append(try (target as? FakePreviewTargetHandle).orThrow(PreviewError.foreignTarget))
+    }
+
+    func detach(_ target: any PreviewTargetHandle) {
+        detached.append(ObjectIdentifier(target))
     }
 
     func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
