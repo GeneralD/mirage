@@ -6,6 +6,9 @@ import Dependencies
 public protocol CameraDeviceGateway: Sendable {
     func devices() -> [CameraDevice]
     func formats(ofDevice id: String) -> [CameraFormat]
+    /// A signal that a camera was connected or disconnected. The value carries nothing: on each
+    /// element, read `devices()` again.
+    func changes() -> AsyncStream<Void>
 }
 
 public enum CameraDeviceGatewayKey: TestDependencyKey {
@@ -28,5 +31,10 @@ private struct UnimplementedCameraDeviceGateway: CameraDeviceGateway {
     func formats(ofDevice id: String) -> [CameraFormat] {
         reportIssue("CameraDeviceGateway.formats not implemented")
         return []
+    }
+
+    func changes() -> AsyncStream<Void> {
+        reportIssue("CameraDeviceGateway.changes not implemented")
+        return AsyncStream<Void> { $0.finish() }
     }
 }

@@ -27,6 +27,10 @@ extension CameraDeviceGatewayImpl: CameraDeviceGateway {
             device.formats.enumerated().map { CameraFormat(index: $0.offset, format: $0.element) }
         } ?? []
     }
+
+    public func changes() -> AsyncStream<Void> {
+        DeviceChangeObservers.stream()
+    }
 }
 
 extension CameraFormat {

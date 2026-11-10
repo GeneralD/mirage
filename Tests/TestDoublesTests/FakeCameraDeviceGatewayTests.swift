@@ -3,7 +3,7 @@ import TestDoubles
 import TestSupport
 import Testing
 
-@Suite("FakeCameraDeviceGateway")
+@Suite("FakeCameraDeviceGateway", .timeLimit(.minutes(1)))
 struct FakeCameraDeviceGatewayTests {
     @Test("devices returns the devices in the order they were set")
     func devicesInSetOrder() {
@@ -42,5 +42,44 @@ struct FakeCameraDeviceGatewayTests {
         _ = gateway.formats(ofDevice: "cam-2")
         _ = gateway.formats(ofDevice: "cam-1")
         #expect(gateway.formatRequests.values == ["cam-2", "cam-1"])
+    }
+
+    /// A task that records each element its stream yields.
+    private func listen(to stream: AsyncStream<Void>, into heard: Collector<Void>) -> Task<Void, Never> {
+        Task { for await _ in stream { heard.append(()) } }
+    }
+
+    @Test("a change emitted after changes() was taken reaches that stream once")
+    func emittedChangeReachesStreamOnce() async {
+        let gateway = FakeCameraDeviceGateway()
+        let heard = Collector<Void>()
+        let consumer = listen(to: gateway.changes(), into: heard)
+
+        gateway.emitChange()
+        await heard.waitForCount(1)
+        consumer.cancel()
+        await consumer.value
+
+        #expect(heard.count == 1)
+    }
+
+    @Test("a change emitted after changes() was called twice reaches both streams")
+    func emittedChangeReachesEveryStream() async {
+        let gateway = FakeCameraDeviceGateway()
+        let first = Collector<Void>()
+        let second = Collector<Void>()
+        let firstConsumer = listen(to: gateway.changes(), into: first)
+        let secondConsumer = listen(to: gateway.changes(), into: second)
+
+        gateway.emitChange()
+        await first.waitForCount(1)
+        await second.waitForCount(1)
+        firstConsumer.cancel()
+        secondConsumer.cancel()
+        await firstConsumer.value
+        await secondConsumer.value
+
+        #expect(first.count == 1)
+        #expect(second.count == 1)
     }
 }
