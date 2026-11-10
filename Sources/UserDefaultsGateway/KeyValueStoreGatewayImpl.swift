@@ -28,4 +28,8 @@ public struct KeyValueStoreGatewayImpl: KeyValueStoreGateway, @unchecked Sendabl
     public func removeValue(forKey key: String) {
         defaults.removeObject(forKey: key)
     }
+
+    public func removeAll() {
+        defaults.dictionaryRepresentation().keys.forEach(defaults.removeObject(forKey:))
+    }
 }
