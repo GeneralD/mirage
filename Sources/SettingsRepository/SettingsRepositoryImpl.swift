@@ -1,14 +1,17 @@
 import Dependencies
 import Domain
 
-/// The chosen effect and the disabled-effect records as the UseCases see them, over
-/// `PreferencesDataStore` (epic #42, D6): a pass-through, which keeps the UseCase → Repository
-/// → DataStore chain adjacent as `ExtensionInstallRepositoryImpl` does for the installer. The
-/// records go through unsorted and undeduplicated: what the UseCase hands over is what is
-/// stored. Caching or policy would belong here, and these settings need neither. There is no
-/// `SettingsUseCase`: no settings UI exists yet, and the only reader is the effect catalog.
+/// The chosen effect, the disabled-effect records and the global hotkeys flag as the UseCases see
+/// them, over `PreferencesDataStore` (epic #42, D6): a pass-through, which keeps the UseCase →
+/// Repository → DataStore chain adjacent as `ExtensionInstallRepositoryImpl` does for the
+/// installer. The records go through unsorted and undeduplicated: what the UseCase hands over is
+/// what is stored. The schema version and the reset go to `StoreMaintenance` unchanged, so the
+/// flag and the version never share a store. Caching or policy would belong here, and these
+/// settings need neither. The readers are the effect catalog and `SettingsUseCase`, which serves
+/// the settings window and the global hotkeys.
 public struct SettingsRepositoryImpl: Sendable {
     @Dependency(\.preferences) private var preferences
+    @Dependency(\.storeMaintenance) private var storeMaintenance
 
     public init() {}
 }
@@ -28,5 +31,25 @@ extension SettingsRepositoryImpl: SettingsRepository {
 
     public func setDisabledEffects(_ records: [DisabledEffectRecord]) async {
         await preferences.setDisabledEffects(records)
+    }
+
+    public func hotkeysEnabled() async -> Bool {
+        await preferences.hotkeysEnabled()
+    }
+
+    public func setHotkeysEnabled(_ on: Bool) async {
+        await preferences.setHotkeysEnabled(on)
+    }
+
+    public func storedSchemaVersion() async -> StoredSchemaVersion {
+        await storeMaintenance.schemaVersion()
+    }
+
+    public func stampSchemaVersion(_ version: Int) async {
+        await storeMaintenance.stampSchemaVersion(version)
+    }
+
+    public func resetAll() async {
+        await storeMaintenance.resetAll()
     }
 }

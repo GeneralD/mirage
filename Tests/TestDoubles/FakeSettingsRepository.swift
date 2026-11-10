@@ -14,6 +14,10 @@ import TestSupport
 /// while the subject is reading or remembering the choice" is a sequence the test writes down.
 /// A held read answers what was stored when it began; a held write has stored its value by
 /// then (it is remembered, but the call has not returned yet).
+///
+/// The hotkeys flag and the schema version answer at once and are never held. `hotkeyFlagWrites`
+/// records every `setHotkeysEnabled`, `stamps` every `stampSchemaVersion` version, and `resets` one
+/// entry per `resetAll()`. `resetAll()` puts every value back to its default, as the live reset does.
 public final class FakeSettingsRepository: SettingsRepository, Sendable {
     /// One call that is parked until the test completes it.
     public struct Request: Sendable {
@@ -32,6 +36,8 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
     private struct State {
         var selected: EffectID?
         var disabled: [DisabledEffectRecord]
+        var hotkeysEnabled: Bool
+        var schemaVersion: StoredSchemaVersion
         var holdingReads = false
         var holdingWrites = false
         var holdingDisabledWrites = false
@@ -51,9 +57,20 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
     /// The calls that were parked (`holdReads()`, `holdWrites()`, `holdDisabledWrites()`), in call order. A request is recorded
     /// in the same step that parks it, so a test that sees one can always complete it.
     public let heldRequests = Collector<Request>()
+    /// The values `setHotkeysEnabled` was called with, in call order.
+    public let hotkeyFlagWrites = Collector<Bool>()
+    /// The versions `stampSchemaVersion` was called with, in call order.
+    public let stamps = Collector<Int>()
+    /// One entry per `resetAll()` call, in call order.
+    public let resets = Collector<Void>()
 
-    public init(selected: EffectID? = nil, disabled: [DisabledEffectRecord] = []) {
-        state = Locked(State(selected: selected, disabled: disabled))
+    public init(
+        selected: EffectID? = nil,
+        disabled: [DisabledEffectRecord] = [],
+        hotkeysEnabled: Bool = true,
+        schemaVersion: StoredSchemaVersion = .missing
+    ) {
+        state = Locked(State(selected: selected, disabled: disabled, hotkeysEnabled: hotkeysEnabled, schemaVersion: schemaVersion))
     }
 
     /// Calls that are parked right now.
@@ -108,6 +125,35 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         state.withLock { $0.disabled = records }
         disabledWrites.append(records)
         await parkIfHeld(.writeDisabled(records))
+    }
+
+    public func hotkeysEnabled() async -> Bool {
+        state.current.hotkeysEnabled
+    }
+
+    public func setHotkeysEnabled(_ on: Bool) async {
+        state.withLock { $0.hotkeysEnabled = on }
+        hotkeyFlagWrites.append(on)
+    }
+
+    public func storedSchemaVersion() async -> StoredSchemaVersion {
+        state.current.schemaVersion
+    }
+
+    public func stampSchemaVersion(_ version: Int) async {
+        state.withLock { $0.schemaVersion = .version(version) }
+        stamps.append(version)
+    }
+
+    /// Clears everything the live reset removes: the selection, the disabled records, the flag and the version.
+    public func resetAll() async {
+        state.withLock {
+            $0.selected = nil
+            $0.disabled = []
+            $0.hotkeysEnabled = true
+            $0.schemaVersion = .missing
+        }
+        resets.append(())
     }
 
     private func parkIfHeld(_ call: Request.Call) async {
