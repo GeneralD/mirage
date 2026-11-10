@@ -7,9 +7,11 @@ import TestSupport
 /// that shares the collector with other fakes can be checked for order.
 /// `start` throws `failure` when given one; `attachPreview` throws `attachRefusal`
 /// (recording nothing), like a sink that refuses a foreign target.
+/// `stats` reads what `script(stats:)` last set, `.empty` until then.
 public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     private let failure: (any Error)?
     private let attachRefusal: PreviewError?
+    private let scriptedStats = Locked(PipelineStats.empty)
     public let starts = Collector<SurfaceDescriptor>()
     public let rates = Collector<FrameRate>()
     public let stops = Collector<Void>()
@@ -25,7 +27,12 @@ public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
         self.order = order
     }
 
-    public var stats: PipelineStats { .empty }
+    /// Makes `stats` report `stats` from now on.
+    public func script(stats: PipelineStats) {
+        scriptedStats.set(stats)
+    }
+
+    public var stats: PipelineStats { scriptedStats.current }
 
     public func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws {
         order.append("start")
