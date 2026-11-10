@@ -9,10 +9,15 @@ public struct EffectSource: Sendable, Hashable {
     /// prepends it).
     public let source: String
     public let options: ShaderCompileOptions
+    /// The knobs the effect declares, in manifest order; `[]` for an effect without any, which is
+    /// also the default, so existing call sites compile unchanged. Only their layout is part of what
+    /// compiles (`EffectFingerprint`); the labels and defaults are the panel's.
+    public let parameters: [EffectParameterSpec]
 
-    public init(name: String, source: String, options: ShaderCompileOptions = ShaderCompileOptions()) {
+    public init(name: String, source: String, options: ShaderCompileOptions = ShaderCompileOptions(), parameters: [EffectParameterSpec] = []) {
         self.name = name
         self.source = source
         self.options = options
+        self.parameters = parameters
     }
 }
