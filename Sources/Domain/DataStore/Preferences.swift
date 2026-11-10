@@ -17,6 +17,12 @@ public protocol Preferences: Sendable {
 
     /// Replaces every stored record with `records`; an empty array is stored as an empty array.
     func setDisabledEffects(_ records: [DisabledEffectRecord]) async
+
+    /// Whether the global hotkeys are on, `true` when nothing was stored or what was stored does
+    /// not decode (a value written by another build is not an error).
+    func hotkeysEnabled() async -> Bool
+
+    func setHotkeysEnabled(_ on: Bool) async
 }
 
 public enum PreferencesKey: TestDependencyKey {
@@ -47,5 +53,14 @@ private struct UnimplementedPreferences: Preferences {
 
     func setDisabledEffects(_ records: [DisabledEffectRecord]) async {
         reportIssue("Preferences.setDisabledEffects not implemented")
+    }
+
+    func hotkeysEnabled() async -> Bool {
+        reportIssue("Preferences.hotkeysEnabled not implemented")
+        return true
+    }
+
+    func setHotkeysEnabled(_ on: Bool) async {
+        reportIssue("Preferences.setHotkeysEnabled not implemented")
     }
 }
