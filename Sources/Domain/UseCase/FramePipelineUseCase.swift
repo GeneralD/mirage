@@ -2,7 +2,7 @@ import Dependencies
 
 /// The host frame path: camera → latest-frame slot → one effect pass per
 /// scheduler tick (at most one in flight; a failed pass sends its input
-/// unchanged) → virtual camera sink and preview, with every lease released
+/// unchanged, and while bypassed every frame does) → virtual camera sink and preview, with every lease released
 /// exactly once: a frame sent is presented too, and released once both are
 /// done with it.
 public protocol FramePipelineUseCase: Sendable {
@@ -13,6 +13,9 @@ public protocol FramePipelineUseCase: Sendable {
     /// never connects is logged, not thrown.
     func start(descriptor: SurfaceDescriptor, frameRate: FrameRate) async throws
     func stop()
+
+    /// While true, every frame the pipeline takes goes through the pass-through delivery a failed effect pass already uses: no effect pass is started and the effect runtime is not called. Returns at once; the change reaches the next tick. It is kept across `stop()` and `start(...)`.
+    func setBypass(_ bypassed: Bool)
     var stats: PipelineStats { get }
 
     /// Main thread: hands the preview window's view to the `PreviewSink` the
@@ -41,6 +44,10 @@ private struct UnimplementedFramePipelineUseCase: FramePipelineUseCase {
 
     func stop() {
         reportIssue("FramePipelineUseCase.stop not implemented")
+    }
+
+    func setBypass(_ bypassed: Bool) {
+        reportIssue("FramePipelineUseCase.setBypass not implemented")
     }
 
     var stats: PipelineStats {
