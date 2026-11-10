@@ -26,7 +26,11 @@ import TestSupport
 /// `contentsOfDirectory` lists names sorted, which the live gateway does not promise:
 /// a subject must not depend on the order.
 ///
-/// Every call is recorded (`listings`, `reads`, `dataReads`, `createdDirectories`), failing
+/// `writeString` refuses what the live gateway refuses, with the same codes: `fileNoSuchFile` for a missing
+/// parent directory, `fileWriteUnknown` for a file above the path or a directory at it, and it makes no
+/// directory on the way.
+///
+/// Every call is recorded (`listings`, `reads`, `dataReads`, `createdDirectories`, `writtenPaths`), failing
 /// ones included, so a test can assert what the subject looked at and what it did not.
 public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
     private struct Tree {
@@ -34,6 +38,7 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
         var files: [String: Data] = [:]
         var readFailures: [String: any Error] = [:]
         var createFailures: [String: any Error] = [:]
+        var writeStringFailures: [String: any Error] = [:]
     }
 
     private let tree = Locked(Tree())
@@ -45,6 +50,8 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
     public let dataReads = Collector<DataRead>()
     /// The paths `createDirectory` was asked for, in call order.
     public let createdDirectories = Collector<String>()
+    /// The paths `writeString` was asked for, in call order, failing ones included.
+    public let writtenPaths = Collector<String>()
 
     /// One `readData` call: the path and the most bytes it asked for.
     public struct DataRead: Sendable, Equatable {
@@ -121,6 +128,12 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
         tree.withLock { $0.createFailures[path] = error }
     }
 
+    /// Makes `writeString` to `path` throw `error` until the next call with `nil`, before any other check.
+    public func failWriteString(of path: String, with error: (any Error)?) {
+        let path = Self.normalized(path)
+        tree.withLock { $0.writeStringFailures[path] = error }
+    }
+
     // MARK: FileSystemGateway
 
     public func contentsOfDirectory(_ path: String) throws -> [String] {
@@ -165,6 +178,17 @@ public final class InMemoryFileSystemGateway: FileSystemGateway, Sendable {
             guard Self.fileAbove(path, in: tree) == nil else { throw CocoaError(.fileWriteUnknown) }
             Self.insertDirectories(above: path, into: &tree)
             tree.directories.insert(path)
+        }
+    }
+
+    public func writeString(_ text: String, to path: String) throws {
+        let path = Self.normalized(path)
+        writtenPaths.append(path)
+        try tree.withLock { tree in
+            if let failure = tree.writeStringFailures[path] { throw failure }
+            guard !tree.directories.contains(path), Self.fileAbove(path, in: tree) == nil else { throw CocoaError(.fileWriteUnknown) }
+            guard let parent = Self.parent(of: path), tree.directories.contains(parent) else { throw CocoaError(.fileNoSuchFile) }
+            tree.files[path] = Data(text.utf8)
         }
     }
 

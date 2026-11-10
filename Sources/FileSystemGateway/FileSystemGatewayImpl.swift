@@ -33,4 +33,9 @@ public struct FileSystemGatewayImpl: FileSystemGateway {
     public func createDirectory(_ path: String) throws {
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)  // allow-physical: FileSystemGateway
     }
+
+    /// Atomic: the text goes to a temporary file beside `path` and is renamed over it, so a reader never sees half of it.
+    public func writeString(_ text: String, to path: String) throws {
+        try text.write(toFile: path, atomically: true, encoding: .utf8)
+    }
 }
