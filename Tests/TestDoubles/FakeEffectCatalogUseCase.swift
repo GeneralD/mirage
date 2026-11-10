@@ -5,7 +5,8 @@ import TestSupport
 /// `publish(state)` is the catalog changing: every `observe()` stream yields it, and one
 /// opened later starts with it, as the live stream starts from the current value (a fake
 /// made without a state yields nothing until the first publish). `select` records the id
-/// and answers the outcome the test set, `.prepared` unless told otherwise.
+/// and answers the outcome the test set, `.prepared` unless told otherwise. `reenable` records its id in `reenables`
+/// and answers the same outcome, without recording a selection.
 ///
 /// `run()` records its start and then does what the live one does: it runs until the
 /// caller's task is cancelled (`suspendUntilCancelled`) and records that cancel, so a
@@ -67,6 +68,8 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
     public let folderOpens = Collector<Void>()
     /// The parameter calls, in call order.
     public let parameterCalls = Collector<ParameterCall>()
+    /// The ids `reenable` was called with, in call order. A re-enable is not a `select`, so it is recorded here only.
+    public let reenables = Collector<EffectID>()
 
     public init(state: EffectCatalogState? = nil, selectOutcome: EffectSelectionOutcome = .prepared) {
         self.state = Locked(State(current: state, selectOutcome: selectOutcome))
@@ -135,6 +138,11 @@ public final class FakeEffectCatalogUseCase: EffectCatalogUseCase, Sendable {
 
     public func select(_ id: EffectID) async -> EffectSelectionOutcome {
         selections.append(id)
+        return state.withLock { $0.selectOutcome }
+    }
+
+    public func reenable(_ id: EffectID) async -> EffectSelectionOutcome {
+        reenables.append(id)
         return state.withLock { $0.selectOutcome }
     }
 

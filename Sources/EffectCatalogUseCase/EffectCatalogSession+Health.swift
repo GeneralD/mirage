@@ -64,6 +64,19 @@ extension EffectCatalogSession {
         await prepare(source, for: bundled.id, announcing: nil)
     }
 
+    /// Lifts the switch-off of `id` and chooses it again. The record is forgotten and the settings written without it before
+    /// the choice is made, so the choice runs instead of being refused by `select`. With no record there is nothing to lift:
+    /// nothing is written, and the call is a plain `select`.
+    func reenable(_ id: EffectID) async -> EffectSelectionOutcome {
+        guard disabled[id] != nil else { return await select(id) }
+        let mine = epoch
+        disabled[id] = nil
+        await settings.setDisabledEffects(disabled.values.map(\.record))
+        // A run that ended or restarted while the record was being written owns the state now: this choice does not go on.
+        guard epoch == mine else { return .unavailable(nil) }
+        return await select(id)
+    }
+
     /// The developer-facing line for a switch-off: the effect's name, why, and the bundled effect it falls back to. With no ready
     /// bundled effect there is nothing to fall back to, so the line ends after the reason.
     private func switchOffMessage(of id: EffectID, reason: EffectDisableReason) -> String {
