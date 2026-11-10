@@ -3,9 +3,10 @@ import Domain
 import Foundation
 
 /// What the user chose, kept in the user's defaults through `KeyValueStoreGateway` (epic #42,
-/// D6): the chosen effect as one string under one key (`StoredEffectID` is its form), and the
-/// records of disabled effects as one JSON string under another. The first DataStore, and the
-/// only place that knows the keys and the forms.
+/// D6): the chosen effect as one string under one key (`StoredEffectID` is its form), the
+/// records of disabled effects as one JSON string under another, and the global hotkeys flag
+/// as `"1"` or `"0"` under a third. The first DataStore, and the only place that knows the keys
+/// and the forms.
 ///
 /// Reading never writes. A stored string that does not decode is not an error and is left
 /// where it is (another build may have written it, and may read it again), so a relaunch
@@ -15,6 +16,8 @@ public struct PreferencesDataStoreImpl: Sendable {
     static let selectedEffectKey = "selectedEffect"
     /// The defaults key the disabled-effect records live under. Persisted, so never renamed.
     static let disabledEffectsKey = "disabledEffects.v1"
+    /// The defaults key the global hotkeys flag lives under. Persisted, so never renamed.
+    static let hotkeysEnabledKey = "hotkeysEnabled"
 
     @Dependency(\.keyValueStoreGateway) private var keyValueStore
     @Dependency(\.developerLog) private var developerLog
@@ -58,5 +61,22 @@ extension PreferencesDataStoreImpl: Preferences {
             return
         }
         keyValueStore.set(String(decoding: data, as: UTF8.self), forKey: Self.disabledEffectsKey)
+    }
+
+    /// A stored value other than `"1"` or `"0"` is not an error: it reads as on and is left where
+    /// it is, and one developer-log line says it was ignored.
+    public func hotkeysEnabled() async -> Bool {
+        guard let stored = keyValueStore.string(forKey: Self.hotkeysEnabledKey) else { return true }
+        switch stored {
+        case "1": return true
+        case "0": return false
+        default:
+            developerLog.record(.app, "stored hotkeys flag does not decode, ignored: \(stored)")
+            return true
+        }
+    }
+
+    public func setHotkeysEnabled(_ on: Bool) async {
+        keyValueStore.set(on ? "1" : "0", forKey: Self.hotkeysEnabledKey)
     }
 }
