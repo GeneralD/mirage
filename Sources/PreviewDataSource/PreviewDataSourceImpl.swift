@@ -16,9 +16,12 @@ import Domain
 /// no lock and no actor on the frame path. Only `attach` starts on the main
 /// thread (the view's), and it hands what it readied to the executor.
 public final class PreviewDataSourceImpl: @unchecked Sendable {
-    /// What one attach produced: the GPU context, the layer the view is drawn
-    /// through and the preview kernel compiled for that context.
+    /// What one attach produced: the target's identity, the GPU context, the
+    /// layer the view is drawn through and the preview kernel compiled for that
+    /// context. The identity is kept, not the target: the layer already holds it,
+    /// and `detach` only needs to tell whether it is the same one.
     private struct Attachment: Sendable {
+        let target: ObjectIdentifier
         let context: any GPUContextHandle
         let layer: any PreviewLayerHandle
         let kernel: any LibraryHandle
@@ -56,7 +59,15 @@ extension PreviewDataSourceImpl: PreviewRenderer {
     public func attach(_ target: any PreviewTargetHandle) throws {
         let context = try gpuGateway.makeContext()
         let layer = try previewGateway.prepare(target, on: context)
-        frameExecutor.run { [self] in adopt(layer, on: context) }
+        let identity = ObjectIdentifier(target)
+        frameExecutor.run { [self] in adopt(layer, on: context, target: identity) }
+    }
+
+    /// Only the identity crosses to the executor, so the target is not kept alive
+    /// by a pending release.
+    public func detach(_ target: any PreviewTargetHandle) {
+        let identity = ObjectIdentifier(target)
+        frameExecutor.run { [self] in release(identity) }
     }
 
     public func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
@@ -69,14 +80,25 @@ extension PreviewDataSourceImpl {
     /// A kernel that does not compile leaves nothing attached: the new view is
     /// already readied, so drawing on the previous one would draw on a view
     /// that has been replaced.
-    private func adopt(_ layer: any PreviewLayerHandle, on context: any GPUContextHandle) {
+    private func adopt(_ layer: any PreviewLayerHandle, on context: any GPUContextHandle, target: ObjectIdentifier) {
         switch shaderLibrary.compile(source: PreviewKernel.source, options: PreviewKernel.options, on: context) {
         case .success(let kernel):
-            attachment = Attachment(context: context, layer: layer, kernel: kernel)
+            attachment = Attachment(target: target, context: context, layer: layer, kernel: kernel)
         case .failure(let diagnostics):
             attachment = nil
             errorLog.record(.preview, "preview detached, its kernel did not compile (\(diagnostics.code)): \(diagnostics.message)")
         }
+    }
+
+    /// Lets go of the attach only when it is the one `detach` names. The waiting
+    /// frame completes undrawn now, so it does not wait for a draw that will not
+    /// come; a draw in flight is left to `finish`, which unbinds its texture.
+    private func release(_ target: ObjectIdentifier) {
+        guard attachment?.target == target else { return }
+        attachment = nil
+        let replaced = waiting
+        waiting = nil
+        replaced?.completion()
     }
 
     private func submit(_ request: Request) {
