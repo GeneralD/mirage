@@ -40,6 +40,24 @@ commit what it rewrites.
 A code comment that says "until MVP-C" or names a type that did not exist is corrected by the issue
 that lands the piece.
 
+## Exemplars (in-repo; your issue's `exemplar:` line wins)
+
+| Kind | Copy the shape of |
+|---|---|
+| Entity | `Sources/Entity/EffectMenuItem.swift`; decoded from a file: `Sources/Entity/EffectManifest.swift` |
+| Port (protocol, key, `Unimplemented*`, `DependencyValues`) | `Sources/Domain/DataStore/Preferences.swift` |
+| UseCase | `Sources/EffectCatalogUseCase/` (`EffectCatalogSession.swift`, `EffectCatalogBroadcast.swift`) |
+| Pure policy beside a UseCase | `Sources/FramePipelineUseCase/EffectPass.swift` |
+| Interactor | `Sources/EffectInteractor/EffectInteractorImpl.swift` |
+| Repository | pass-through `Sources/SettingsRepository/SettingsRepositoryImpl.swift`; orchestration `Sources/EffectPackageRepository/EffectPackageRepositoryImpl.swift` |
+| DataSource | pure decode `Sources/EffectPackageDataSource/EffectManifestDecoding.swift`; executor-confined state `Sources/EffectRuntimeStateDataSource/EffectRuntimeStateDataSourceImpl.swift` |
+| DataStore | `Sources/PreferencesDataStore/PreferencesDataStoreImpl.swift` (an undecodable stored value is logged and ignored) |
+| Thin Gateway and its fake | `Sources/UserDefaultsGateway/KeyValueStoreGatewayImpl.swift`, `Tests/TestDoubles/InMemoryKeyValueStore.swift` |
+| Presenter, text, geometry | `Sources/Presenters/EffectPickerPresenter.swift`, `EffectPickerText.swift`, `EffectPickerGeometry.swift` |
+| Window | `Sources/AppRouter/PickerWindow.swift`, `EffectPickerWindow.swift` |
+| GPU smoke | `Tests/GPUSmokeTests/MetalGatewaySmokeTests.swift` |
+| Frame path without a device | `Tests/FramePathIntegrationTests/LoopbackRig.swift` |
+
 ## Machine budget
 
 10 cores, 64 GB. `scripts/gate` takes one of 5 slots; a screenshot is one at a time. A worktree is
