@@ -28,6 +28,8 @@ public final class FakeCameraSelectionUseCase: CameraSelectionUseCase, Sendable 
     public let streamsOpened = Collector<Void>()
     /// One entry per `changes()` stream whose consumption ended.
     public let streamsClosed = Collector<Void>()
+    /// The body the next `refresh()` runs once: after its call is recorded, before its state is returned.
+    private let hook = Locked<(@Sendable () -> Void)?>(nil)
 
     public init(state: CameraState = .empty) {
         self.state = Locked(State(cameraState: state))
@@ -36,6 +38,11 @@ public final class FakeCameraSelectionUseCase: CameraSelectionUseCase, Sendable 
     /// Sets the state that the next `refresh()` or command returns.
     public func setState(_ cameraState: CameraState) {
         state.withLock { $0.cameraState = cameraState }
+    }
+
+    /// Makes `body` run once, inside the next `refresh()`, and then lets go of it.
+    public func whileRefreshing(_ body: @escaping @Sendable () -> Void) {
+        hook.set(body)
     }
 
     /// Yields one element on every stream that `changes()` has made and that has not ended.
@@ -47,6 +54,13 @@ public final class FakeCameraSelectionUseCase: CameraSelectionUseCase, Sendable 
 
     public func refresh() -> CameraState {
         calls.append(.refresh)
+        // Taken out under the lock and run outside it, so the body may call back into this double.
+        let pending = hook.withLock { value -> (@Sendable () -> Void)? in
+            let taken = value
+            value = nil
+            return taken
+        }
+        pending?()
         return state.current.cameraState
     }
 

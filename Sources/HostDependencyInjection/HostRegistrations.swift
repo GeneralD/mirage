@@ -63,6 +63,10 @@ extension EffectInteractorKey: DependencyKey {
     public static let liveValue: any EffectInteractor = EffectInteractorImpl()
 }
 
+extension CameraSelectionInteractorKey: DependencyKey {
+    public static let liveValue: any CameraSelectionInteractor = CameraSelectionInteractorImpl()
+}
+
 extension ControlsInteractorKey: DependencyKey {
     public static let liveValue: any ControlsInteractor = ControlsInteractorImpl()
 }
