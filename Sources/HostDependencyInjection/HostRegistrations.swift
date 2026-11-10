@@ -47,6 +47,10 @@ extension HarnessInteractorKey: DependencyKey {
     public static let liveValue: any HarnessInteractor = HarnessInteractorImpl()
 }
 
+extension PreviewInteractorKey: DependencyKey {
+    public static let liveValue: any PreviewInteractor = PreviewInteractorImpl()
+}
+
 extension EffectInteractorKey: DependencyKey {
     public static let liveValue: any EffectInteractor = EffectInteractorImpl()
 }
