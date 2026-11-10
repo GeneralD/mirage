@@ -24,7 +24,11 @@ public protocol PreviewSink: Sendable {
     @MainActor
     func attach(_ target: any PreviewTargetHandle) throws
     func detach(_ target: any PreviewTargetHandle)
-    func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void)
+    /// Presents `frame`, with `original` (the frame as its source delivered it,
+    /// when there is one) alongside it. A non-nil `original` is borrowed until
+    /// `completion`, as `frame` is: `completion` ends both leases and runs
+    /// exactly once, drawn or not.
+    func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void)
 }
 
 public enum PreviewSinkKey: TestDependencyKey {
@@ -48,7 +52,7 @@ private struct UnimplementedPreviewSink: PreviewSink {
         reportIssue("PreviewSink.detach not implemented")
     }
 
-    func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
+    func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
         reportIssue("PreviewSink.present not implemented")
         completion()
     }

@@ -22,7 +22,7 @@ extension PreviewRepositoryImpl: PreviewSink {
         renderer.detach(target)
     }
 
-    public func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
-        renderer.present(frame, original: nil, completion: completion)
+    public func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
+        renderer.present(frame, original: original, completion: completion)
     }
 }
