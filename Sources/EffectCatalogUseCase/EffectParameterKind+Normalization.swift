@@ -2,7 +2,7 @@ import Domain
 
 // The normalization of a parameter value to its kind (`docs/hackathon/mvp-cd/specs/parameters.md`,
 // pure policy). Pure and total: any input gives a value of the kind's own case within the kind's range,
-// and a value that is already in range comes back unchanged.
+// and normalization is idempotent: a value it has already normalized comes back unchanged.
 
 extension EffectParameterKind {
     /// The value this kind starts from: what a value that cannot be used falls back to.
