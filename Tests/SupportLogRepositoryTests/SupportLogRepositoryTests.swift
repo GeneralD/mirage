@@ -76,8 +76,6 @@ struct SupportLogRepositoryTests {
     func saveFailureIsRethrown() {
         let logs = FakeSupportLogs(saveFailure: CocoaError(.fileWriteNoPermission))
         let subject = makeSubject(logs: logs)
-        #expect(throws: CocoaError.self) {
-            try subject.save("report body")
-        }
+        #expect(performing: { try subject.save("report body") }, throws: { ($0 as? CocoaError)?.code == .fileWriteNoPermission })
     }
 }
