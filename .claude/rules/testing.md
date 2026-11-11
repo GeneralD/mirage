@@ -265,6 +265,10 @@ Generators live in `Tests/TestSupport/Generators/`. Targets are listed in
   repository file the same way is named here too: `EffectThumbnailDecodingTests`
   reads `Examples/Ripple.lens/thumbnail.png` (from `#filePath`), the one picture
   the README ships, to hold the real decoder to it; it writes nothing either.
+  Suites that hold a repository document, template or workflow to what the code says read it
+  the same way: those under `Tests/TestSupportTests/RepositoryDocs/` do, with `repositoryText`
+  and `repositoryHas` (`Tests/TestSupport/RepositoryFile.swift`, found from `#filePath`). They
+  write nothing, and no subject under test is handed the disk.
 - Test doubles shared across layers live in `Tests/TestDoubles`; nothing
   test-only lives under `Sources/`.
 - GPU-touching suites follow `.claude/rules/gpu-testing.md`.
