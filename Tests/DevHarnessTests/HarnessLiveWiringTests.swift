@@ -192,7 +192,8 @@ struct HarnessLiveWiringTests {
         #expect(presenter.items.first?.id == chromatic)
         #expect(presenter.items.first?.title == "Chromatic Grain")
         #expect(presenter.items.filter(\.isSelected).map(\.id) == [chromatic])
-        #expect(presenter.items.allSatisfy(\.isEnabled))
+        let allEnabled = presenter.items.allSatisfy(\.isEnabled)
+        #expect(allEnabled, "every bundled effect in the menu is enabled")
         #expect(presenter.status == nil)
         #expect(shaders.calls.count == 1, "the chosen effect is compiled once")
         // The effects folder: made, and watched for packages coming and going.
