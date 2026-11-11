@@ -28,6 +28,11 @@ extension PreviewInteractorImpl: PreviewInteractor {
         pipeline.detachPreview(target)
         developerLog.record(.preview, "preview pane detached")
     }
+
+    public func setMode(_ mode: PreviewMode) {
+        pipeline.setPreviewMode(mode)
+        developerLog.record(.preview, "preview mode: \(mode)")
+    }
 }
 
 extension PreviewInteractorImpl {

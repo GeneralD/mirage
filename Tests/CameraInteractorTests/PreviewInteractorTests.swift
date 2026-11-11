@@ -76,6 +76,34 @@ struct PreviewInteractorTests {
 
         #expect(rig.pipeline.detached.values == [ObjectIdentifier(target), ObjectIdentifier(target)])
     }
+
+    // MARK: - Mode
+
+    @Test("setMode hands each PreviewMode to the pipeline's setPreviewMode once", arguments: PreviewMode.allCases)
+    func setModeReachesThePipelineOnce(_ mode: PreviewMode) {
+        let rig = PreviewInteractorRig()
+        rig.subject.setMode(mode)
+
+        #expect(rig.pipeline.modes.values == [mode])
+    }
+
+    @Test("setMode logs the mode for developers only, with one line naming it")
+    func setModeLogsTheModeForDevelopers() {
+        let rig = PreviewInteractorRig()
+        rig.subject.setMode(.split)
+
+        #expect(rig.developerLog.messages(in: .preview) == ["preview mode: split"])
+        #expect(rig.errorLog.entries.count == 0)
+    }
+
+    @Test("setMode called twice with the same mode reaches the pipeline twice, in order")
+    func repeatedModeReachesThePipelineAgain() {
+        let rig = PreviewInteractorRig()
+        rig.subject.setMode(.split)
+        rig.subject.setMode(.split)
+
+        #expect(rig.pipeline.modes.values == [.split, .split])
+    }
 }
 
 /// `PreviewInteractorImpl` over a recording `FramePipelineUseCase` whose preview refuses or fails
