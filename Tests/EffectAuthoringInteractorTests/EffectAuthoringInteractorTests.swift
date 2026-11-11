@@ -129,12 +129,13 @@ struct EffectAuthoringInteractorTests {
     @Test("a scaffold that fails leaves one developer line that names the failure, and no error line")
     func scaffoldLogsTheFailure() async {
         let rig = Rig()
-        rig.useCase.scriptScaffold(.failure(.scaffold(.unwritable(path: "/work"))))
+        let failure = AuthoringFailure.scaffold(.unwritable(path: "/work"))
+        rig.useCase.scriptScaffold(.failure(failure))
 
         _ = await rig.subject.scaffold(named: "A", in: "/work")
 
         #expect(rig.developerLog.entries.count == 1)
-        #expect(rig.developerLog.messages(in: .effect) == [#"scaffold of A in /work failed: scaffold(unwritable(path: "/work"))"#])
+        #expect(rig.developerLog.messages(in: .effect) == ["scaffold of A in /work failed: \(String(describing: failure))"])
         #expect(rig.errorLog.entries.count == 0)
     }
 
