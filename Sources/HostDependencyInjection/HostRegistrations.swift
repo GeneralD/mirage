@@ -10,6 +10,7 @@ import CommonDependencyInjection
 import ControlsInteractor
 import Dependencies
 import Domain
+import EffectAuthoringInteractor
 import EffectAuthoringUseCase
 import EffectCatalogUseCase
 import EffectInteractor
@@ -272,4 +273,8 @@ extension StillImagesKey: DependencyKey {
 
 extension StillImageRepositoryKey: DependencyKey {
     public static let liveValue: any StillImageRepository = StillImageRepositoryImpl()
+}
+
+extension EffectAuthoringInteractorKey: DependencyKey {
+    public static let liveValue: any EffectAuthoringInteractor = EffectAuthoringInteractorImpl()
 }
