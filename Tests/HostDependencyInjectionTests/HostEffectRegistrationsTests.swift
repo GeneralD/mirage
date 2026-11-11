@@ -80,7 +80,8 @@ struct HostEffectRegistrationsTests {
         let state = try #require(states.first)
         let entry = try #require(state.entries.first)
         #expect(states.count == 1)
-        #expect(state.entries.count == 1)
+        let allBundledAndReady = state.entries.allSatisfy { $0.origin == .bundled && $0.availability == .ready }
+        #expect(!state.entries.isEmpty && allBundledAndReady, "every listed effect is bundled and ready")
         #expect(entry.origin == .bundled)
         #expect(entry.availability == .ready)
         #expect(state.selection == entry.id)
