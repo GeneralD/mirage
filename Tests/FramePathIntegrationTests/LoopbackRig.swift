@@ -315,6 +315,15 @@ extension LoopbackRig {
         host.executor.drain()
     }
 
+    /// Sets the mode the host's preview is handed frames in, as the preview's menu does
+    /// (`PreviewInteractor.setMode` reaches `FramePipelineUseCase.setPreviewMode`), then drains
+    /// the host's executor, where the mode takes effect: an answer queued before this call is
+    /// finished under the old mode, one queued after it under the new.
+    func setPreviewMode(_ mode: PreviewMode) async {
+        host.pipeline.setPreviewMode(mode)
+        host.executor.drain()
+    }
+
     /// One camera frame into the host's slot, then one scheduler tick to send it. The
     /// tick hands the frame to the effect stage; the pass is answered with `effect`
     /// (by default an `.internalError`, a failure, so the camera's own surface goes
