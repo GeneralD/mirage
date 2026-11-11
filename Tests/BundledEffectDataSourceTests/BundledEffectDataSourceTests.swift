@@ -115,7 +115,8 @@ struct BundledEffectDataSourceTests {
     @Test("every bundled parameter label has something other than spaces in it")
     func labelsAreNotBlank() {
         for spec in effects.flatMap(\.parameters) {
-            #expect(!spec.label.allSatisfy(\.isWhitespace), "\(spec.id): the label is blank")
+            let blank = spec.label.allSatisfy { $0.isWhitespace }
+            #expect(!blank, "\(spec.id): the label is blank")
         }
     }
 
