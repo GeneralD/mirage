@@ -135,7 +135,7 @@ struct FramePathIntegrationTests {
         let relay = await rig.startExtension()
         try await rig.startHost()
         try await rig.attachPreview()
-        #expect(rig.host.shaders.calls.values.map(\.onMainThread) == [false], "the preview kernel compiled once, off the main thread")
+        #expect(rig.host.shaders.calls.values.map(\.onMainThread) == [false, false], "the preview kernels compiled once each, off the main thread")
 
         await rig.capture(FakeSurfaceHandle(id: 7), at: 1_000, effect: .success(()))
         await rig.pumpExtension(untilReceived: 1)
