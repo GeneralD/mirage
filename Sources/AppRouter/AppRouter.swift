@@ -222,9 +222,12 @@ extension AppRouter: MenuBarRouting {
 
 extension AppRouter: SettingsRouting {
     /// A reset-all has finished: the menu starts again, so what reads the stored values reads the new ones.
+    /// The camera menu restarts too: its selection is read from the stored values on start, and the reset removed them.
     public func settingsDidReset() {
         menuBarPresenter.stop()
         menuBarPresenter.start()
+        cameraMenuPresenter?.stop()
+        cameraMenuPresenter?.start()
     }
 }
 
