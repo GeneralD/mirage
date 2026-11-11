@@ -18,13 +18,16 @@ import Domain
 public final class PreviewDataSourceImpl: @unchecked Sendable {
     /// What one attach produced: the target's identity, the GPU context, the
     /// layer the view is drawn through and the preview kernel compiled for that
-    /// context. The identity is kept, not the target: the layer already holds it,
-    /// and `detach` only needs to tell whether it is the same one.
+    /// context. The split kernel is compiled alongside it, nil when it did not
+    /// compile; nothing draws with it yet. The identity is kept, not the target:
+    /// the layer already holds it, and `detach` only needs to tell whether it is
+    /// the same one.
     private struct Attachment: Sendable {
         let target: ObjectIdentifier
         let context: any GPUContextHandle
         let layer: any PreviewLayerHandle
         let kernel: any LibraryHandle
+        let splitKernel: (any LibraryHandle)?
     }
 
     /// A presented frame, its original when there is one, and the completion
@@ -86,10 +89,23 @@ extension PreviewDataSourceImpl {
     private func adopt(_ layer: any PreviewLayerHandle, on context: any GPUContextHandle, target: ObjectIdentifier) {
         switch shaderLibrary.compile(source: PreviewKernel.source, options: PreviewKernel.options, on: context) {
         case .success(let kernel):
-            attachment = Attachment(target: target, context: context, layer: layer, kernel: kernel)
+            attachment = Attachment(target: target, context: context, layer: layer, kernel: kernel, splitKernel: compileSplit(on: context))
         case .failure(let diagnostics):
             attachment = nil
             errorLog.record(.preview, "preview detached, its kernel did not compile (\(diagnostics.code)): \(diagnostics.message)")
+        }
+    }
+
+    /// Compiled only once the blit kernel has compiled, on the same context and
+    /// executor. A failure keeps the attach and is logged: nothing draws with the
+    /// split yet, so the view goes on showing the blit.
+    private func compileSplit(on context: any GPUContextHandle) -> (any LibraryHandle)? {
+        switch shaderLibrary.compile(source: PreviewKernel.splitSource, options: PreviewKernel.splitOptions, on: context) {
+        case .success(let kernel):
+            return kernel
+        case .failure(let diagnostics):
+            errorLog.record(.preview, "preview split unavailable, its kernel did not compile (\(diagnostics.code)): \(diagnostics.message)")
+            return nil
         }
     }
 
