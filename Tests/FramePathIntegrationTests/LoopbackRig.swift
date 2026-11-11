@@ -97,7 +97,8 @@ struct HostSide {
 
     init(
         kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int, preview choice: HostPreview,
-        effects effectsChoice: HostEffects, catalog catalogChoice: HostCatalog
+        effects effectsChoice: HostEffects, catalog catalogChoice: HostCatalog,
+        catalogStore: InMemoryKeyValueStore = InMemoryKeyValueStore()
     ) {
         effectsKind = effectsChoice
         let executor = executor
@@ -171,7 +172,7 @@ struct HostSide {
         catalog =
             switch catalogChoice {
             case .none: nil
-            case .real: CatalogSide(over: hostRuntime, errors: errors, developer: developer)
+            case .real: CatalogSide(over: hostRuntime, errors: errors, developer: developer, store: catalogStore)
             }
     }
 }
@@ -265,9 +266,11 @@ struct LoopbackRig {
 
     init(
         capacity: Int = 4, frameGap: Duration = .seconds(2), preview: HostPreview = .inMemory, effects: HostEffects = .fake,
-        catalog: HostCatalog = .none
+        catalog: HostCatalog = .none, catalogStore: InMemoryKeyValueStore = InMemoryKeyValueStore()
     ) {
-        host = HostSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview, effects: effects, catalog: catalog)
+        host = HostSide(
+            kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview, effects: effects, catalog: catalog,
+            catalogStore: catalogStore)
         ext = ExtensionSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, frameGap: frameGap)
     }
 }
