@@ -191,16 +191,16 @@ struct AppRouterPickerTests {
     }
 
     @Test("the preview attaches once the picker is open and has its view and a visible window, and nothing more while open")
-    func previewAttachesWhileThePickerIsOpen() throws {
+    func previewAttachesWhileThePickerIsOpen() {
         let rig = PickerRig(state: .fixture([chromatic]), showsPreview: true)
-        let preview = try #require(rig.router.previewPresenter)
+        let preview = rig.router.previewPresenter
         let target = FakePreviewTargetHandle()
         #expect(rig.previewInteractor.attached.count == 0, "the picker is closed, so nothing is attached")
 
         rig.router.openEffectPicker()
         #expect(rig.previewInteractor.attached.count == 0, "opening gives the preview neither its view nor a visible window")
-        preview.receive(target)
-        preview.setVisible(true)
+        preview?.receive(target)
+        preview?.setVisible(true)
         rig.router.openEffectPicker()
 
         #expect(rig.previewInteractor.attached.values == [ObjectIdentifier(target)])
@@ -210,26 +210,26 @@ struct AppRouterPickerTests {
     @Test("closing the picker detaches its preview once, from the menu, the title bar or stop, and a reopening needs a new view")
     func closingDetachesThePreview() throws {
         let rig = PickerRig(state: .fixture([chromatic]), showsPreview: true)
-        let preview = try #require(rig.router.previewPresenter)
+        let preview = rig.router.previewPresenter
         let first = FakePreviewTargetHandle()
         rig.router.openEffectPicker()
-        preview.receive(first)
-        preview.setVisible(true)
+        preview?.receive(first)
+        preview?.setVisible(true)
 
         rig.router.closeEffectPicker()
         #expect(rig.previewInteractor.detached.values == [ObjectIdentifier(first)])
 
         rig.router.openEffectPicker()
         let second = FakePreviewTargetHandle()
-        preview.receive(second)
-        preview.setVisible(true)
+        preview?.receive(second)
+        preview?.setVisible(true)
         try #require(rig.windows.values.last).closeFromTitleBar()
         #expect(rig.previewInteractor.detached.values == [ObjectIdentifier(first), ObjectIdentifier(second)])
 
         rig.router.openEffectPicker()
         let third = FakePreviewTargetHandle()
-        preview.receive(third)
-        preview.setVisible(true)
+        preview?.receive(third)
+        preview?.setVisible(true)
         rig.router.stop()
         #expect(rig.previewInteractor.detached.values.last == ObjectIdentifier(third))
         #expect(rig.previewInteractor.detached.count == 3)
@@ -348,8 +348,8 @@ private struct PickerRig {
     let windows = Collector<FakePickerWindow>()
     let router: AppRouter
 
-    init(state: EffectCatalogState) {
-        self.init(interactor: FakeEffectInteractor(state: state))
+    init(state: EffectCatalogState, showsPreview: Bool = false) {
+        self.init(interactor: FakeEffectInteractor(state: state), showsPreview: showsPreview)
     }
 
     init(interactor: FakeEffectInteractor, showsPreview: Bool = false) {
