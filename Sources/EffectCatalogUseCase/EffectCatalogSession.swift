@@ -133,6 +133,11 @@ actor EffectCatalogSession {
         disabled = Dictionary(
             stored.filter { $0.id.origin == .package }.map { ($0.id, DisabledEntry(record: $0)) },
             uniquingKeysWith: { _, last in last })
+        // A restored choice that retries on its own waits the base cool-down from the launch,
+        // as one switched off in this run does (`receive`).
+        if let restored, disabled[restored]?.record.retriesAutomatically == true {
+            scheduleTrial(of: restored, after: EffectHealthPolicy.Configuration().coolDown, in: run)
+        }
         for await listing in packages.catalog() {
             await reconcile(listing, in: run)
         }
