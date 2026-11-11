@@ -10,9 +10,15 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
 - One plain command per Bash call around `git` and `gh`: no `cd`, `for`, `$(...)`, `git -C`, no shell
   variables, no pipelines into `git`. Use absolute paths. A loop goes in a script.
 - Commit messages and PR titles are English Conventional Commits with a scope. No attribution lines.
-- Nothing runs in the background: a subagent never receives a background command's completion, so
-  it ends without a result. Long commands run in the foreground with the Bash timeout at 600000; one
-  that times out before its verdict is run again (builds are incremental).
+- Nothing runs in the background through the Bash tool: a subagent never receives a background
+  command's completion, so it ends without a result. Long commands run in the foreground with the
+  Bash timeout at 600000.
+- The gate is the one command that outlives a call. On a loaded machine it takes longer than 600 s,
+  and a call that times out leaves it running in the background, still holding a gate slot, so
+  starting it again stacks a second gate on the first. Your brief names two helpers instead: one
+  starts the gate detached with its log, the other waits up to nine minutes and answers green
+  (exit 0), red (exit 1), died (exit 2: start it again) or still running (exit 3: wait again, as
+  often as it takes). Never call `scripts/gate` directly, and never start a second gate while one runs.
 
 ## Steps
 
@@ -25,7 +31,8 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
 3. Implement inside `Scope` only. Tests with the implementation, one per `Interface` item, named as a
    spec sentence. If `Off-limits` or a hot file must be touched: do not implement; comment why, add
    the label `hk:regen`, stop.
-4. `make format`, commit what it rewrites, then `scripts/gate -- <the issue's Done command>`.
+4. `make format`, commit what it rewrites, then gate `<the issue's Done command>` through the two
+   helpers your brief names (they run `scripts/gate -- <the issue's Done command>`).
    UI changes also need the image check in PRODUCT.md; any visual defect is red. While the screen is
    locked (`ioreg -n Root -d1 | grep -q '"CGSSessionScreenIsLocked"=Yes'` exits 0) no window can be captured: take no image,
    add the label `hk:shot-pending` to the issue, and go on. Never commit a capture taken while locked.
