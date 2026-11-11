@@ -2,8 +2,14 @@
 
 When adding a new module (UseCase, Repository, DataSource, Gateway, …):
 
-1. **Package.swift** — add `.target` and `.testTarget` (Gateway modules that
-   cannot run in CI get a smoke `.testTarget` gated by `.enabled(if:)`).
+1. **Package.swift** — add `.target` and `.testTarget` (a Gateway whose smoke
+   suite can run on a runner gets a `.testTarget`, even when the module is
+   coverage-ignored: `HotkeyGatewayTests` and `LoginItemGatewayTests` only call
+   the OS and read a status, `MachGatewayTests` loops back; a Gateway with
+   nothing a runner can exercise (`AVFoundationGateway`,
+   `SystemExtensionGateway`, `CMIOExtensionGateway`, `WorkspaceGateway`,
+   `LogStoreGateway`) gets none; a suite that needs a Metal device lives in
+   `GPUSmokeTests`, gated by `.enabled(if: MetalDeviceProbe.isAvailable)`).
 2. **Domain** — add the protocol under the matching subdirectory, its
    `TestDependencyKey` (`testValue` = `Unimplemented*`), and the
    `DependencyValues` extension.
@@ -14,12 +20,20 @@ When adding a new module (UseCase, Repository, DataSource, Gateway, …):
 6. **Lint allow-lists** — if the module is a Gateway or Support live, add it
    to `scripts/check-imports.sh` (framework allow) and
    `scripts/check-physical-symbols.sh` (live-module allow). A new port needs
-   no key-path entry (its `Sources/Domain/<Kind>/` directory is its kind); a
+   no key-path entry (its `Sources/Domain/<Kind>/` directory is its kind). A
    module whose name carries no layer suffix (an entry point, a view or
-   presenter module) needs a lane in `scripts/check-dependency-keypaths.sh`,
-   and a key outside the lane's kinds is a per-key exception there that cites
-   the decision it rests on. The reverse, a key of an allowed kind that one
-   module must not resolve, is a per-key denial (`DENIALS`) with its reason.
+   presenter module) needs its own `allowed_for` case in
+   `scripts/check-imports.sh` (without one it may import only Foundation,
+   Combine, Dependencies, Domain and Entity) and a lane in `lane_of` of
+   `scripts/check-dependency-keypaths.sh` (`LensTool` is `Entry`; a module
+   with no lane, such as `ViewGallery`, resolves nothing). A key outside the
+   lane's kinds is a per-key exception there that cites the decision it rests
+   on. The reverse, a key of an allowed kind that one module must not resolve,
+   is a per-key denial (`DENIALS`) with its reason.
+   A module reachable from `ExtensionApp` or `ExtensionDependencyInjection`
+   must not reach `MetalGateway`, `MetalKitPreviewGateway`,
+   `PreviewDataSource` or `Views` (`scripts/check-extension-no-metal.sh`
+   walks the package graph).
 7. **codecov.yml** — if the module is a CI-unreachable Gateway, add it to
    `ignore` and make it obey the thin-live rule.
 8. **Documentation**:

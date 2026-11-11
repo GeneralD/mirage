@@ -28,12 +28,16 @@ the corresponding kinds of changes.
   thin-live Gateways): `.claude/rules/coverage-ignored-modules.md`
 - Verifying the virtual camera on a real machine (install, approve, Zoom):
   `.claude/rules/dev-verification.md`
+- Contributor guide (setup, checks, commits, PRs): `CONTRIBUTING.md`, with
+  `.github/pull_request_template.md`
+- Writing a `.lens` package, its manifest and its `parameters`:
+  `docs/authoring/first-effect.md`, `docs/authoring/parameters.md`
 
 ## Build And Verify
 
 ```sh
 make build
-make build-dev-harness  # dev-harness in debug, as `swift run` builds it, always relinked so a plist edit lands; not shipped (`make build` compiles it too, see docs/ARCHITECTURE.md)
+make build-dev-harness  # dev-harness in debug, as `swift run` builds it, always relinked so a plist edit lands; not shipped (`make build` compiles it, view-gallery and lens-tool too, see docs/ARCHITECTURE.md)
 make test
 make test-gpu
 make lint
@@ -41,6 +45,10 @@ make format
 make check
 make generate
 swift run dev-harness   # camera prompt, then camera → effect → preview window, no virtual camera; .claude/rules/dev-verification.md Lane 1
+swift run view-gallery <screen>   # one of the app's windows over fixture data, no camera; `--list` names the screens; `scripts/gallery <screen> <out.png>` captures one
+scripts/shot <out.png>  # screenshot one window (the dev harness by default; --owner, --title, --pid, --list); the terminal needs Screen Recording
+swift run lens-tool new <name> [--in <folder>] | validate <package> | render <effect> --input <in.png> --output <out.png>   # author a `.lens` package
+scripts/gate            # lint, check, build, build-dev-harness, test and test-gpu behind a slot shared by every worktree of the checkout
 ```
 
 ## Project Summary
@@ -69,7 +77,8 @@ Shared conventions:
   execution-context ports — `frameExecutor`, `frameScheduler`, `workRunner` —
   are the exception: UseCases run the frame path on them).
   Cross-cutting seams (`RandomSource`, `UnifiedLog`, `HostTime`,
-  `AppDirectories`, the live `AppDirectoriesProvider`) are Support modules.
+  `AppDirectories`, the live `AppDirectoriesProvider`, `HostEnvironment`,
+  `StandardStreams`) are Support modules.
 - Frames travel as `FrameRef` (dimensions, format, PTS) + `SurfaceToken`
   (a generation-tagged index into the surface pool; a stale token resolves
   to nothing) — never as `Data` copies and never as raw `IOSurface` across
@@ -81,19 +90,24 @@ Shared conventions:
   `AppDirectoriesProvider`) holding `manifest.json` (`formatVersion` 1 and
   `name`; optional `author` / `description` / `thumbnail`, the picker's hover
   shows the description after the author, and the last is a path to a PNG or
-  JPEG of at most 1 MiB inside the package and of at most 2048 × 2048 pixels once decoded, which costs the package only its
-  picture when it cannot be used or decoded (the picker then draws the effect's tile); unknown keys, `parameters`
-  included, ignored) and `effect.metal` (entry point `effect`, compiled behind
+  JPEG of at most 1 MiB inside the package and of at most 2048 × 2048 pixels in all (4,194,304) once decoded, which costs the package only its
+  picture when it cannot be used or decoded (the picker then draws the effect's tile); optional `parameters`, a list
+  of at most 32 typed controls that the kernel reads in a generated `Parameters` struct, validated with the manifest
+  (`docs/authoring/parameters.md`); other unknown keys ignored) and `effect.metal` (entry point `effect`, compiled behind
   the prelude). The id is the directory name without the suffix.
   `EffectPackageDataSource` reads it through `FileSystemGateway` and lists a
   package it cannot use as `.broken` with the reason instead of leaving it out
-  (epic #42, D1 / D3); `Examples/Ripple.lens` is a complete one.
+  (epic #42, D1 / D3); `Examples/Ripple.lens` is a complete one, `Examples/Tint.lens` and
+  `Examples/ParameterTour.lens` declare parameters, and `lens-tool new` /
+  `validate` scaffold and check a package.
 
 ## Non-Negotiable Rules
 
 - No OS framework import (AVFoundation, Metal, MetalKit, IOSurface,
-  CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, os) outside
-  Gateway modules and the View/Router/App lane. `make check` fails otherwise.
+  CoreMediaIO, CoreMedia, CoreVideo, SystemExtensions, AppKit, ImageIO,
+  CoreGraphics, Carbon, ServiceManagement, OSLog, os) outside Gateway modules
+  and the View/Router/App lane. `scripts/check-imports.sh` holds the allow-list
+  per module, and `make check` fails otherwise.
 - No layer skipping through `@Dependency`: a module resolves only the ports of
   the layer right below it, plus Support (`scripts/check-dependency-keypaths.sh`,
   run by `make check`; a port's kind is its `Sources/Domain/<Kind>/` directory).
@@ -110,12 +124,15 @@ Shared conventions:
   package graph from `ExtensionApp` / `ExtensionDependencyInjection` and fails
   when a Metal module, `PreviewDataSource` or `Views` is reachable.
 - No physical symbol outside Gateway/Support live modules: `Date()`,
-  `Date.now`, `ContinuousClock()`, `.now`, `Task.sleep`, `DispatchQueue`,
+  `Date.now`, `ContinuousClock()`, `Task.sleep`, `DispatchQueue`,
   `DispatchSource`, `Thread`, `UUID()`, `.random(in:)`,
   `SystemRandomNumberGenerator`, `FileManager`, `UserDefaults`,
   `ProcessInfo`, `Bundle.main`, `NotificationCenter.default`, `print(`,
-  `os.Logger`, `MTLCreateSystemDefaultDevice`. Allow-listed per line with
-  `// allow-physical: <PortName>` only inside the port's live module.
+  `os.Logger`, `MTLCreateSystemDefaultDevice` and the rest of the table in
+  `.claude/rules/physical-abstraction.md`; `scripts/check-physical-symbols.sh`
+  is the check, and its `LIVE_MODULES` list names the modules that may hold
+  them. Allow-listed per line with `// allow-physical: <PortName>` only inside
+  the port's live module.
 - No layer skipping. An Interactor never holds a Gateway; a UseCase never
   holds a DataSource. Thread pass-through contracts through adjacent layers.
 - Every host port above the OS boundary has a live value from the day its
@@ -138,7 +155,9 @@ Shared conventions:
   `PreferencesDataStoreImpl` keeps the chosen effect as one `<origin>:<key>` string
   (`StoredEffectID`) in the user's defaults through `KeyValueStoreGateway`, ignoring
   and logging a stored string that does not decode, and `SettingsRepositoryImpl`
-  passes it through; there is no `SettingsUseCase` until a settings UI exists.
+  passes it through, and `SettingsUseCaseImpl` (the store's schema version, the
+  reset, launch at login and the global hotkeys) is what `SettingsInteractorImpl`
+  and `ControlsInteractorImpl` resolve.
   `NoPackages` is replaced as well (#45): `EffectPackageDataSourceImpl` lists the effects
   folder's `.lens` packages through the file ports.
   The OS-boundary ports of the catalog get their live with the issue that wraps
@@ -170,22 +189,24 @@ Shared conventions:
   `select` (a newer choice must be able to overtake a slow compile), so two near-simultaneous
   choices are unordered, as the port says. `MenuBarPresenter` (`Presenters`,
   `@MainActor`, no AppKit / SwiftUI) maps `state` to `@Published items`
-  (`EffectMenuItem`) and `status` with a `@MainActor` task over an `AsyncStream`
+  (`EffectMenuItem`), `status` and `canAdjustEffect` (and, from `ControlsInteractor.state`, `isBypassed` and `frameRateLine`) with a `@MainActor` task over an `AsyncStream`
   that a `sink` feeds (newest state wins), never `receive(on: DispatchQueue.main)`
   and never `publisher.values` (an `AsyncPublisher` drops states sent while it
-  is applying the last one), and owns the Interactor's `start()` / `stop()` (whoever wires the Presenter calls
+  is applying the last one), and owns both Interactors' (`EffectInteractor`, `ControlsInteractor`) `start()` / `stop()` (whoever wires the Presenter calls
   only its `start()` / `stop()`, never `effectInteractor.start()` (`App` and `DevHarness` are denied the key): a second
-  `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the menu's
-  and the picker's Presenters in `init`; its `start()` / `stop()` are the menu Presenter's (`stop()` closes the picker
-  first), and it starts the picker's Presenter only while the picker's window is open: the host (`HostAppDelegate`) and the dev harness
-  (`HarnessMenu`, called by `HarnessAppDelegate`) start and stop the Router and nothing below it. `EffectMenu` (`Views`) draws the Presenter for
+  `start()` is a restart; a started Presenter that is let go stops itself); its suite waits with `settle` only. `AppRouter` (View lane, `@MainActor`) builds the menu's, the picker's, the settings window's and the parameter panel's
+  Presenters in `init` (and, when asked (`showsCameraMenu`, `showsPreview`), the camera menu's and the picker's preview pane's); its `start()` / `stop()` are the menu Presenter's and the camera
+  menu's (`stop()` closes the picker, the settings window and the parameter panel first), and it starts the picker's (with its preview pane's), the settings'
+  and the parameter panel's Presenters only while their windows are open (one window of each at most, made by `makePickerWindow` (`makePreviewPickerWindow` when `showsPreview` is set, as the host does),
+  `makeSettingsWindow`, `makeParameterWindow`; *Settings…* and *Adjust Effect…* open the last two, as *Browse Effects…* opens the picker): the host (`HostAppDelegate`) and the dev harness
+  (`HarnessMenu`, called by `HarnessAppDelegate`) start and stop the Router and nothing below it in this lane (the host also launches and shuts down the camera through `CameraInteractor`). `OnboardingRouter` is the same shape for the onboarding window: it builds `OnboardingPresenter` once, starts it with the window and stops it when the window closes (`HostAppDelegate` closes it on termination). `EffectMenu` (`Views`) draws the Presenter for
   the host's `MenuBarExtra(.menu)` and the harness's `NSHostingMenu` and decides nothing (a `Toggle` per row, the
   Presenter's flags and words); the host stays out of the Dock through `LSUIElement` in `project.yml`. *Browse Effects…*
   goes through the Presenter's weak `router` to `AppRouter`, which opens the effect picker's window (at most one, made
-  by an injected `makePickerWindow`; the live one, `EffectPickerWindow`, is AppKit glue in `AppRouter`, not `Views`) and starts `EffectPickerPresenter` while it is open; that Presenter maps the same
+  by an injected `makePickerWindow`, or `makePreviewPickerWindow` when the preview pane is shown; the live one, `EffectPickerWindow`, is AppKit glue in `AppRouter`, not `Views`) and starts `EffectPickerPresenter` while it is open; that Presenter maps the same
   `state` to cells and only observes (it never starts or stops the Interactor), and the grid's `EffectPickerGeometry`
   and the choice between a decoded thumbnail and the effect's tile (`resolveArtwork`) are pure and in `Presenters` because
-  `Views` is coverage-ignored; the live decode (`EffectThumbnailDecoding`, which also refuses a picture of more than 2048 × 2048 pixels) is in `AppRouter`, covered and tested, and reaches the view as a closure. Details: the *Key Design Decisions* entries in
+  `Views` is coverage-ignored; the live decode (`EffectThumbnailDecoding`, which also refuses a picture of more than 2048 × 2048 pixels in all) is in `AppRouter`, covered and tested, and reaches the view as a closure. Details: the *Key Design Decisions* entries in
   `docs/ARCHITECTURE.md` (*The effects menu's Interactor and Presenter*, *Menu bar*, *Effect picker*).
 
 - The effect runtime splits in two. `EffectRuntimeRepositoryImpl` only
@@ -194,7 +215,7 @@ Shared conventions:
   `EffectRuntimeStateDataSource` (port `EffectRuntimeState`), confined to
   `FrameExecutor` (no lock, no actor), whose calls hop onto the executor
   themselves. The compile cache is in-process, keyed by
-  `(source, compile options)` and never by the effect's name; a cache on disk
+  `(source, compile options, parameter layout)` and never by the effect's name; a cache on disk
   (which would need a device id, an OS version and a `RuntimeEnvironment` port) is
   deferred to Later, epic #42 D12. The newest `prepare` decides what
   `apply` runs (newest wins, success or failure); a stale compile still answers
@@ -203,8 +224,9 @@ Shared conventions:
   and waits for the selection, not for that compile, so a newer `prepare` that
   settles first answers it at once.
   While nothing is prepared, the first `apply` prepares
-  `BundledEffects.defaultEffect`, served by `BundledEffectDataSource` as an
-  MSL string constant (no `Bundle.main`). A source that does not compile is
+  `BundledEffects.defaultEffect` (the first of `BundledEffects.effects`, which
+  lists the bundled effects in the order the menu shows them), served by
+  `BundledEffectDataSource` as MSL string constants (no `Bundle.main`). A source that does not compile is
   `.compileFailed` and final; a compile that failed for the environment's reasons
   (`ShaderDiagnostics.cause == .environment`) is `.internalError` and retried by the
   next `apply`, and that streak is logged once, plus its recovery.
@@ -216,7 +238,16 @@ Shared conventions:
   `EffectUniforms.pass` is pure: `time` is seconds
   since the session's first frame (`EffectSession`, PTS minus the session
   start), `resolution` the output size in pixels (the grid is rounded up to
-  whole threadgroups, so a kernel bounds-checks `gid`), `seed` 0 until MVP-C.
+  whole threadgroups, so a kernel bounds-checks `gid`), `seed` the session's
+  seed, drawn once from `RandomSource` when the session starts (`EffectSession`
+  keeps it for the session's frames; 0 when none was drawn).
+  The parameters travel beside the uniforms: the `EffectSelection` the runtime
+  holds for `apply` carries the compile result, the `EffectParameterBlock` of the
+  current values and the stamp (`EffectFingerprint`) of the effect that ran;
+  `ParameterPacker` (pure, in `EffectCatalogUseCase`) packs the block from the
+  manifest's `EffectParameterLayout` (Entity), the layout that also generates the
+  prelude's `Parameters` struct, and the Metal gateway binds it with `setBytes` at
+  buffer 1, the uniforms at buffer 0.
 - `EffectCatalogUseCaseImpl` (epic #42, D5 / D6 / D11) is the only caller of
   `EffectRuntimeRepository.prepare`; the pipeline never calls it. Choosing an effect
   prepares its source, and a listing in which the chosen effect's source changed
@@ -234,6 +265,14 @@ Shared conventions:
   a flow that waited across a run boundary, or behind a newer read of a source, from
   acting on its answer. The compile failure itself is logged
   once by the runtime; the catalog logs the selection, the reload and the fallback.
+  The catalog also judges health: `EffectCatalogSession` (health half,
+  `EffectCatalogSession+Health.swift`) counts the pass outcomes the runtime
+  reports through `EffectRuntimeRepository.outcomes()` with the pure
+  `EffectHealthPolicy` (a circuit breaker with a cool-down and a trial), and when
+  the policy says so switches a package effect off, remembers it in the settings
+  as a `DisabledEffectRecord` (the effect id and the source's fingerprint) and
+  prepares the bundled effect in its place; a verdict against the bundled effect
+  itself records nothing and raises `isGPUUnavailable`.
 - The effect catalog is assembled in `EffectPackageRepositoryImpl` (epic #42,
   D3), which resolves `effectPackages`, `effectWatch` and `bundledEffects`.
   `catalog()` is an eager `AsyncStream`: making it lists the folder, arms the
@@ -242,11 +281,11 @@ Shared conventions:
   *new* inventory's `EffectWatchSet`, the old watch having been let go first: an
   edit that lands inside a re-listing is heard only with the next change. Every
   listing is shown, even one equal to the last: the watch folds bursts, and a
-  same-looking listing can be an edited `effect.metal`. The bundled effect is
-  first, packages follow by display name (case-insensitive, numeric runs, folder
+  same-looking listing can be an edited `effect.metal`. The bundled effects are
+  first, in the order of `BundledEffects.effects`, packages follow by display name (case-insensitive, numeric runs, folder
   name as the tie-break, no locale), a broken one is `.broken` under its folder
-  name. `source(of:)` reads afresh and caches nothing: the bundled id is
-  `defaultEffect` (another bundled id `.sourceMissing`), a package is its source
+  name. `source(of:)` reads afresh and caches nothing: a bundled id is
+  the first of `BundledEffects.effects` with that id (none: `.sourceMissing`), a package is its source
   when `.ready`, its problem when `.broken`, `.manifestMissing` when gone. The
   loop is a `Task` off the frame path, cancelled when the stream ends; a watch
   that ends by itself ends the catalog and logs an error, and the task logs its
@@ -265,16 +304,20 @@ Shared conventions:
 - No UseCase depends on another UseCase. Shared pure policy (health
   judgement, parameter clamping, uniform packing) lives as pure types inside
   the owning UseCase module, never as a second UseCase.
-- Exactly two output paths, both write-only Domain protocols resolved via DI:
-  `ErrorLog` and `DeveloperLog`. Live is `os.Logger` (`UnifiedLog`); neither
-  the host app nor the extension has a usable stderr. Never `print`.
+- Two output paths for the apps, both write-only Domain protocols resolved via
+  DI: `ErrorLog` and `DeveloperLog`. Live is `os.Logger` (`UnifiedLog`); neither
+  the host app nor the extension has a usable stderr. Never `print`. The
+  command-line tool has one more, `ConsoleWriter` (live `StandardStreams`): the
+  results and failures its user reads on standard output and error, never
+  developer or operational logs.
 - Frame-path callbacks run on the `FrameExecutor` port. UseCase state on the
   frame path is a single-threaded state machine; no locks in UseCases. Async
   work the frame path must start (the host reconnect, the effect `apply`) goes
   through the `WorkRunner` port and its `WorkHandle`, never an unstructured
   `Task {` in a UseCase. The shader compile is the same: `ShaderCompilationDataSource` runs it
   inside a `WorkRunner` item, never on main and never in a bare `Task {`.
-- Effects compile behind the engine prelude (`Uniforms`, `hash`, `noise`) and a
+- Effects compile behind the engine prelude (`Uniforms`, `hash`, `noise`), one
+  generated line declaring the effect's `Parameters` struct (from its manifest) and a
   `#line 1 "effect"` directive, so diagnostics carry the author's line numbers;
   locations against the assembled source are rewritten to `effect:` /
   `prelude:`. `hash` / `noise` have a Swift twin, `HashNoiseReference`, checked
@@ -301,6 +344,14 @@ Shared conventions:
   preview (and is left out once a restart owns the pool). A pass carries the
   count its run's `start()` read, never one a tick reads, so a tick still
   running when `stop()` bumps the count cannot adopt the new one.
+  `setBypass(true)` sends every frame through the pass-through delivery a failed
+  pass already uses (no pass starts and the runtime is not called);
+  `setPreviewMode(.split)` hands the preview the input of a successful pass as
+  the frame's original, so that input stays leased until the preview's
+  completion rather than the pass's answer (`.after`, the default, shows the
+  frame alone); `detachPreview` lets go of the preview's view when it is the one
+  attached now and leaves a lease already handed to the preview to its
+  completion. Bypass and mode are kept across `stop()` and `start(...)`.
 - Shells (`Apps/**`) hold only `main.swift` and assets; `make check` bounds
   their size. `Info.plist` and entitlements are generated from `project.yml`
   by `make generate` (gitignored), never hand-written. The one exception is
@@ -329,8 +380,9 @@ Shared conventions:
   reach a catalog value in that test's `wired { }`), over fakes at the OS boundary
   only (camera, IOSurface, Mach, GPU, file system, file events, key-value store,
   Finder). `scripts/check-dev-substitutions.sh` (in `make check`) keeps
-  the sink's name out of everything but the harness, its DI helper and
-  `VirtualCameraRepository`, and `scripts/check-live-owner.sh` (in `make check`)
+  the sink's name out of everything but the harness's session and menu, its DI helper and
+  `VirtualCameraRepository`, requires `HarnessSession.live()` and `HarnessMenu.live()` to apply it and `HarnessAppDelegate` to build
+  both through `live()`, and `scripts/check-live-owner.sh` (in `make check`)
   fails when a test file other than that suite names `effectInteractor` or
   `effectCatalogUseCase` as a key path (an override, `$0.effectInteractor = fake`,
   resolves nothing and stays free) or calls `HarnessMenu.live()`.
@@ -352,8 +404,10 @@ Shared conventions:
   is `unknown(code:)`), never in `MetalGateway`. One render is one command
   buffer; a stale lease is `.invalidResource` and reaches no gateway; every
   bound texture is unbound exactly once on every path. It keeps no failure
-  history (health policy is MVP-D) and packs no uniform bytes: the gateway
-  sends `EffectUniforms` itself, pinned to the MSL layout by a property test.
+  history (the health policy is `EffectHealthPolicy` in `EffectCatalogUseCase`,
+  fed by the runtime's `outcomes()`) and packs no bytes: the gateway sends
+  `EffectUniforms` itself at buffer 0, pinned to the MSL layout by a property
+  test, and the already packed `EffectParameterBlock` at buffer 1.
 - The Mach service name is declared once in `ProductIdentity`; host
   `mach-lookup`, extension `mach-register` and the constant are compared by
   `make check` (a mismatch makes `bootstrap_look_up` fail silently).
@@ -439,6 +493,18 @@ Shared conventions:
   Paravirtual device" reports `supportsFamily(.apple7) == false`; see #4).
 - Test doubles shared across layers live in `Tests/TestDoubles`; a double
   used by one suite stays private to that suite.
+- Documents are held to the code by suites that read the repository from
+  `#filePath` and write nothing. Those under
+  `Tests/TestSupportTests/RepositoryDocs/` use `repositoryText` / `repositoryHas` /
+  `repositoryRoot` (`Tests/TestSupport/RepositoryFile.swift`): a `Makefile`
+  target or repository path that `CONTRIBUTING.md` or the PR template names in
+  backticks must exist (`DocumentReferences`), the PR template, the issue forms
+  and the release workflow keep their shape, and `StaleStatementTests` fails when
+  a comment or rule document repeats a sentence the code has made untrue.
+  `ParametersDocTests` and `FirstEffectDocTests` read the fenced blocks of
+  `docs/authoring/` through `MarkdownFences` (`Tests/TestSupport/MarkdownFences.swift`:
+  a document's fenced blocks and their attributes, such as `file=`) and hold each
+  fact a guide states to the code. Run `make test` after editing a guide.
 
 ## Change Checklist
 
@@ -446,4 +512,7 @@ Shared conventions:
   `*DependencyInjection`, `docs/ARCHITECTURE.md`, this `AGENTS.md` and
   `README.md` (see `.claude/rules/module-checklist.md`).
 - Every PR bumps `version.txt`.
+- Open the PR from `.github/pull_request_template.md`: a `Closes #N` line, the
+  checks list and a screenshot for anything that shows in a window or the menu
+  (`scripts/gallery`). `scripts/gate` runs the checks.
 - Do not commit directly to `main`. Branch → PR → merge.
