@@ -17,5 +17,8 @@ var galleryScreens: [GalleryScreen] {
         .parameterPanelEmpty,
         .settings,
         .settingsAttention,
+        .effectPickerPreview,
+        .effectPickerPreviewSplit,
+        .effectPickerPreviewRefused,
     ]
 }
