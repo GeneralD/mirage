@@ -73,11 +73,15 @@ public struct EffectCatalogState: Sendable, Hashable {
     /// `true` when even the bundled effect keeps failing, so no effect can move frames and the menu
     /// says the GPU is unavailable. `false` otherwise.
     public let isGPUUnavailable: Bool
+    /// The compiler's diagnostic for the chosen effect's last `prepare`, when that failed and the compiler said
+    /// something; `nil` otherwise, and always `nil` unless `outcome` is `.failed`.
+    public let compilerMessage: String?
 
     public init(
         entries: [EffectCatalogEntry], selection: EffectID, outcome: EffectSelectionOutcome? = nil,
         parameters: [EffectParameterState] = [],
-        disabled: [EffectID: EffectDisableReason] = [:], isGPUUnavailable: Bool = false
+        disabled: [EffectID: EffectDisableReason] = [:], isGPUUnavailable: Bool = false,
+        compilerMessage: String? = nil
     ) {
         self.entries = entries
         self.selection = selection
@@ -85,5 +89,6 @@ public struct EffectCatalogState: Sendable, Hashable {
         self.parameters = parameters
         self.disabled = disabled
         self.isGPUUnavailable = isGPUUnavailable
+        self.compilerMessage = compilerMessage
     }
 }
