@@ -175,4 +175,49 @@ struct SettingsRepositoryImplTests {
         await subject.setDisabledEffects([ripple])
         #expect(await subject.selectedEffect() == .bundled("Chromatic Grain"))
     }
+
+    @Test("parameterValues is what the DataStore answers, once per call, and reads no selection")
+    func parameterReadsForward() async {
+        let stored: [String: EffectParameterValue] = ["strength": .float(0.5), "inverted": .bool(false)]
+        let preferences = RecordingPreferences(parameters: [.package("glitch"): stored])
+        let subject = makeSubject(preferences)
+        #expect(await subject.parameterValues(of: .package("glitch")) == stored)
+        #expect(preferences.parameterReads.values == [.package("glitch")])
+        #expect(await subject.parameterValues(of: .package("glitch")) == stored)
+        #expect(preferences.parameterReads.count == 2)
+        #expect(preferences.reads.count == 0, "reading the values reads no selection")
+        #expect(preferences.parameterWrites.count == 0, "reading writes nothing")
+    }
+
+    @Test("setParameterValues hands the id and the values to the DataStore once, and reads nothing")
+    func parameterWritesForward() async {
+        let preferences = RecordingPreferences()
+        let subject = makeSubject(preferences)
+        let values: [String: EffectParameterValue] = ["strength": .float(0.5), "mode": .choice(1)]
+        await subject.setParameterValues(values, of: .package("glitch"))
+        #expect(preferences.parameterWrites.values.map(\.id) == [.package("glitch")])
+        #expect(preferences.parameterWrites.values.map(\.values) == [values])
+        #expect(preferences.parameterReads.count == 0)
+        #expect(preferences.writes.count == 0, "the values do not touch the selection")
+    }
+
+    @Test("an empty dictionary is handed over as an empty dictionary, not skipped")
+    func emptyParameterWrite() async {
+        let preferences = RecordingPreferences(parameters: [.package("glitch"): ["strength": .float(0.5)]])
+        let subject = makeSubject(preferences)
+        await subject.setParameterValues([:], of: .package("glitch"))
+        #expect(preferences.parameterWrites.values.map(\.values) == [[String: EffectParameterValue]()])
+        #expect(await subject.parameterValues(of: .package("glitch")) == [:])
+    }
+
+    @Test("each effect's values reach the DataStore in their own call, in order")
+    func parameterWritesPerEffect() async {
+        let preferences = RecordingPreferences()
+        let subject = makeSubject(preferences)
+        await subject.setParameterValues(["strength": .float(0.5)], of: .package("glitch"))
+        await subject.setParameterValues(["mode": .choice(1)], of: .bundled("Chromatic Grain"))
+        #expect(preferences.parameterWrites.values.map(\.id) == [.package("glitch"), .bundled("Chromatic Grain")])
+        #expect(preferences.parameterWrites.values.map(\.values) == [["strength": .float(0.5)], ["mode": .choice(1)]])
+        #expect(preferences.parameterReads.count == 0)
+    }
 }

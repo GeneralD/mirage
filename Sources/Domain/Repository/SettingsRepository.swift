@@ -4,7 +4,8 @@ import Dependencies
 /// `StoreMaintenance`, `LoginItem` and `Hotkeys`. The chosen effect, which survives a relaunch (epic #42, D6): a
 /// relaunch selects it again if the catalog still has it. And the records of disabled
 /// effects, which survive a relaunch too, so that a crash loop cannot repeat. The global hotkeys
-/// flag, which survives a relaunch as well. The stored schema version and the reset that removes
+/// flag, which survives a relaunch as well. The parameter values of each effect, which survive a
+/// relaunch the same way (hackathon #99). The stored schema version and the reset that removes
 /// every stored value are passed through to `StoreMaintenance` unchanged.
 ///
 /// The system integrations are passed through unchanged as well: the launch-at-login status and its
@@ -18,6 +19,8 @@ public protocol SettingsRepository: Sendable {
     func setDisabledEffects(_ records: [DisabledEffectRecord]) async
     func hotkeysEnabled() async -> Bool
     func setHotkeysEnabled(_ on: Bool) async
+    func parameterValues(of id: EffectID) async -> [String: EffectParameterValue]
+    func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async
     func storedSchemaVersion() async -> StoredSchemaVersion
     func stampSchemaVersion(_ version: Int) async
     func resetAll() async
@@ -67,6 +70,15 @@ private struct UnimplementedSettingsRepository: SettingsRepository {
 
     func setHotkeysEnabled(_ on: Bool) async {
         reportIssue("SettingsRepository.setHotkeysEnabled not implemented")
+    }
+
+    func parameterValues(of id: EffectID) async -> [String: EffectParameterValue] {
+        reportIssue("SettingsRepository.parameterValues not implemented")
+        return [:]
+    }
+
+    func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async {
+        reportIssue("SettingsRepository.setParameterValues not implemented")
     }
 
     func storedSchemaVersion() async -> StoredSchemaVersion {

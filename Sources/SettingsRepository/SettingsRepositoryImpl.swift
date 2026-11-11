@@ -13,6 +13,9 @@ import Domain
 /// The system integrations go the same way (hackathon #183): the launch-at-login status and its
 /// toggle to `LoginItem`, and the global hotkeys registration, presses and release to `Hotkeys`,
 /// each call forwarded once and its answer returned as it came.
+///
+/// The parameter values of each effect (hackathon #99) are forwarded to `Preferences` the same way:
+/// one call in, one call out, the answer returned as it came.
 public struct SettingsRepositoryImpl: Sendable {
     @Dependency(\.preferences) private var preferences
     @Dependency(\.storeMaintenance) private var storeMaintenance
@@ -45,6 +48,14 @@ extension SettingsRepositoryImpl: SettingsRepository {
 
     public func setHotkeysEnabled(_ on: Bool) async {
         await preferences.setHotkeysEnabled(on)
+    }
+
+    public func parameterValues(of id: EffectID) async -> [String: EffectParameterValue] {
+        await preferences.parameterValues(of: id)
+    }
+
+    public func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async {
+        await preferences.setParameterValues(values, of: id)
     }
 
     public func storedSchemaVersion() async -> StoredSchemaVersion {
