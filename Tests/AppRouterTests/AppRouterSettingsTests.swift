@@ -166,6 +166,55 @@ struct AppRouterSettingsTests {
     }
 }
 
+/// The camera menu's restart after a reset-all (#167, #199): the reset removes the stored camera values, so the
+/// menu's Presenter, started again, reads them afresh. The camera Interactor is the `camera` fake of `SettingsRig`.
+@MainActor
+@Suite("AppRouter: settings reset restarts the camera menu", .timeLimit(.minutes(1)))
+struct AppRouterSettingsCameraResetTests {
+    private let chromatic = EffectCatalogEntry.fixture(.bundled("Chromatic Grain"))
+
+    @Test("with the camera menu shown, a finished reset-all restarts the camera Interactor: stopped once, then started again")
+    func resetRestartsTheCameraInteractor() {
+        let rig = SettingsRig(state: .fixture([chromatic]), showsCameraMenu: true)
+
+        rig.router.start()
+        #expect(rig.camera.starts.count == 1)
+        #expect(rig.camera.stops.count == 0)
+
+        rig.router.settingsDidReset()
+
+        #expect(rig.camera.stops.count == 1)
+        #expect(rig.camera.starts.count == 2)
+    }
+
+    @Test("with the camera menu not shown, starting the menu and a finished reset-all never touch the camera Interactor")
+    func absentCameraMenuIsNotRestarted() {
+        let rig = SettingsRig(state: .fixture([chromatic]))
+
+        rig.router.start()
+        rig.router.settingsDidReset()
+
+        #expect(rig.camera.starts.count == 0)
+        #expect(rig.camera.stops.count == 0)
+    }
+
+    @Test("a reset confirmed in the settings window restarts the camera menu once it has finished")
+    func confirmedResetRestartsTheCameraMenu() async {
+        let rig = SettingsRig(state: .fixture([chromatic]), showsCameraMenu: true)
+        rig.router.start()
+        await settle(rig.router.menuBarPresenter.$items) { !$0.isEmpty }
+        rig.router.openSettings()
+        let presenter = rig.router.settingsPresenter
+
+        presenter.requestReset()
+        presenter.confirmReset()
+        await settle(presenter.$isResetting) { !$0 }
+
+        #expect(rig.settings.resets.count == 1)
+        #expect(rig.camera.starts.count == 2, "the camera menu was restarted after the reset")
+    }
+}
+
 /// The settings window as the Router sees it. Like the live window, `close()` reports itself through
 /// `onClose`; `closeFromTitleBar()` is a close the Router did not ask for.
 @MainActor
@@ -199,23 +248,26 @@ extension FakeSettingsWindow: SettingsWindow {
 /// A Router whose three Presenters talk to fakes: the menu's and the settings Presenter are each built
 /// inside `withDependencies`, over a `FakeEffectInteractor` and `FakeControlsInteractor`, and a
 /// `FakeSettingsInteractor`, and its settings windows are `FakeSettingsWindow`s, recorded in the order
-/// they were made.
+/// they were made. With `showsCameraMenu` its camera menu's Presenter talks to `camera`.
 @MainActor
 private struct SettingsRig {
     let effects: FakeEffectInteractor
     let controls: FakeControlsInteractor
     let settings: FakeSettingsInteractor
+    let camera: FakeCameraSelectionInteractor
     let windows = Collector<FakeSettingsWindow>()
     let router: AppRouter
 
-    init(state: EffectCatalogState) {
+    init(state: EffectCatalogState, showsCameraMenu: Bool = false) {
         let effects = FakeEffectInteractor(state: state)
         let controls = FakeControlsInteractor()
         let settings = FakeSettingsInteractor()
+        let camera = FakeCameraSelectionInteractor(state: .empty)
         let windows = windows
         self.effects = effects
         self.controls = controls
         self.settings = settings
+        self.camera = camera
         router = AppRouter(
             makeMenuBarPresenter: {
                 withDependencies {
@@ -236,6 +288,14 @@ private struct SettingsRig {
                 let window = FakeSettingsWindow(presenter: presenter, onClose: onClose)
                 windows.append(window)
                 return window
-            })
+            },
+            makeCameraMenuPresenter: {
+                withDependencies {
+                    $0.cameraSelectionInteractor = camera
+                } operation: {
+                    CameraMenuPresenter()
+                }
+            },
+            showsCameraMenu: showsCameraMenu)
     }
 }
