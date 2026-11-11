@@ -36,6 +36,8 @@ actor EffectCatalogSession {
         /// The block the runtime was last handed for `source`: the one `prepare` carried, or the last resend. A write made
         /// while the prepare is out goes to the runtime at once but does not update this, so the answer can tell it moved.
         var sent: EffectParameterBlock
+        /// The compiler's diagnostic for a source the runtime refused, asked for once with `answer`; `nil` for a source that compiled.
+        var compilerMessage: String? = nil
     }
 
     @Dependency(\.effectPackageRepository) var packages
@@ -264,7 +266,11 @@ actor EffectCatalogSession {
 
         let answer = await runtime.prepare(source, parameters: block).selectionOutcome
         guard generation == mine else { return answer }
+        let message = await diagnostic(of: source, answered: answer)
+        // The diagnostic is an await of its own: a newer request may have been issued while it was asked for.
+        guard generation == mine else { return answer }
         prepared?.answer = answer
+        prepared?.compilerMessage = message
         publish()
         resendIfMoved(for: id)
         return answer
@@ -280,6 +286,12 @@ actor EffectCatalogSession {
         guard block != current.sent else { return }
         prepared?.sent = block
         runtime.setParameters(block, of: current.source)
+    }
+
+    /// What the runtime says about a source it has just refused. Asked only for a refusal: a source that compiled has none to say.
+    private func diagnostic(of source: EffectSource, answered answer: EffectSelectionOutcome) async -> String? {
+        guard case .failed = answer else { return nil }
+        return await runtime.compilerMessage(of: source)
     }
 
     /// The chosen effect is listed as usable but its source could not be read just now (the
@@ -300,9 +312,17 @@ actor EffectCatalogSession {
         let parameters = prepared?.id == selection ? (prepared?.model.states ?? []) : []
         let state = EffectCatalogState(
             entries: entries, selection: selection, outcome: outcome, parameters: parameters,
-            disabled: disabled.mapValues(\.record.reason), isGPUUnavailable: isGPUUnavailable)
+            disabled: disabled.mapValues(\.record.reason), isGPUUnavailable: isGPUUnavailable,
+            compilerMessage: shownDiagnostic)
         guard state != broadcast.current else { return }
         broadcast.publish(state)
+    }
+
+    /// The diagnostic the menu shows: the chosen effect's, and only while its last attempt is `.failed`. An unreadable
+    /// source's problem replaces that outcome, so the diagnostic goes with it.
+    private var shownDiagnostic: String? {
+        guard case .failed? = outcome else { return nil }
+        return prepared?.compilerMessage
     }
 
     /// The run is over: close the streams, and forget everything so that the next run starts
