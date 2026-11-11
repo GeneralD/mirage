@@ -121,7 +121,9 @@ struct FirstEffectDocTests {
             ])
     }
 
-    @Test("each fence sits under the step it belongs to: the new command and its output under 1, the manifest and the template under 2, the kernel under 3, the check under 4 and the render under 5")
+    @Test(
+        "each fence sits under the step it belongs to: the new command and its output under 1, the manifest and the template under 2, the kernel under 3, the check under 4 and the render under 5"
+    )
     func fencesSitUnderTheirSteps() throws {
         let expected: [(Shown, String)] = [
             (.newCommand, "## 1. Create the package"),
