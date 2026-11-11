@@ -9,6 +9,10 @@ public protocol PreviewInteractor: Sendable {
 
     /// Detaches the window's view. Keeps no state: a second call reaches the pipeline again.
     func detach(_ target: any PreviewTargetHandle)
+
+    /// Sets what the preview shows of each frame. Keeps no state: every call reaches the
+    /// pipeline, so a repeated mode is passed on again.
+    func setMode(_ mode: PreviewMode)
 }
 
 public enum PreviewInteractorKey: TestDependencyKey {
@@ -30,5 +34,9 @@ private struct UnimplementedPreviewInteractor: PreviewInteractor {
 
     func detach(_ target: any PreviewTargetHandle) {
         reportIssue("PreviewInteractor.detach not implemented")
+    }
+
+    func setMode(_ mode: PreviewMode) {
+        reportIssue("PreviewInteractor.setMode not implemented")
     }
 }
