@@ -43,6 +43,11 @@ public final class AppRouter {
     public typealias ParameterWindowFactory =
         @MainActor (ParameterPanelPresenter, @escaping @MainActor (any ParameterWindow) -> Void) -> any ParameterWindow
 
+    /// Builds the picker's window over its Presenter and the live preview's Presenter; the window calls the closure it
+    /// is given when it closes, with itself.
+    public typealias PreviewPickerWindowFactory =
+        @MainActor (EffectPickerPresenter, PreviewPresenter, @escaping @MainActor (any PickerWindow) -> Void) -> any PickerWindow
+
     /// The one Presenter the menu draws from; the same instance on every read.
     public let menuBarPresenter: MenuBarPresenter
     /// The one Presenter the picker draws from; the same instance on every read, started only while
@@ -57,7 +62,11 @@ public final class AppRouter {
     /// The one Presenter the camera menu draws from; `nil` unless `showsCameraMenu` is true. The same
     /// instance on every read, started and stopped with the menu.
     public let cameraMenuPresenter: CameraMenuPresenter?
+    /// The one Presenter the picker's preview pane draws from; `nil` unless `showsPreview` is true. The same instance
+    /// on every read, started and stopped with the picker's window.
+    public let previewPresenter: PreviewPresenter?
     private let makePickerWindow: PickerWindowFactory
+    private let makePreviewPickerWindow: PreviewPickerWindowFactory
     /// The picker's open window; `nil` while none is open.
     private var pickerWindow: (any PickerWindow)?
     private let makeSettingsWindow: SettingsWindowFactory
@@ -67,10 +76,10 @@ public final class AppRouter {
     /// The parameter panel's open window; `nil` while none is open.
     private var parameterWindow: (any ParameterWindow)?
 
-    /// Each factory runs once, here (the camera menu's only when `showsCameraMenu` is true), except the window
-    /// factories, which run at every opening of their window. The defaults build the live Presenters and the
-    /// live windows; a test passes its own to see how often and where the Router asks for one, and to open no
-    /// real window.
+    /// Each factory runs once, here (the camera menu's only when `showsCameraMenu` is true, the preview's only when
+    /// `showsPreview` is true), except the window factories, which run at every opening of their window. The defaults
+    /// build the live Presenters and the live windows; a test passes its own to see how often and where the Router
+    /// asks for one, and to open no real window.
     public init(
         makeMenuBarPresenter: @MainActor () -> MenuBarPresenter = { MenuBarPresenter() },
         makeEffectPickerPresenter: @MainActor () -> EffectPickerPresenter = { EffectPickerPresenter() },
@@ -80,7 +89,10 @@ public final class AppRouter {
         makeParameterPanelPresenter: @MainActor () -> ParameterPanelPresenter = { ParameterPanelPresenter() },
         makeParameterWindow: @escaping ParameterWindowFactory = AppRouter.parameterWindow(over:onClose:),
         makeCameraMenuPresenter: @MainActor () -> CameraMenuPresenter = { CameraMenuPresenter() },
-        showsCameraMenu: Bool = false
+        showsCameraMenu: Bool = false,
+        showsPreview: Bool = false,
+        makePreviewPresenter: @MainActor () -> PreviewPresenter = { PreviewPresenter() },
+        makePreviewPickerWindow: @escaping PreviewPickerWindowFactory = AppRouter.previewPickerWindow(over:preview:onClose:)
     ) {
         menuBarPresenter = makeMenuBarPresenter()
         effectPickerPresenter = makeEffectPickerPresenter()
@@ -90,6 +102,8 @@ public final class AppRouter {
         parameterPanelPresenter = makeParameterPanelPresenter()
         self.makeParameterWindow = makeParameterWindow
         cameraMenuPresenter = showsCameraMenu ? makeCameraMenuPresenter() : nil
+        previewPresenter = showsPreview ? makePreviewPresenter() : nil
+        self.makePreviewPickerWindow = makePreviewPickerWindow
         menuBarPresenter.router = self
         settingsPresenter.router = self
     }
@@ -143,6 +157,14 @@ public final class AppRouter {
         EffectPickerWindow(presenter: presenter) { window in onClose(window) }
     }
 
+    /// The live window with the preview pane: `EffectPickerWindow` around `EffectPickerView`, the pane above its grid.
+    public static func previewPickerWindow(
+        over presenter: EffectPickerPresenter, preview: PreviewPresenter,
+        onClose: @escaping @MainActor (any PickerWindow) -> Void
+    ) -> any PickerWindow {
+        EffectPickerWindow(presenter: presenter, preview: preview) { window in onClose(window) }
+    }
+
     /// The live window: `SettingsPanelWindow` around `SettingsView`.
     public static func settingsWindow(
         over presenter: SettingsPresenter, onClose: @escaping @MainActor (any SettingsWindow) -> Void
@@ -159,13 +181,21 @@ public final class AppRouter {
 }
 
 extension AppRouter: MenuBarRouting {
-    /// Opens the picker's window and starts its Presenter; while a window is open, brings that one
-    /// to the front instead of making another.
+    /// Opens the picker's window and starts its Presenter, and the preview's when there is one; while a window is
+    /// open, brings that one to the front instead of making another.
     public func openEffectPicker() {
         if let pickerWindow { return pickerWindow.show() }
-        let window = makePickerWindow(effectPickerPresenter) { [weak self] closed in self?.pickerWindowDidClose(closed) }
+        let window: any PickerWindow
+        if let previewPresenter {
+            window = makePreviewPickerWindow(effectPickerPresenter, previewPresenter) { [weak self] closed in
+                self?.pickerWindowDidClose(closed)
+            }
+        } else {
+            window = makePickerWindow(effectPickerPresenter) { [weak self] closed in self?.pickerWindowDidClose(closed) }
+        }
         pickerWindow = window
         effectPickerPresenter.start()
+        previewPresenter?.start()
         window.show()
     }
 
@@ -208,6 +238,7 @@ extension AppRouter {
 
     private func releasePicker() {
         pickerWindow = nil
+        previewPresenter?.stop()
         effectPickerPresenter.stop()
     }
 

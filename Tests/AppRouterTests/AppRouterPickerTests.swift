@@ -166,6 +166,75 @@ struct AppRouterPickerTests {
         #expect(reported == [ObjectIdentifier(window)])
     }
 
+    @Test("a Router without showsPreview has no preview Presenter, builds none, and opens the plain picker window")
+    func noPreviewWithoutShowsPreview() throws {
+        let rig = PickerRig(state: .fixture([chromatic]))
+
+        rig.router.openEffectPicker()
+
+        #expect(rig.router.previewPresenter == nil)
+        #expect(rig.previewBuilds.count == 0)
+        #expect(try #require(rig.windows.values.first).preview == nil)
+    }
+
+    @Test("showsPreview builds one preview Presenter with the Router, and the picker's window is made over that same one")
+    func previewBuiltOnceAndGivenToTheWindow() throws {
+        let rig = PickerRig(state: .fixture([chromatic]), showsPreview: true)
+
+        rig.router.openEffectPicker()
+
+        let window = try #require(rig.windows.values.first)
+        #expect(rig.previewBuilds.count == 1)
+        #expect(rig.windows.count == 1)
+        #expect(window.preview === rig.router.previewPresenter)
+        #expect(window.preview != nil)
+    }
+
+    @Test("the preview attaches once the picker is open and has its view and a visible window, and nothing more while open")
+    func previewAttachesWhileThePickerIsOpen() throws {
+        let rig = PickerRig(state: .fixture([chromatic]), showsPreview: true)
+        let preview = try #require(rig.router.previewPresenter)
+        let target = FakePreviewTargetHandle()
+        #expect(rig.previewInteractor.attached.count == 0, "the picker is closed, so nothing is attached")
+
+        rig.router.openEffectPicker()
+        #expect(rig.previewInteractor.attached.count == 0, "opening gives the preview neither its view nor a visible window")
+        preview.receive(target)
+        preview.setVisible(true)
+        rig.router.openEffectPicker()
+
+        #expect(rig.previewInteractor.attached.values == [ObjectIdentifier(target)])
+        #expect(rig.previewInteractor.order.values == ["attach"], "asking again while open shows the window and starts nothing")
+    }
+
+    @Test("closing the picker detaches its preview once, from the menu, the title bar or stop, and a reopening needs a new view")
+    func closingDetachesThePreview() throws {
+        let rig = PickerRig(state: .fixture([chromatic]), showsPreview: true)
+        let preview = try #require(rig.router.previewPresenter)
+        let first = FakePreviewTargetHandle()
+        rig.router.openEffectPicker()
+        preview.receive(first)
+        preview.setVisible(true)
+
+        rig.router.closeEffectPicker()
+        #expect(rig.previewInteractor.detached.values == [ObjectIdentifier(first)])
+
+        rig.router.openEffectPicker()
+        let second = FakePreviewTargetHandle()
+        preview.receive(second)
+        preview.setVisible(true)
+        try #require(rig.windows.values.last).closeFromTitleBar()
+        #expect(rig.previewInteractor.detached.values == [ObjectIdentifier(first), ObjectIdentifier(second)])
+
+        rig.router.openEffectPicker()
+        let third = FakePreviewTargetHandle()
+        preview.receive(third)
+        preview.setVisible(true)
+        rig.router.stop()
+        #expect(rig.previewInteractor.detached.values.last == ObjectIdentifier(third))
+        #expect(rig.previewInteractor.detached.count == 3)
+    }
+
     // The Views half: `Views` holds no logic and is not measured, so these build each body over a real Presenter. What the
     // picker and its pane look like is the gallery's `effect-picker-preview` screen (#256).
 
@@ -239,12 +308,15 @@ private func openedPickerRig(over interactor: FakeEffectInteractor) async -> Pic
 @MainActor
 private final class FakePickerWindow {
     let presenter: EffectPickerPresenter
+    /// The preview Presenter the window was made over; `nil` for the plain window.
+    let preview: PreviewPresenter?
     private let onClose: @MainActor (any PickerWindow) -> Void
     private(set) var shows = 0
     private(set) var closes = 0
 
-    init(presenter: EffectPickerPresenter, onClose: @escaping @MainActor (any PickerWindow) -> Void) {
+    init(presenter: EffectPickerPresenter, preview: PreviewPresenter? = nil, onClose: @escaping @MainActor (any PickerWindow) -> Void) {
         self.presenter = presenter
+        self.preview = preview
         self.onClose = onClose
     }
 
@@ -265,11 +337,14 @@ extension FakePickerWindow: PickerWindow {
 }
 
 /// A Router whose two Presenters talk to one `FakeEffectInteractor`, each built inside `withDependencies`,
-/// and whose picker windows are `FakePickerWindow`s, recorded in the order they were made.
+/// and whose picker windows are `FakePickerWindow`s, recorded in the order they were made. With `showsPreview`
+/// its preview Presenter talks to `previewInteractor`, and its picker window is made over that Presenter.
 @MainActor
 private struct PickerRig {
     let interactor: FakeEffectInteractor
+    let previewInteractor: FakePreviewInteractor
     let pickerBuilds = Collector<Void>()
+    let previewBuilds = Collector<Void>()
     let windows = Collector<FakePickerWindow>()
     let router: AppRouter
 
@@ -277,9 +352,11 @@ private struct PickerRig {
         self.init(interactor: FakeEffectInteractor(state: state))
     }
 
-    init(interactor: FakeEffectInteractor) {
-        let (pickerBuilds, windows) = (pickerBuilds, windows)
+    init(interactor: FakeEffectInteractor, showsPreview: Bool = false) {
+        let (pickerBuilds, previewBuilds, windows) = (pickerBuilds, previewBuilds, windows)
+        let previewInteractor = FakePreviewInteractor()
         self.interactor = interactor
+        self.previewInteractor = previewInteractor
         router = AppRouter(
             makeMenuBarPresenter: {
                 withDependencies {
@@ -299,6 +376,20 @@ private struct PickerRig {
             },
             makePickerWindow: { presenter, onClose in
                 let window = FakePickerWindow(presenter: presenter, onClose: onClose)
+                windows.append(window)
+                return window
+            },
+            showsPreview: showsPreview,
+            makePreviewPresenter: {
+                previewBuilds.append(())
+                return withDependencies {
+                    $0.previewInteractor = previewInteractor
+                } operation: {
+                    PreviewPresenter()
+                }
+            },
+            makePreviewPickerWindow: { presenter, preview, onClose in
+                let window = FakePickerWindow(presenter: presenter, preview: preview, onClose: onClose)
                 windows.append(window)
                 return window
             })
