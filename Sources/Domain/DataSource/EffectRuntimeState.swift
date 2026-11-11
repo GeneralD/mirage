@@ -17,8 +17,8 @@ import Dependencies
 /// - **Tickets.** `begin` takes the next ticket. A compile settles the selection
 ///   only under the newest ticket, so a slow compile overtaken by a newer `begin`
 ///   loses ("newest wins").
-/// - **The cache** is keyed by `(source, compile options)` and never by the
-///   effect's name. Only a successful compile is kept, whatever its ticket.
+/// - **The cache** is keyed by `(source, compile options, parameter layout)` and never by the
+///   effect's name or a parameter's label or default. Only a successful compile is kept, whatever its ticket.
 /// - **The selection** is the effect `apply` runs. It never returns to "nothing
 ///   prepared". A source that does not compile is final until a newer `begin`; a
 ///   compile that failed for the environment's reasons (no GPU context, or the compiler

@@ -3,7 +3,7 @@
 /// catalog's business (`BundledEffects`, `EffectPackages`); the runtime only hashes it for its cache.
 public struct EffectSource: Sendable, Hashable {
     /// A display name for logs and the menu; not part of the runtime's cache key,
-    /// so two names over one source and options share one compiled library.
+    /// so two names over one source, options and parameter layout share one compiled library.
     public let name: String
     /// The author's MSL, without the prelude (`ShaderCompilationDataSource`
     /// prepends it).
