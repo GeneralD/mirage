@@ -100,8 +100,8 @@ struct EffectCatalogRig {
     /// The state of a menu that lists `entries` and has chosen `selection`.
     static func state(
         _ entries: [EffectCatalogEntry] = [bundled, glitch, other], selection: EffectCatalogEntry = bundled,
-        outcome: EffectSelectionOutcome? = .prepared
+        outcome: EffectSelectionOutcome? = .prepared, compilerMessage: String? = nil
     ) -> EffectCatalogState {
-        EffectCatalogState(entries: entries, selection: selection.id, outcome: outcome)
+        EffectCatalogState(entries: entries, selection: selection.id, outcome: outcome, compilerMessage: compilerMessage)
     }
 }
