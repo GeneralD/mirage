@@ -7,7 +7,7 @@ import SwiftUI
 /// both places that show it: the `MenuBarExtra(.menu)` of the host app and the
 /// `NSHostingMenu` in the dev harness's main menu. It maps the Presenter's values to menu
 /// items and decides nothing: the rows, their order, which one is checked, which one is
-/// disabled and the status line are all the Presenter's.
+/// disabled, the status line, the bypass toggle and the frame-rate line are all the Presenter's.
 ///
 /// SwiftUI turns this content into `NSMenuItem`s (checked with `NSHostingMenu`): a `Toggle`
 /// is an item whose `state` is `.on` for the checked row, so every title lines up in the state
@@ -24,6 +24,11 @@ public struct EffectMenu: View {
     }
 
     public var body: some View {
+        Toggle("Bypass Effects", isOn: bypass)
+        if let line = presenter.frameRateLine {
+            Text(line)
+        }
+        Divider()
         ForEach(presenter.items) { item in
             row(item)
         }
@@ -34,8 +39,20 @@ public struct EffectMenu: View {
         Button("Browse Effects…") { presenter.browseEffects() }
         Button("Open Effects Folder…") { presenter.openEffectsFolder() }
         Divider()
+        Button("Settings…") { presenter.openSettings() }
+            .keyboardShortcut(",")
         Button("Quit \(ProductIdentity.displayName)") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
+    }
+
+    /// The bypass toggle. Its check is the Presenter's `isBypassed`; flipping it asks the Presenter
+    /// to toggle the bypass, and the value the toggle was flipped to is ignored, as in `row(_:)`.
+    private var bypass: Binding<Bool> {
+        let presenter = presenter
+        // The same isolation note as `row(_:)`: the call is assumed to be on the main actor.
+        return Binding(
+            get: { MainActor.assumeIsolated { presenter.isBypassed } },
+            set: { _ in MainActor.assumeIsolated { presenter.toggleBypass() } })
     }
 
     /// One row. Whatever the toggle is flipped to, the user asked for this effect: the new value

@@ -109,9 +109,58 @@ struct HarnessMenuTests {
 
         #expect(rig.interactor.stops.count == 1)
     }
+
+    // MARK: - The menu's views
+
+    @Test("the effects menu builds over a presenter that holds the bypass and the frame-rate line it draws above the rows")
+    func effectMenuBuildsWithBypassAndReadout() async {
+        let rig = MenuRig(controls: ControlsState(isBypassed: true, framesPerSecond: 30))
+        rig.subject.start()
+        let presenter = rig.router.menuBarPresenter
+        await settle(presenter.$frameRateLine) { $0 != nil }
+
+        #expect(presenter.isBypassed)
+        #expect(presenter.frameRateLine == "30 fps")
+        _ = EffectMenu(presenter: presenter).body
+    }
+
+    @Test("the effects menu builds with no frame-rate line while the pipeline is not running, and the bypass unchecked")
+    func effectMenuBuildsWithoutReadout() async {
+        let rig = MenuRig()
+        rig.subject.start()
+        let presenter = rig.router.menuBarPresenter
+        await settle(presenter.$items) { !$0.isEmpty }
+
+        #expect(presenter.frameRateLine == nil)
+        #expect(!presenter.isBypassed)
+        _ = EffectMenu(presenter: presenter).body
+    }
+
+    @Test("the menu bar label builds for the plain camera while the effect is bypassed")
+    func menuBarLabelShowsThePlainCameraWhileBypassed() async {
+        let rig = MenuRig(controls: ControlsState(isBypassed: true))
+        rig.subject.start()
+        let presenter = rig.router.menuBarPresenter
+        await settle(presenter.$isBypassed) { $0 }
+
+        #expect(presenter.iconName == "camera")
+        _ = MenuBarLabel(presenter: presenter).body
+    }
+
+    @Test("the menu bar label builds for the filtered camera while nothing is bypassed and no attempt failed")
+    func menuBarLabelShowsTheFilteredCamera() async {
+        let rig = MenuRig()
+        rig.subject.start()
+        let presenter = rig.router.menuBarPresenter
+        await settle(presenter.$items) { !$0.isEmpty }
+
+        #expect(presenter.iconName == "camera.filters")
+        _ = MenuBarLabel(presenter: presenter).body
+    }
 }
 
-/// A `HarnessMenu` over a Router whose Presenter talks to a `FakeEffectInteractor`.
+/// A `HarnessMenu` over a Router whose Presenter talks to a `FakeEffectInteractor`, and whose controls
+/// state is `controls` (bypass and frame rate).
 @MainActor
 private struct MenuRig {
     let interactor: FakeEffectInteractor
@@ -120,12 +169,15 @@ private struct MenuRig {
 
     /// `makeEffectsMenu` is the menu's default builder, `HarnessMenu.hostingMenu(for:)`, unless a test
     /// passes its own.
-    init(makeEffectsMenu: @escaping @MainActor (AppRouter) -> NSMenu? = HarnessMenu.hostingMenu(for:)) {
+    init(
+        controls: ControlsState = ControlsState(),
+        makeEffectsMenu: @escaping @MainActor (AppRouter) -> NSMenu? = HarnessMenu.hostingMenu(for:)
+    ) {
         let interactor = FakeEffectInteractor(state: .fixture([.fixture(.bundled("Chromatic Grain"))]))
         let router = AppRouter(makeMenuBarPresenter: {
             withDependencies {
                 $0.effectInteractor = interactor
-                $0.controlsInteractor = FakeControlsInteractor()
+                $0.controlsInteractor = FakeControlsInteractor(state: controls)
             } operation: {
                 MenuBarPresenter()
             }
