@@ -8,5 +8,8 @@ var galleryScreens: [GalleryScreen] {
         .effectPicker,
         .effectPickerFailed,
         .effectPickerDisabled,
+        .cameraMenu,
+        .cameraMenuMissing,
+        .cameraMenuNone,
     ]
 }
