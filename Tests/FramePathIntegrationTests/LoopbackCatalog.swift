@@ -29,7 +29,8 @@ struct CatalogSide {
 
     let fileSystem = InMemoryFileSystemGateway()
     let fileWatch = FakeFileWatchGateway()
-    let store = InMemoryKeyValueStore()
+    /// The defaults the choice and the switch-offs are kept in. A test passes one in to run the catalog again over what the last run kept.
+    let store: InMemoryKeyValueStore
     let workspace = FakeWorkspaceGateway()
     /// What the watch's quiet period sleeps on; `sleepers` fires once a sleep is parked.
     let clock = GatedClock()
@@ -37,7 +38,11 @@ struct CatalogSide {
     let states = Collector<EffectCatalogState>()
     let useCase: EffectCatalogUseCaseImpl
 
-    init(over runtime: any EffectRuntimeRepository, errors: RecordingLog, developer: RecordingLog) {
+    init(
+        over runtime: any EffectRuntimeRepository, errors: RecordingLog, developer: RecordingLog,
+        store: InMemoryKeyValueStore = InMemoryKeyValueStore()
+    ) {
+        self.store = store
         let fileSystem = fileSystem
         let fileWatch = fileWatch
         let store = store
@@ -133,6 +138,25 @@ extension LoopbackRig {
             return nil
         }
         await choosing.value
+        return answers.values.first
+    }
+
+    /// Re-enables `id` through the UseCase, pumping the host's executor until it answers (`choose(_:)`'s shape).
+    @MainActor
+    func reenable(_ id: EffectID) async -> EffectSelectionOutcome? {
+        guard let useCase = host.catalog?.useCase else {
+            Issue.record("reenable needs a host built with catalog: .real")
+            return nil
+        }
+        let answers = Collector<EffectSelectionOutcome>()
+        let reenabling = Task { answers.append(await useCase.reenable(id)) }
+        // Judged before waiting on the task, as `choose(_:)` does: a `reenable` that never answers says so here.
+        guard await pumpHost(until: { answers.count == 1 }) else {
+            Issue.record("reenable never answered")
+            reenabling.cancel()
+            return nil
+        }
+        await reenabling.value
         return answers.values.first
     }
 

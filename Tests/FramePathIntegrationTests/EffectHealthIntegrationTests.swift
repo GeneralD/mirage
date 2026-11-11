@@ -124,6 +124,122 @@ struct EffectHealthIntegrationTests {
 
         try await session.finish()
     }
+
+    // MARK: 4. A switch-off survives a restart, and the first frame after it is drawn with the bundled effect
+
+    @Test("a switch-off survives a restart: the relaunched catalog keeps the package off and draws its first frame with the bundled effect")
+    func aSwitchOffSurvivesARestart() async throws {
+        let first = try await Session.start()
+        #expect(await first.install(source: Neon.first))
+        #expect(await first.rig.choose(Neon.id) == .prepared)
+        for _ in 0..<5 {
+            _ = await first.capture(completing: .failed(code: 2))
+        }
+        #expect(await first.rig.pumpHost(until: { first.side.states.contains { $0.disabled[Neon.id] != nil } }), "the package is switched off")
+        // The relaunch is given what the first run kept in the defaults, and a new folder on disk, so the package is written again.
+        let store = first.side.store
+        let writesBefore = store.writes.count
+        try await first.finish()
+
+        let second = try await Session.start(store: store, installing: Neon.first)
+        let rig = second.rig
+        let firstState = try #require(second.side.states.values.first)
+        #expect(firstState.selection == Neon.id, "the choice stands")
+        #expect(firstState.disabled == [Neon.id: .failure(.timeout)], "the switch-off stands")
+        #expect(firstState.outcome == nil, "no answer is shown for the choice, which is switched off")
+
+        // The compiles are read after the first frame, which is the one that draws with the bundled effect.
+        _ = await second.capture()
+        let bundledSource = Self.assembled(BundledEffectDataSourceImpl().defaultEffect.source)
+        #expect(rig.host.shaders.calls.values.map(\.source) == [bundledSource], "the relaunch compiled the bundled effect and nothing else")
+        let drawn = try second.lastPass()
+        #expect(drawn.kernel.source == bundledSource, "the first frame after the relaunch is drawn with the bundled effect")
+        #expect(store.writes.count == writesBefore, "the relaunch wrote nothing: the switch-off was only read back")
+
+        try await second.finish()
+    }
+
+    // MARK: 5. Rewriting a switched-off package's source lifts the switch-off and draws the next frame with it
+
+    @Test("rewriting a switched-off package's source lifts the switch-off, and the next frame is drawn with the rewritten source")
+    func aRewrittenSourceLiftsTheSwitchOff() async throws {
+        let session = try await Session.start()
+        let rig = session.rig
+        let side = session.side
+        #expect(await session.install(source: Neon.first))
+        #expect(await rig.choose(Neon.id) == .prepared)
+        for _ in 0..<5 {
+            _ = await session.capture(completing: .failed(code: 2))
+        }
+        #expect(await rig.pumpHost(until: { side.states.contains { $0.disabled[Neon.id] != nil } }), "the package is switched off")
+
+        #expect(await session.install(source: Neon.second), "the rewritten package is listed")
+        #expect(await session.waitForCompiles(of: "Neon", count: 2), "the rewritten source was compiled")
+        #expect(
+            await rig.pumpHost(until: { side.states.last?.disabled.isEmpty == true && side.states.last?.outcome == .prepared }),
+            "the switch-off is lifted and the rewritten source is prepared")
+        #expect(side.store.values["disabledEffects.v1"] == "[]", "the lifted switch-off is forgotten")
+
+        _ = await session.capture()
+        let drawn = try session.lastPass()
+        #expect(drawn.kernel.source == Self.assembled(Neon.second), "the next frame is drawn with the rewritten source")
+        #expect(Self.compiledEffects(of: rig) == ["bundled", "neon first", "neon second"], "the rewritten source was the only compile added")
+
+        try await session.finish()
+    }
+
+    // MARK: 6. Re-enabling forgets the switch-off and runs the same source again
+
+    @Test("re-enabling a switched-off package forgets the switch-off and draws the next frame with the same source, compiling nothing new")
+    func reenablingForgetsTheSwitchOffAndRunsTheSameSource() async throws {
+        let session = try await Session.start()
+        let rig = session.rig
+        let side = session.side
+        #expect(await session.install(source: Neon.first))
+        #expect(await rig.choose(Neon.id) == .prepared)
+        for _ in 0..<5 {
+            _ = await session.capture(completing: .failed(code: 2))
+        }
+        #expect(await rig.pumpHost(until: { side.states.contains { $0.disabled[Neon.id] != nil } }), "the package is switched off")
+        let compiled = rig.host.shaders.calls.count
+
+        #expect(await rig.reenable(Neon.id) == .prepared, "the package is chosen again")
+        #expect(
+            await rig.pumpHost(until: { side.states.last?.disabled.isEmpty == true && side.states.last?.outcome == .prepared }),
+            "the switch-off is forgotten")
+        #expect(side.store.values["disabledEffects.v1"] == "[]", "the forgetting is remembered")
+        #expect(rig.host.shaders.calls.count == compiled, "the same source was run again, not compiled again")
+
+        _ = await session.capture()
+        let drawn = try session.lastPass()
+        #expect(Self.effect(of: drawn.kernel) == "neon first", "the next frame is drawn with the package again")
+        #expect(rig.host.shaders.calls.count == compiled, "the second frame compiled nothing either")
+
+        try await session.finish()
+    }
+
+    // MARK: 7. The bundled effect is never switched off: a GPU that keeps failing is reported, and nothing is remembered
+
+    @Test("five bundled failures in a row report the GPU as unavailable and switch nothing off, and one good pass clears it")
+    func theBundledEffectIsNeverSwitchedOff() async throws {
+        let session = try await Session.start()
+        let rig = session.rig
+        let side = session.side
+        for _ in 0..<5 {
+            _ = await session.capture(completing: .failed(code: 2))
+        }
+        #expect(rig.host.pipeline.stats.framesSent == 5, "all five frames reached the extension")
+        #expect(session.streamed.count == 5)
+        #expect(
+            await rig.pumpHost(until: { side.states.contains { $0.isGPUUnavailable && $0.disabled.isEmpty } }),
+            "the menu says the GPU is unavailable, and no effect is switched off")
+        #expect(side.store.values["disabledEffects.v1"] == nil, "nothing is remembered")
+
+        _ = await session.capture()
+        #expect(await rig.pumpHost(until: { side.states.last?.isGPUUnavailable == false }), "one good pass clears the GPU warning")
+
+        try await session.finish()
+    }
 }
 
 // MARK: - Fixtures and helpers
@@ -142,6 +258,7 @@ extension EffectHealthIntegrationTests {
     private static let effectNames: [String: String] = [
         assembled(BundledEffectDataSourceImpl().defaultEffect.source): "bundled",
         assembled(Neon.first): "neon first",
+        assembled(Neon.second): "neon second",
     ]
 
     private static func effect(of library: FakeLibraryHandle) -> String {
@@ -166,6 +283,7 @@ extension EffectHealthIntegrationTests {
         static let sourcePath = "\(directory)/effect.metal"
         static let manifest = #"{"formatVersion": 1, "name": "Neon", "author": "Example Author", "description": "Tubes that hum"}"#
         static let first = "// Neon, first version\nkernel void effect() {}"
+        static let second = "// Neon, second version\nkernel void effect() {}"
 
         static func write(into fileSystem: InMemoryFileSystemGateway, source: String) {
             fileSystem.write(manifestPath, manifest)
@@ -195,12 +313,17 @@ extension EffectHealthIntegrationTests {
             self.running = running
         }
 
+        /// Starts the loopback with `store` as the defaults the run keeps its choice and its switch-offs in. With `source`,
+        /// the package is written into the folder before the catalog lists it, as a relaunch finds it on disk.
         @MainActor
-        static func start() async throws -> Session {
-            let rig = LoopbackRig(effects: .real, catalog: .real)
+        static func start(store: InMemoryKeyValueStore = InMemoryKeyValueStore(), installing source: String? = nil) async throws -> Session {
+            let rig = LoopbackRig(effects: .real, catalog: .real, catalogStore: store)
             let side = try #require(rig.host.catalog)
             let relay = await rig.startExtension()
             try await rig.startHost()
+            if let source {
+                Neon.write(into: side.fileSystem, source: source)
+            }
             let running = try #require(await rig.startCatalog())
             return Session(rig: rig, side: side, relay: relay, running: running)
         }
@@ -223,6 +346,14 @@ extension EffectHealthIntegrationTests {
             Neon.write(into: side.fileSystem, source: source)
             await rig.editFolder(firing: CatalogSide.folder)
             return await rig.pumpHost(until: { side.states.contains { $0.entries.contains { $0.id == Neon.id } } })
+        }
+
+        /// Returns once the effect named `name` has compiled `count` times (the runtime logs each).
+        @MainActor
+        func waitForCompiles(of name: String, count: Int) async -> Bool {
+            let line = "effect '\(name)' compiled"
+            let developer = rig.host.developer
+            return await rig.pumpHost(until: { developer.messages(in: .effect).filter { $0 == line }.count >= count })
         }
 
         /// One camera frame through the runtime, completed with `completion` (what the device reports for its command
