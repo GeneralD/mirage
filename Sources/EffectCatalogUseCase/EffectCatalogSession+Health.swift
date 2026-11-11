@@ -156,6 +156,8 @@ extension EffectCatalogSession {
         let lifted = edited.filter { disabled[$0.id]?.record.fingerprint == $0.recorded }
         guard !lifted.isEmpty else { return }
         for item in lifted { disabled[item.id] = nil }
+        // Only the record of the chosen effect ends its trial: the trial waits for that effect alone.
+        if lifted.contains(where: { $0.id == selection }) { cancelTrial() }
         await settings.setDisabledEffects(disabled.values.map(\.record))
         guard epoch == run else { return }
         publish()
@@ -187,6 +189,8 @@ extension EffectCatalogSession {
         guard disabled[id] != nil else { return await select(id) }
         let mine = epoch
         disabled[id] = nil
+        // The trial waits for the chosen effect: lifting the record of that one ends it.
+        if selection == id { cancelTrial() }
         await settings.setDisabledEffects(disabled.values.map(\.record))
         // A run that ended or restarted while the record was being written owns the state now: this choice does not go on.
         guard epoch == mine else { return .unavailable(nil) }

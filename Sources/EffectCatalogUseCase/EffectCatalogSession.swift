@@ -161,6 +161,8 @@ actor EffectCatalogSession {
         if case .broken(let problem) = entry.availability { return .unavailable(problem) }
         guard disabled[id] == nil else { return .unavailable(nil) }
         let mine = epoch
+        // A trial waits for the effect it was scheduled for: choosing another effect ends it. Choosing the same one again does not.
+        if selection != id { cancelTrial() }
         selection = id
         await settings.setSelectedEffect(id)
         // Another choice (or a fallback, or a new run) came in while the choice was being remembered: it owns the effect now.
@@ -288,6 +290,7 @@ actor EffectCatalogSession {
         }
         guard let bundled = readyBundled else { return nil }
         let lost = selection.map(displayName(of:))
+        if selection != bundled.id { cancelTrial() }
         selection = bundled.id
         if let lost {
             developerLog.record(.effect, "effect '\(lost)' is gone; back to '\(bundled.displayName)'")
