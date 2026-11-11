@@ -15,5 +15,8 @@ var galleryScreens: [GalleryScreen] {
         .cameraMenuNone,
         .parameterPanel,
         .parameterPanelEmpty,
+        .effectPickerPreview,
+        .effectPickerPreviewSplit,
+        .effectPickerPreviewRefused,
     ]
 }
