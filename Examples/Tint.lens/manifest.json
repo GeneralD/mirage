@@ -1,0 +1,10 @@
+{
+  "formatVersion": 1,
+  "name": "Tint",
+  "author": "Example Author",
+  "description": "Blends the picture towards a colour of your choice.",
+  "parameters": [
+    { "id": "tint", "label": "Tint", "type": "color", "default": [1, 0.8, 0.6, 1] },
+    { "id": "amount", "label": "Amount", "type": "float", "min": 0, "max": 1, "default": 0.5, "step": 0.05 }
+  ]
+}
