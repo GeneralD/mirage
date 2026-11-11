@@ -21,6 +21,9 @@ struct MenuBarPresenterTests {
     private let alpha = EffectCatalogEntry.fixture(.package("alpha"), author: "Ada")
     private let beta = EffectCatalogEntry.fixture(.package("Beta"), availability: .broken(.manifestInvalid(message: "no name")))
 
+    /// The one parameter of a chosen effect that declares any, with the value it has.
+    private let strengthParameter = EffectParameterState(spec: .strength, value: .float(0.25))
+
     // MARK: - Items
 
     @Test("nothing is shown, and nothing is asked of the Interactor, until the Presenter starts")
@@ -253,6 +256,89 @@ struct MenuBarPresenterTests {
         router = nil
 
         #expect(rig.presenter.router == nil)
+    }
+
+    // MARK: - Adjust Effect
+
+    @Test("Adjust Effect… is not offered until the Presenter starts, even for an effect that has parameters")
+    func adjustEffectQuietBeforeStart() {
+        let rig = PresenterRig(state: .fixture([chromatic], parameters: [strengthParameter]))
+
+        #expect(rig.presenter.canAdjustEffect == false)
+    }
+
+    @Test("Adjust Effect… is not offered for an effect with no parameters, even after the Presenter starts")
+    func adjustEffectQuietWithoutParameters() async {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+
+        await rig.start()
+
+        #expect(rig.presenter.canAdjustEffect == false)
+    }
+
+    @Test("the Adjust Effect… item is titled Adjust Effect…")
+    func adjustEffectTitleIsFixed() {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+
+        #expect(rig.presenter.adjustEffectTitle == "Adjust Effect…")
+    }
+
+    @Test("Adjust Effect… is offered while the chosen effect has parameters, and withdrawn once a new choice has none")
+    func adjustEffectFollowsTheChoice() async {
+        let rig = PresenterRig(state: .fixture([chromatic], parameters: [strengthParameter]))
+        await rig.start()
+        #expect(rig.presenter.canAdjustEffect)
+
+        rig.interactor.publish(EffectCatalogState(entries: [chromatic, glitch], selection: glitch.id))
+        await settle(rig.presenter.$canAdjustEffect) { !$0 }
+
+        #expect(rig.presenter.canAdjustEffect == false)
+    }
+
+    @Test("Adjust Effect… is withdrawn by a state whose parameters are empty, even for the effect still chosen")
+    func adjustEffectWithdrawnByEmptyParameters() async {
+        let rig = PresenterRig(state: .fixture([chromatic], parameters: [strengthParameter]))
+        await rig.start()
+        #expect(rig.presenter.canAdjustEffect)
+
+        rig.interactor.publish(.fixture([chromatic]))
+        await settle(rig.presenter.$canAdjustEffect) { !$0 }
+
+        #expect(rig.presenter.canAdjustEffect == false)
+    }
+
+    @Test("a state that leaves Adjust Effect… as it was does not publish it again")
+    func adjustEffectPublishedOnlyOnChange() async {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+        await rig.start()
+        let published = Collector<Bool>()
+        let subscription = rig.presenter.$canAdjustEffect.sink { published.append($0) }
+
+        rig.interactor.publish(.fixture([chromatic], parameters: [strengthParameter]))
+        await settle(rig.presenter.$canAdjustEffect) { $0 }
+        rig.interactor.publish(.fixture([chromatic], outcome: .failed(.compileFailed), parameters: [strengthParameter]))
+        await settle(rig.presenter.$status) { $0 != nil }
+
+        #expect(published.values == [false, true], "the state that changed no value published none of its own")
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test("Adjust Effect… goes to the router's parameter panel once per call, asks nothing of the Interactor, and does nothing without a router")
+    func adjustEffectGoesToTheRouter() {
+        let rig = PresenterRig(state: .fixture([chromatic], parameters: [strengthParameter]))
+        rig.presenter.adjustEffect()
+
+        let router = RecordingRouter()
+        rig.presenter.router = router
+        rig.presenter.adjustEffect()
+        rig.presenter.adjustEffect()
+
+        #expect(router.parameterPanelOpens == 2)
+        #expect(router.pickerOpens == 0)
+        #expect(router.settingsOpens == 0)
+        #expect(rig.interactor.starts.count == 0)
+        #expect(rig.interactor.stops.count == 0)
+        #expect(rig.interactor.selections.values.isEmpty)
     }
 
     // MARK: - Lifecycle
