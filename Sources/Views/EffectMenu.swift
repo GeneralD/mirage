@@ -31,6 +31,10 @@ public struct EffectMenu: View {
         Divider()
         ForEach(presenter.items) { item in
             row(item)
+            // The Presenter's `reenableTitle` decides whether a switched-off row offers to be chosen again.
+            if let title = item.reenableTitle {
+                Button(title) { presenter.reenable(item.id) }
+            }
         }
         Divider()
         if let status = presenter.status {
