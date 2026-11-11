@@ -2,8 +2,9 @@ import Presenters
 import Views
 
 /// The menu-bar lane's wireframe (epic #42, D8; #12): it builds the `MenuBarPresenter`, the
-/// `EffectPickerPresenter` and the `SettingsPresenter`, decides when the menu's lifecycle begins and
-/// ends, and opens and closes the picker's window and the settings window. It resolves nothing itself
+/// `EffectPickerPresenter`, the `SettingsPresenter` and the `ParameterPanelPresenter`, decides when the
+/// menu's lifecycle begins and ends, and opens and closes the picker's window, the settings window and
+/// the parameter panel's window. It resolves nothing itself
 /// (the key-path lint gives the View lane Presenters and Support only), and it never touches the
 /// `EffectInteractor`: the menu's Presenter owns that lifecycle, so `start()` / `stop()` here are the
 /// Presenter's, and the entry lane never calls `effectInteractor.start()` (a second `start()` is a
@@ -21,7 +22,9 @@ import Views
 /// `makePickerWindow` when the menu asks for it, the picker's Presenter observing while that window
 /// is open and not otherwise, and both let go when it closes, from its title bar or from `stop()`.
 /// The settings window is the Router's own state in the same way, over its own Presenter, and a
-/// reset-all that finishes comes back through `settingsDidReset()`.
+/// reset-all that finishes comes back through `settingsDidReset()`. The parameter panel is the
+/// Router's own state in the same way too: one window at most, made by `makeParameterWindow`, over
+/// the Router's one `ParameterPanelPresenter`, which observes while that window is open only.
 @MainActor
 public final class AppRouter {
     /// Builds the picker's window over its Presenter; the window calls the closure it is given when
@@ -34,6 +37,11 @@ public final class AppRouter {
     public typealias SettingsWindowFactory =
         @MainActor (SettingsPresenter, @escaping @MainActor (any SettingsWindow) -> Void) -> any SettingsWindow
 
+    /// Builds the parameter panel's window over its Presenter; the window calls the closure it is given
+    /// when it closes, with itself.
+    public typealias ParameterWindowFactory =
+        @MainActor (ParameterPanelPresenter, @escaping @MainActor (any ParameterWindow) -> Void) -> any ParameterWindow
+
     /// The one Presenter the menu draws from; the same instance on every read.
     public let menuBarPresenter: MenuBarPresenter
     /// The one Presenter the picker draws from; the same instance on every read, started only while
@@ -42,28 +50,38 @@ public final class AppRouter {
     /// The one Presenter the settings window draws from; the same instance on every read, started only
     /// while the settings window is open.
     public let settingsPresenter: SettingsPresenter
+    /// The one Presenter the parameter panel draws from; the same instance on every read, started only
+    /// while the parameter panel's window is open.
+    public let parameterPanelPresenter: ParameterPanelPresenter
     private let makePickerWindow: PickerWindowFactory
     /// The picker's open window; `nil` while none is open.
     private var pickerWindow: (any PickerWindow)?
     private let makeSettingsWindow: SettingsWindowFactory
     /// The settings window's open window; `nil` while none is open.
     private var settingsWindow: (any SettingsWindow)?
+    private let makeParameterWindow: ParameterWindowFactory
+    /// The parameter panel's open window; `nil` while none is open.
+    private var parameterWindow: (any ParameterWindow)?
 
-    /// Each factory runs once, here, except the two window factories, which run at every opening of
-    /// their window. The defaults build the live Presenters and the live windows; a test passes its own
-    /// to see how often and where the Router asks for one, and to open no real window.
+    /// Each factory runs once, here, except the window factories, which run at every opening of their
+    /// window. The defaults build the live Presenters and the live windows; a test passes its own to see
+    /// how often and where the Router asks for one, and to open no real window.
     public init(
         makeMenuBarPresenter: @MainActor () -> MenuBarPresenter = { MenuBarPresenter() },
         makeEffectPickerPresenter: @MainActor () -> EffectPickerPresenter = { EffectPickerPresenter() },
         makePickerWindow: @escaping PickerWindowFactory = AppRouter.pickerWindow(over:onClose:),
         makeSettingsPresenter: @MainActor () -> SettingsPresenter = { SettingsPresenter() },
-        makeSettingsWindow: @escaping SettingsWindowFactory = AppRouter.settingsWindow(over:onClose:)
+        makeSettingsWindow: @escaping SettingsWindowFactory = AppRouter.settingsWindow(over:onClose:),
+        makeParameterPanelPresenter: @MainActor () -> ParameterPanelPresenter = { ParameterPanelPresenter() },
+        makeParameterWindow: @escaping ParameterWindowFactory = AppRouter.parameterWindow(over:onClose:)
     ) {
         menuBarPresenter = makeMenuBarPresenter()
         effectPickerPresenter = makeEffectPickerPresenter()
         self.makePickerWindow = makePickerWindow
         settingsPresenter = makeSettingsPresenter()
         self.makeSettingsWindow = makeSettingsWindow
+        parameterPanelPresenter = makeParameterPanelPresenter()
+        self.makeParameterWindow = makeParameterWindow
         menuBarPresenter.router = self
         settingsPresenter.router = self
     }
@@ -73,11 +91,12 @@ public final class AppRouter {
         menuBarPresenter.start()
     }
 
-    /// Ends the menu, and the windows with it: the picker's window and the settings window close, and
-    /// the menu's Presenter lets go of the observation and stops the Interactor.
+    /// Ends the menu, and the windows with it: the picker's window, the settings window and the parameter
+    /// panel's window close, and the menu's Presenter lets go of the observation and stops the Interactor.
     public func stop() {
         closeEffectPicker()
         closeSettings()
+        closeParameterPanel()
         menuBarPresenter.stop()
     }
 
@@ -97,6 +116,14 @@ public final class AppRouter {
         window.close()
     }
 
+    /// Closes the parameter panel's window, if one is open, and ends its Presenter's observation.
+    public func closeParameterPanel() {
+        guard let window = parameterWindow else { return }
+        releaseParameterPanel()
+        // The window reports this close too; by then it is not the open one, and the report does nothing.
+        window.close()
+    }
+
     /// The live window: `EffectPickerWindow` around `EffectPickerView`.
     public static func pickerWindow(
         over presenter: EffectPickerPresenter, onClose: @escaping @MainActor (any PickerWindow) -> Void
@@ -109,6 +136,13 @@ public final class AppRouter {
         over presenter: SettingsPresenter, onClose: @escaping @MainActor (any SettingsWindow) -> Void
     ) -> any SettingsWindow {
         SettingsPanelWindow(presenter: presenter) { window in onClose(window) }
+    }
+
+    /// The live window: `ParameterPanelWindow` around `ParameterPanelView`.
+    public static func parameterWindow(
+        over presenter: ParameterPanelPresenter, onClose: @escaping @MainActor (any ParameterWindow) -> Void
+    ) -> any ParameterWindow {
+        ParameterPanelWindow(presenter: presenter) { window in onClose(window) }
     }
 }
 
@@ -130,6 +164,16 @@ extension AppRouter: MenuBarRouting {
         let window = makeSettingsWindow(settingsPresenter) { [weak self] closed in self?.settingsWindowDidClose(closed) }
         settingsWindow = window
         settingsPresenter.start()
+        window.show()
+    }
+
+    /// Opens the parameter panel's window and starts its Presenter; while a window is open, brings that
+    /// one to the front instead of making another.
+    public func openParameterPanel() {
+        if let parameterWindow { return parameterWindow.show() }
+        let window = makeParameterWindow(parameterPanelPresenter) { [weak self] closed in self?.parameterWindowDidClose(closed) }
+        parameterWindow = window
+        parameterPanelPresenter.start()
         window.show()
     }
 }
@@ -165,5 +209,17 @@ extension AppRouter {
     private func releaseSettings() {
         settingsWindow = nil
         settingsPresenter.stop()
+    }
+
+    /// A window closed, whoever closed it. Only the open one ends the parameter panel's Presenter: a
+    /// report from a window the Router has already let go changes nothing.
+    private func parameterWindowDidClose(_ window: any ParameterWindow) {
+        guard parameterWindow === window else { return }
+        releaseParameterPanel()
+    }
+
+    private func releaseParameterPanel() {
+        parameterWindow = nil
+        parameterPanelPresenter.stop()
     }
 }

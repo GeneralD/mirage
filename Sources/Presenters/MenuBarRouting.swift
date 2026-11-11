@@ -7,4 +7,6 @@ public protocol MenuBarRouting: AnyObject {
     func openEffectPicker()
     /// Opens the settings window, or brings the open one to the front.
     func openSettings()
+    /// Opens the parameter panel's window, or brings the open one to the front.
+    func openParameterPanel()
 }
