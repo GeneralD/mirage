@@ -376,6 +376,7 @@ private func startedPresenter(over interactor: SpyEffectInteractor) async -> Men
 private final class RecordingRouter {
     private(set) var pickerOpens = 0
     private(set) var settingsOpens = 0
+    private(set) var parameterPanelOpens = 0
 }
 
 extension RecordingRouter: MenuBarRouting {
@@ -385,5 +386,9 @@ extension RecordingRouter: MenuBarRouting {
 
     func openSettings() {
         settingsOpens += 1
+    }
+
+    func openParameterPanel() {
+        parameterPanelOpens += 1
     }
 }
