@@ -18,6 +18,10 @@ import Domain
 /// The install statuses reach the main actor through a `PublisherObservation`, which keeps the newest status
 /// until it is applied and applies nothing after it ends. The catalog's states reach it through a
 /// `CatalogStateObservation`, which does the same for states.
+///
+/// The support log (#227) is saved one at a time through `exportSupportLog()`, which hands the Interactor the
+/// install status, the chosen effect's status line and the compiler's whole message, and shows the outcome as
+/// `logNotice`. `stop()` abandons a save that is still running, so its result is never shown.
 @MainActor
 public final class OnboardingPresenter: ObservableObject {
     /// The status line; the pending one until the first install status arrives.
@@ -35,6 +39,13 @@ public final class OnboardingPresenter: ObservableObject {
     @Published public private(set) var compilerMessage: String?
     /// The layout of the block that shows `compilerMessage`; 0 high when there is no block.
     public var geometry: OnboardingGeometry { OnboardingGeometry(message: compilerMessage) }
+    /// Whether a support log is being saved; the button shows `supportLogButtonTitle` while it is.
+    @Published public private(set) var isSavingLog = false
+    /// The notice about the last save: the file it wrote, or why it could not write one; `nil` while a save runs,
+    /// once a new save starts, and after `stop()`.
+    @Published public private(set) var logNotice: OnboardingNotice?
+    /// The save button's title: "Saving…" while a save runs, the usual title otherwise.
+    public var supportLogButtonTitle: String { isSavingLog ? onboardingSupportLogSaving : onboardingSupportLogButton }
 
     @Dependency(\.onboardingInteractor) private var interactor
     @Dependency(\.hostEnvironment) private var environment
@@ -45,6 +56,11 @@ public final class OnboardingPresenter: ObservableObject {
     /// The install status the last `apply` received. A notice belongs to the status it was raised under: a
     /// different status clears it, a repeated one does not.
     private var lastInstall: InstallStatus?
+    /// The compiler's message as the catalog sent it. `compilerMessage` shows only an excerpt of it; the report keeps all of it.
+    private var rawCompilerMessage: String?
+    /// The number of the newest save started or ended. A save whose number is no longer this one was ended by `stop()`
+    /// or replaced by a newer save, so its result is dropped.
+    private var saveNumber = 0
 
     public init() {}
 
@@ -61,8 +77,10 @@ public final class OnboardingPresenter: ObservableObject {
     }
 
     /// Ends the observation and stops the Interactor. The status and the buttons stay as they were, even when
-    /// a status had already been sent and not yet applied.
+    /// a status had already been sent and not yet applied. A save that is running is abandoned: its result is
+    /// dropped, and the button and the notice go back to their resting state.
     public func stop() {
+        endSave()
         guard running != nil else { return interactor.stop() }
         running = nil
     }
@@ -72,6 +90,23 @@ public final class OnboardingPresenter: ObservableObject {
     public func openSettings(_ pane: SystemSettingsPane) async {
         let opened = await interactor.openApprovalSettings(pane)
         setSettingsNotice(opened ? nil : onboardingSettingsFailure)
+    }
+
+    /// Saves the support log through the Interactor, from the install status, the chosen effect's status line and
+    /// the compiler's whole message. The outcome becomes `logNotice`. Calling it while a save runs does nothing.
+    public func exportSupportLog() async {
+        guard !isSavingLog else { return }
+        isSavingLog = true
+        if logNotice != nil { logNotice = nil }
+        saveNumber += 1
+        let number = saveNumber
+        let context = SupportReportContext(
+            install: lastInstall ?? .notInstalled, effectStatus: effectStatus, compilerMessage: rawCompilerMessage)
+        let outcome = await interactor.exportSupportLog(context)
+        // Ended by stop(), or replaced by a newer save: nothing of it is shown any more.
+        guard number == saveNumber else { return }
+        isSavingLog = false
+        logNotice = supportLogNotice(of: outcome)
     }
 
     private func apply(_ install: InstallStatus) {
@@ -88,12 +123,21 @@ public final class OnboardingPresenter: ObservableObject {
     private func apply(effect state: EffectCatalogState) {
         let effectStatus = MenuBarText.status(of: state)
         let compilerMessage = compilerMessageExcerpt(of: state.compilerMessage)
+        rawCompilerMessage = state.compilerMessage
         if self.effectStatus != effectStatus { self.effectStatus = effectStatus }
         if self.compilerMessage != compilerMessage { self.compilerMessage = compilerMessage }
     }
 
     private func setSettingsNotice(_ notice: OnboardingNotice?) {
         if settingsNotice != notice { settingsNotice = notice }
+    }
+
+    /// Retires the save that is running, if any, so its result is dropped, and puts the button and the notice back
+    /// to their resting state.
+    private func endSave() {
+        saveNumber += 1
+        if isSavingLog { isSavingLog = false }
+        if logNotice != nil { logNotice = nil }
     }
 }
 

@@ -6,11 +6,19 @@ import TestSupport
 /// with `publish(_:)`, so a subscriber gets the current status at once and every later one. A subscription that
 /// is cancelled is counted in `cancellations`. Commands are only recorded (`starts`, `stops`, `openedPanes`,
 /// `exports`); nothing they would cause happens unless the test publishes it. `openApprovalSettings(_:)` answers
-/// `opensSettings` and `exportSupportLog(_:)` answers `exportOutcome`.
+/// `opensSettings` and `exportSupportLog(_:)` answers `exportOutcome`, unless `holdExports()` has held it: a held
+/// export suspends until `completeExport(with:)` answers the oldest one.
 public final class FakeOnboardingInteractor: OnboardingInteractor, @unchecked Sendable {
+    /// The held exports: whether new ones are held, and the continuations of the ones that are suspended, oldest first.
+    private struct ExportHolds {
+        var holding = false
+        var waiting: [CheckedContinuation<SupportLogExportOutcome, Never>] = []
+    }
+
     private let subject: CurrentValueSubject<InstallStatus, Never>
     private let opensSettings: Bool
     private let exportOutcome: SupportLogExportOutcome
+    private let exportHolds = Locked(ExportHolds())
     /// One entry per `start()` call.
     public let starts = Collector<Void>()
     /// One entry per `stop()` call.
@@ -56,8 +64,37 @@ public final class FakeOnboardingInteractor: OnboardingInteractor, @unchecked Se
         return opensSettings
     }
 
+    /// Holds every `exportSupportLog(_:)` from now on: each one records its context and suspends until
+    /// `completeExport(with:)` answers it.
+    public func holdExports() {
+        exportHolds.withLock { $0.holding = true }
+    }
+
+    /// Answers the oldest held `exportSupportLog(_:)` with `outcome`; `false` when none is held.
+    @discardableResult
+    public func completeExport(with outcome: SupportLogExportOutcome) -> Bool {
+        let oldest: CheckedContinuation<SupportLogExportOutcome, Never>? = exportHolds.withLock { holds in
+            holds.waiting.isEmpty ? nil : holds.waiting.removeFirst()
+        }
+        guard let oldest else { return false }
+        oldest.resume(returning: outcome)
+        return true
+    }
+
+    /// How many `exportSupportLog(_:)` calls are held and not yet answered.
+    public var pendingExportCount: Int { exportHolds.current.waiting.count }
+
     public func exportSupportLog(_ context: SupportReportContext) async -> SupportLogExportOutcome {
-        exports.append(context)
-        return exportOutcome
+        await withCheckedContinuation { (continuation: CheckedContinuation<SupportLogExportOutcome, Never>) in
+            // Recorded and registered in one critical section, so a test that sees the context can always answer the export.
+            exportHolds.withLock { holds in
+                exports.append(context)
+                if holds.holding {
+                    holds.waiting.append(continuation)
+                } else {
+                    continuation.resume(returning: exportOutcome)
+                }
+            }
+        }
     }
 }
