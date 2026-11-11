@@ -13,6 +13,12 @@ public protocol EffectAuthoringUseCase: Sendable {
     /// Creates a new package called `name` in `folder` and answers the path it was written at. A package
     /// that cannot be created answers `.scaffold(problem)` with the reason.
     func scaffold(named name: String, in folder: String) async -> Result<String, AuthoringFailure>
+
+    /// Renders the still image at `input` through `effect` once and writes the result to `output` as a PNG,
+    /// answering the size it was written at. The effect runs with its default parameters, at time zero and
+    /// frame zero; no camera is used. An effect named by a package is checked first, and its failure is
+    /// answered unchanged; a failure of the image, the runtime or the output is answered with its reason.
+    func render(_ effect: EffectReference, from input: String, to output: String) async -> Result<StillImageSize, AuthoringFailure>
 }
 
 public enum EffectAuthoringUseCaseKey: TestDependencyKey {
@@ -35,5 +41,10 @@ private struct UnimplementedEffectAuthoringUseCase: EffectAuthoringUseCase {
     func scaffold(named name: String, in folder: String) async -> Result<String, AuthoringFailure> {
         reportIssue("EffectAuthoringUseCase.scaffold not implemented")
         return .failure(.scaffold(.unwritable(path: folder)))
+    }
+
+    func render(_ effect: EffectReference, from input: String, to output: String) async -> Result<StillImageSize, AuthoringFailure> {
+        reportIssue("EffectAuthoringUseCase.render not implemented")
+        return .failure(.surfaceUnavailable)
     }
 }
