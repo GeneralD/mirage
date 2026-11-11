@@ -246,13 +246,15 @@ struct HarnessLiveWiringTests {
         let bypassOff = await tickUntil(tick: { executor.drain() }, until: { !presenter.isBypassed && developer.contains("bypass off") })
         #expect(bypassOff, "the menu's toggle never reached the pipeline, or the Presenter never saw the bypass off")
 
-        // The next-effect hotkey reaches the live catalog. Only the bundled effect is ready, so there is no neighbour to
-        // switch to: one developer line, and the stored choice does not move.
+        // The next-effect hotkey reaches the live catalog. Every bundled effect is ready, so the press moves the choice to the
+        // one after the default in the menu: one developer line, and the stored choice records that effect.
+        let neighbour = presenter.items.dropFirst().first?.title
         let nextPressed = wired { hotkeyGateway.press(id: UInt32(HotkeyAction.nextEffect.rawValue)) }
         #expect(nextPressed, "no press reached the next-effect hotkey: it is not registered, or its observer was released")
-        let noNeighbour = await tickUntil(tick: { executor.drain() }, until: { developer.contains("hotkey next effect: nothing to switch to") })
-        #expect(noNeighbour, "the next-effect press never reached the catalog's switch")
-        #expect(store.values[selectedEffectKey] == "bundled:Chromatic Grain", "a switch with no neighbour leaves the saved choice alone")
+        #expect(neighbour != nil, "the menu lists a bundled effect after the default")
+        let switched = await tickUntil(tick: { executor.drain() }, until: { developer.contains("hotkey next effect: prepared") })
+        #expect(switched, "the next-effect press never reached the catalog's switch, or the neighbour did not prepare")
+        #expect(store.values[selectedEffectKey] == neighbour.map { "bundled:\($0)" }, "the switch moves the saved choice to the next bundled effect")
 
         #expect(errors.entries.count == 0)
     }
