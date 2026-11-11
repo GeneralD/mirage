@@ -56,18 +56,52 @@ extension EffectCatalogSession {
         entries.first { $0.origin == .bundled && $0.availability == .ready }
     }
 
+    /// Reads the source of `id` as `read(source:)` does, but takes no read token: a peek is a look that makes no flow stale.
+    /// A choice or a listing waiting for its own read keeps its place however many peeks land meanwhile. The answer is the
+    /// caller's to weigh; a peek changes no state.
+    func peek(_ id: EffectID) async -> Result<EffectSource, EffectPackageProblem> {
+        await packages.source(of: id)
+    }
+
+    /// Lifts the switch-off of each switched-off effect the listing has ready whose source has changed since it was switched off,
+    /// so the next choice of it prepares the edited source. The records are compared by fingerprint (`EffectFingerprint.of`), so
+    /// the comparison takes in the shader and its layout only. A row whose source cannot be read stays switched off. A record that
+    /// a newer switch-off replaced while the sources were being read is kept. The settings are written only when something was
+    /// lifted, and nothing is prepared here.
+    func releaseEdited(in run: Int) async {
+        let candidates = entries.compactMap { row -> (id: EffectID, recorded: EffectFingerprint)? in
+            guard row.availability == .ready, let switchedOff = disabled[row.id] else { return nil }
+            return (row.id, switchedOff.record.fingerprint)
+        }
+        guard !candidates.isEmpty else { return }
+        // Read one at a time: the listing is a handful of rows, and each peek is a plain file read.
+        var edited: [(id: EffectID, recorded: EffectFingerprint)] = []
+        for candidate in candidates {
+            if case .success(let source) = await peek(candidate.id), EffectFingerprint.of(source) != candidate.recorded {
+                edited.append(candidate)
+            }
+        }
+        guard epoch == run else { return }
+        let lifted = edited.filter { disabled[$0.id]?.record.fingerprint == $0.recorded }
+        guard !lifted.isEmpty else { return }
+        for item in lifted { disabled[item.id] = nil }
+        await settings.setDisabledEffects(disabled.values.map(\.record))
+        guard epoch == run else { return }
+        publish()
+    }
+
     /// Prepares the bundled effect in place of `id`, the package effect that was just switched off, and publishes how that went.
     /// The choice stays `id`: the user's selection and the remembered one are not rewritten. Nothing is prepared when the choice
     /// moved on meanwhile (a `select`, a newer `prepare`, a new run) or when the runtime already holds the bundled effect. The
-    /// source is read with `packages.source(of:)`, not `read(source:)`: a read takes a token, and that would make a listing or a
-    /// choice still waiting for its source look stale.
+    /// source is read with `peek`, not `read(source:)`: a read takes a token, and that would make a listing or a choice still
+    /// waiting for its source look stale.
     func holdBundled(instead id: EffectID, in run: Int) async {
         guard epoch == run, selection == id, let bundled = readyBundled, prepared?.id != bundled.id else {
             publish()
             return
         }
         let mine = generation
-        let answer = await packages.source(of: bundled.id)
+        let answer = await peek(bundled.id)
         guard epoch == run, generation == mine, selection == id, case .success(let source) = answer else {
             publish()
             return
