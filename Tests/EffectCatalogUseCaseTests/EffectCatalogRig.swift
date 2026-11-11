@@ -32,14 +32,16 @@ struct EffectCatalogRig {
     ///   - entries: the catalog the Repository starts with; `nil` lists nothing until the test publishes.
     ///   - persisted: the effect the settings remember from the last launch.
     ///   - disabled: the switched-off effects the settings remember from the last launch.
+    ///   - parameters: the parameter values the settings remember from the last launch, per effect.
     init(
         entries: [EffectCatalogEntry]? = [Self.bundled, Self.glitch, Self.other], persisted: EffectID? = nil,
-        sources: [EffectID: EffectSource] = Self.sources, disabled: [DisabledEffectRecord] = []
+        sources: [EffectID: EffectSource] = Self.sources, disabled: [DisabledEffectRecord] = [],
+        parameters: [EffectID: [String: EffectParameterValue]] = [:]
     ) {
         let packages = FakeEffectPackageRepository(entries: entries)
         for (id, source) in sources { packages.script(.success(source), for: id) }
         let runtime = FakeEffectRuntimeRepository()
-        let settings = FakeSettingsRepository(selected: persisted, disabled: disabled)
+        let settings = FakeSettingsRepository(selected: persisted, disabled: disabled, parameters: parameters)
         let log = RecordingLog()
         self.packages = packages
         self.runtime = runtime
