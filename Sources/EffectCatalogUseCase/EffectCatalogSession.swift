@@ -184,6 +184,8 @@ actor EffectCatalogSession {
     private func reconcile(_ listing: [EffectCatalogEntry], in run: Int) async {
         guard epoch == run else { return }
         entries = listing
+        await releaseEdited(in: run)
+        guard epoch == run else { return }
         guard let settled = settleSelection() else { return }
         // A switched-off effect is never prepared again: the bundled effect stands in for it, as it did at the switch-off.
         guard disabled[settled.id] == nil else {
