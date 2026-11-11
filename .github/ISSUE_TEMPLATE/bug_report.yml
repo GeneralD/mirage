@@ -1,0 +1,62 @@
+name: Bug report
+description: Something does not work as it should
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. A bug that is easy to reproduce is easy to fix.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where it happens
+      options:
+        - The virtual camera in another app (Zoom, Meet, OBS, ...)
+        - The menu bar or the effect picker
+        - An effect (a .lens package or the bundled one)
+        - The dev harness (swift run dev-harness)
+        - Building or testing the project
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: The release tag, or the contents of version.txt when you built it yourself.
+      placeholder: "x.y.z"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 15.2, MacBook Pro M2"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or a .lens package
+      description: >-
+        Lines from Console.app (search for the app's bundle identifier), or the effect.metal and manifest.json that fail.
+        Remove anything private.
+      render: shell
