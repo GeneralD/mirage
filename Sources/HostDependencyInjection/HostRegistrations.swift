@@ -40,6 +40,7 @@ import SettingsInteractor
 import SettingsRepository
 import SettingsUseCase
 import ShaderCompilationDataSource
+import StandardStreams
 import StillImageDataSource
 import StillImageRepository
 import StoreMaintenanceDataStore
@@ -272,4 +273,8 @@ extension StillImagesKey: DependencyKey {
 
 extension StillImageRepositoryKey: DependencyKey {
     public static let liveValue: any StillImageRepository = StillImageRepositoryImpl()
+}
+
+extension ConsoleWriterKey: DependencyKey {
+    public static let liveValue: any ConsoleWriter = StandardStreamsImpl()
 }
