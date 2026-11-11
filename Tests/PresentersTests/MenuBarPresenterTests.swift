@@ -170,6 +170,40 @@ struct MenuBarPresenterTests {
         #expect(rig.interactor.selections.values == [.package("glitch"), .package("old")])
     }
 
+    @Test("reenable passes each id to the Interactor's reenables in call order, whichever row it is and whether or not the row is enabled")
+    func reenableGoesToTheInteractor() async {
+        let rig = PresenterRig(state: .fixture([chromatic, glitch, broken]))
+        await rig.start()
+
+        rig.presenter.reenable(.package("old"))
+        rig.presenter.reenable(.package("glitch"))
+
+        #expect(rig.interactor.reenables.values == [.package("old"), .package("glitch")])
+    }
+
+    @Test("reenable is not a selection: it selects nothing, starts and stops nothing, and opens no folder")
+    func reenableTouchesNoOtherCommand() async {
+        let rig = PresenterRig(state: .fixture([chromatic, glitch, broken]))
+        await rig.start()
+
+        rig.presenter.reenable(.package("old"))
+
+        #expect(rig.interactor.selections.values.isEmpty)
+        #expect(rig.interactor.inner.starts.count == 1)
+        #expect(rig.interactor.inner.stops.count == 0)
+        #expect(rig.interactor.folderOpens.count == 0)
+    }
+
+    @Test("reenable reaches the Interactor before the Presenter starts, as select does")
+    func reenableWithoutStart() {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+
+        rig.presenter.reenable(.package("glitch"))
+
+        #expect(rig.interactor.reenables.values == [.package("glitch")])
+        #expect(rig.interactor.starts.count == 0)
+    }
+
     @Test("openEffectsFolder goes to the Interactor")
     func openEffectsFolderGoesToTheInteractor() {
         let rig = PresenterRig(state: .fixture([chromatic]))

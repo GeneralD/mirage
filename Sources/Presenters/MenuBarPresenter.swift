@@ -77,6 +77,12 @@ public final class MenuBarPresenter: ObservableObject {
         interactor.select(id)
     }
 
+    /// Forgets the record that switched `id` off and chooses it again. Like `select(_:)`, it goes to the
+    /// Interactor whether or not the row is enabled; whether the row is enabled is the View's `disabled`.
+    public func reenable(_ id: EffectID) {
+        interactor.reenable(id)
+    }
+
     public func openEffectsFolder() {
         interactor.openEffectsFolder()
     }
