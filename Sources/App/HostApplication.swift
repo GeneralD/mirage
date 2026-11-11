@@ -11,7 +11,8 @@ import Views
 ///
 /// The delegate runs what is not a scene: the camera launch and the menu's Router, started
 /// and stopped with the process. The menu is drawn from the Presenter the delegate's Router
-/// built (`EffectMenu`), and so is its icon in the menu bar (`MenuBarLabel`); it starts nothing itself.
+/// built (`EffectMenu`), and so is its icon in the menu bar (`MenuBarLabel`); the Camera submenu
+/// is drawn from that Router's camera Presenter too. It starts nothing itself.
 public struct HostApplication: App {
     @NSApplicationDelegateAdaptor(HostAppDelegate.self) private var delegate
 
@@ -19,7 +20,7 @@ public struct HostApplication: App {
 
     public var body: some Scene {
         MenuBarExtra {
-            EffectMenu(presenter: delegate.router.menuBarPresenter)
+            EffectMenu(presenter: delegate.router.menuBarPresenter, camera: delegate.router.cameraMenuPresenter)
         } label: {
             MenuBarLabel(presenter: delegate.router.menuBarPresenter)
         }
