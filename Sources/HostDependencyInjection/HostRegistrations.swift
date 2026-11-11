@@ -10,6 +10,7 @@ import CommonDependencyInjection
 import ControlsInteractor
 import Dependencies
 import Domain
+import EffectAuthoringInteractor
 import EffectAuthoringUseCase
 import EffectCatalogUseCase
 import EffectInteractor
@@ -277,4 +278,8 @@ extension StillImageRepositoryKey: DependencyKey {
 
 extension ConsoleWriterKey: DependencyKey {
     public static let liveValue: any ConsoleWriter = StandardStreamsImpl()
+}
+
+extension EffectAuthoringInteractorKey: DependencyKey {
+    public static let liveValue: any EffectAuthoringInteractor = EffectAuthoringInteractorImpl()
 }
