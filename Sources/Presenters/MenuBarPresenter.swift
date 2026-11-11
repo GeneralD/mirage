@@ -28,7 +28,7 @@ public final class MenuBarPresenter: ObservableObject {
     @Published public private(set) var isBypassed = false
     /// The frame-rate readout (`"30 fps"`); `nil` while the pipeline is not running.
     @Published public private(set) var frameRateLine: String?
-    /// Where *Browse Effects…* goes: the Router that built this Presenter, which opens the picker.
+    /// Where *Browse Effects…* and *Settings…* go: the Router that built this Presenter, which opens the picker or the settings window.
     /// Weak, because the Router owns the Presenter; until a Router takes it the item does nothing.
     public weak var router: (any MenuBarRouting)?
 
@@ -89,6 +89,11 @@ public final class MenuBarPresenter: ObservableObject {
     /// *Browse Effects…*: asks the Router for the picker's window.
     public func browseEffects() {
         router?.openEffectPicker()
+    }
+
+    /// *Settings…*: asks the Router for the settings window.
+    public func openSettings() {
+        router?.openSettings()
     }
 
     private func apply(_ state: EffectCatalogState) {

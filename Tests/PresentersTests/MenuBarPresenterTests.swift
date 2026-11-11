@@ -194,6 +194,22 @@ struct MenuBarPresenterTests {
         #expect(rig.interactor.selections.values.isEmpty)
     }
 
+    @Test("Settings… goes to the router, asks nothing of the Interactor, and does nothing without a router")
+    func openSettingsGoesToTheRouter() {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+        rig.presenter.openSettings()
+
+        let router = RecordingRouter()
+        rig.presenter.router = router
+        rig.presenter.openSettings()
+        rig.presenter.openSettings()
+
+        #expect(router.settingsOpens == 2)
+        #expect(router.pickerOpens == 0)
+        #expect(rig.interactor.starts.count == 0)
+        #expect(rig.interactor.selections.values.isEmpty)
+    }
+
     @Test("the Presenter does not keep its router alive: the Router owns the Presenter")
     func routerIsHeldWeakly() {
         let rig = PresenterRig(state: .fixture([chromatic]))
@@ -359,10 +375,15 @@ private func startedPresenter(over interactor: SpyEffectInteractor) async -> Men
 @MainActor
 private final class RecordingRouter {
     private(set) var pickerOpens = 0
+    private(set) var settingsOpens = 0
 }
 
 extension RecordingRouter: MenuBarRouting {
     func openEffectPicker() {
         pickerOpens += 1
+    }
+
+    func openSettings() {
+        settingsOpens += 1
     }
 }
