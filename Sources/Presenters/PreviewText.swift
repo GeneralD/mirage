@@ -20,3 +20,22 @@ func previewUnavailableMessage(for refusal: PreviewRefusal) -> String {
     case .unavailable: "The preview could not start."
     }
 }
+
+/// The title of the button that chooses `mode`.
+func previewModeTitle(_ mode: PreviewMode) -> String {
+    switch mode {
+    case .after: "After"
+    case .split: "Split"
+    }
+}
+
+/// What the button that chooses `mode` is called for accessibility.
+func previewModeAccessibilityLabel(_ mode: PreviewMode) -> String {
+    switch mode {
+    case .after: "Show the effect applied"
+    case .split: "Compare with the original, split down the middle"
+    }
+}
+
+/// What the group of the mode buttons is called for accessibility.
+let previewModeGroupAccessibilityLabel = "Show the effect, or compare it with the original"
