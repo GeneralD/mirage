@@ -304,6 +304,14 @@ extension LoopbackRig {
         host.executor.drain()
     }
 
+    /// Detaches the view `attachPreview` attached, as the window does when it closes, then drains
+    /// the host's executor: the preview lets go of the attach there, and a draw in flight stays
+    /// pending until the test completes it.
+    func detachPreview(_ target: FakePreviewTargetHandle) async {
+        host.pipeline.detachPreview(target)
+        host.executor.drain()
+    }
+
     /// One camera frame into the host's slot, then one scheduler tick to send it. The
     /// tick hands the frame to the effect stage; the pass is answered with `effect`
     /// (by default an `.internalError`, a failure, so the camera's own surface goes
