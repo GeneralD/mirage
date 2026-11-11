@@ -275,6 +275,29 @@ struct EffectCatalogIntegrationTests {
         try await session.finish()
         #expect(rig.host.errors.entries.count == 1)
     }
+
+    // MARK: 8. With a view attached, the preview shows the chosen effect's output
+
+    @Test("with a view attached, choosing the package draws the next frame's preview with that package's pass output")
+    func choosingThePackageDrawsThePreviewWithItsOutput() async throws {
+        let session = try await Session.start(preview: .rendered)
+        let rig = session.rig
+        try await rig.attachPreview()
+        #expect(await session.install(source: Neon.first))
+        #expect(await rig.choose(Neon.id) == .prepared)
+
+        _ = await session.capture()
+        let drawn = try session.lastPass()
+        let draw = try #require(rig.host.previewGateway.pending.last, "the preview draws the next frame")
+        #expect(ObjectIdentifier(draw.texture.surface) == ObjectIdentifier(drawn.output), "the preview draws the package's pass output")
+        #expect(rig.host.previewGateway.complete(draw))
+        rig.host.executor.drain()
+
+        try await session.finish()
+        #expect(rig.host.errors.entries.count == 0)
+        #expect(rig.host.pool.liveCount == 0)
+        #expect(rig.ext.pool.liveCount == 0)
+    }
 }
 
 // MARK: - Fixtures and helpers
@@ -348,8 +371,8 @@ extension EffectCatalogIntegrationTests {
         }
 
         @MainActor
-        static func start() async throws -> Session {
-            let rig = LoopbackRig(effects: .real, catalog: .real)
+        static func start(preview: HostPreview = .inMemory) async throws -> Session {
+            let rig = LoopbackRig(preview: preview, effects: .real, catalog: .real)
             let side = try #require(rig.host.catalog)
             let relay = await rig.startExtension()
             try await rig.startHost()
