@@ -48,7 +48,10 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
    line `Shot: pending (screen locked)` instead.
 6. CI: `gh pr checks <pr> -R GeneralD/mirage --watch --interval 30`, in the foreground (rerun it if
    the call times out). A red check goes to step 8. No checks at all after 5 minutes: proceed; the
-   local gate is green and CI absence does not block.
+   local gate is green and CI absence does not block. `codecov/patch` comes from an outside service
+   that sometimes never reports, and no check is required on `hackathon/mvp-cd`: when a watch call
+   times out, run `gh pr checks <pr> -R GeneralD/mirage` once without `--watch`, and if every other
+   check passed and only codecov is still pending, go on to step 7. A failing codecov check is red.
 7. `gh pr merge <pr> -R GeneralD/mirage --squash --delete-branch`, then
    `gh issue close <n> -R GeneralD/mirage --reason completed` (a closing keyword does not fire on a
    non-default base). A conflict: `git rebase origin/hackathon/mvp-cd` once, gate, push with a new
