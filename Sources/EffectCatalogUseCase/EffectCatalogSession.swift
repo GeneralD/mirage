@@ -40,6 +40,10 @@ actor EffectCatalogSession {
         var compilerMessage: String? = nil
     }
 
+    /// How long the parameter writes of the chosen effect must be quiet before they are persisted
+    /// (`docs/hackathon/mvp-cd/specs/parameters.md`, Persistence).
+    static let persistQuietPeriod: Duration = .milliseconds(500)
+
     @Dependency(\.effectPackageRepository) var packages
     @Dependency(\.effectRuntimeRepository) var runtime
     @Dependency(\.settingsRepository) var settings
@@ -79,6 +83,10 @@ actor EffectCatalogSession {
     var trial: Task<Void, Never>?
     /// Taken anew whenever a wait is cancelled or replaced, so a wait that was overtaken does nothing when it wakes.
     var trialToken = 0
+    /// The parameter writes waiting for the quiet period, one entry per effect, and the one timer that persists them.
+    /// A run neither clears nor cancels either: a write made before a run ends is still persisted.
+    private var pending = PendingParameterWrites()
+    private var persistTimer: Task<Void, Never>?
 
     /// How the chosen effect's last attempt went: the problem if its source could not be read
     /// at the last look, otherwise how the runtime took what it was last handed, if that was
@@ -185,12 +193,35 @@ actor EffectCatalogSession {
     }
 
     /// Takes the model an edit produced. A model equal to the one held changes nothing; any other is published and
-    /// handed to the runtime with the source it runs, in this same turn.
+    /// handed to the runtime with the source it runs, in this same turn, and its values wait to be persisted.
     private func adopt(_ model: ParameterModel) {
         guard let current = prepared, model != current.model else { return }
         prepared?.model = model
         publish()
         runtime.setParameters(model.block, of: current.source)
+        schedulePersist(of: current.id, values: model.values)
+    }
+
+    /// Records the values of `id` as waiting and makes the one timer that persists them sleep from now. The newest write
+    /// replaces the sleeping timer, so one is pending at a time, and it persists every effect written since the last one
+    /// that was not superseded. Synchronous: the turn of the edit has no suspension in it.
+    private func schedulePersist(of id: EffectID, values: [String: EffectParameterValue]) {
+        let generation = pending.record(values, of: id)
+        persistTimer?.cancel()
+        let clock = clock
+        // Detached, so the timer does not queue a job on the actor during this turn: the inherited form made the ordering
+        // test of `EffectCatalogParameterSetTests` race in the full catalog run. The timer holds the session weakly.
+        persistTimer = Task.detached { [weak self] in
+            guard (try? await clock.sleep(for: Self.persistQuietPeriod)) != nil, !Task.isCancelled else { return }
+            await self?.persistPending(ifGeneration: generation)
+        }
+    }
+
+    /// Writes every waiting value, when no write came after the timer that asks for it.
+    private func persistPending(ifGeneration generation: Int) async {
+        for write in pending.drained(ifGeneration: generation) {
+            await settings.setParameterValues(write.values, of: write.id)
+        }
     }
 
     // MARK: - A listing
@@ -255,11 +286,13 @@ actor EffectCatalogSession {
 
     // MARK: - Handing the runtime an effect
 
-    /// The stored values a choice of `id` starts from: what the settings hold for it, read once, when `source` declares
-    /// parameters and `id` is not the effect already prepared. A hot reload or a re-choice of that one keeps the values in
-    /// memory, which are the newest, so it reads nothing; a source that declares none reads nothing either.
+    /// The stored values a choice of `id` starts from: the writes of `id` still waiting for their timer, which are newer than
+    /// the settings, else what the settings hold for it, read once, when `source` declares parameters and `id` is not the
+    /// effect already prepared. A hot reload or a re-choice of that one keeps the values in memory, which are the newest, so
+    /// it reads nothing; a source that declares none reads nothing either.
     private func startingValues(for id: EffectID, source: EffectSource) async -> [String: EffectParameterValue] {
         guard !source.parameters.isEmpty, prepared?.id != id else { return [:] }
+        if let waiting = pending.values(of: id) { return waiting }
         return await settings.parameterValues(of: id)
     }
 
