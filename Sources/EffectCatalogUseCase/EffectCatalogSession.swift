@@ -45,6 +45,7 @@ actor EffectCatalogSession {
     @Dependency(\.settingsRepository) var settings
     @Dependency(\.developerLog) var developerLog
     @Dependency(\.errorLog) var errorLog
+    @Dependency(\.continuousClock) var clock
 
     let broadcast: EffectCatalogBroadcast
     var entries: [EffectCatalogEntry] = []
@@ -74,6 +75,10 @@ actor EffectCatalogSession {
     /// Set when the bundled effect itself is switched off by health: no effect can move frames, so the menu says the GPU is
     /// unavailable. A passing pass of any effect lowers it again; a run clears it.
     var isGPUUnavailable = false
+    /// The one wait for a switched-off effect's cool-down that is pending, if any: `cancelTrial()` cancels it.
+    var trial: Task<Void, Never>?
+    /// Taken anew whenever a wait is cancelled or replaced, so a wait that was overtaken does nothing when it wakes.
+    var trialToken = 0
 
     /// How the chosen effect's last attempt went: the problem if its source could not be read
     /// at the last look, otherwise how the runtime took what it was last handed, if that was
@@ -196,8 +201,9 @@ actor EffectCatalogSession {
         await releaseEdited(in: run)
         guard epoch == run else { return }
         guard let settled = settleSelection() else { return }
-        // A switched-off effect is never prepared again: the bundled effect stands in for it, as it did at the switch-off.
-        guard disabled[settled.id] == nil else {
+        // A switched-off effect is not prepared again while it waits: the bundled effect stands in for it, as it did at the
+        // switch-off. A trial in flight is not held off, so a listing that still has it ready leaves it chosen.
+        guard !isHeldOff(settled.id) else {
             await holdBundled(instead: settled.id, in: run)
             return
         }
@@ -262,7 +268,8 @@ actor EffectCatalogSession {
     /// answer only reaches its caller.
     @discardableResult
     func prepare(
-        _ source: EffectSource, for id: EffectID, announcing verb: String?, restoring stored: [String: EffectParameterValue] = [:]
+        _ source: EffectSource, for id: EffectID, announcing verb: String?, restoring stored: [String: EffectParameterValue] = [:],
+        policy: EffectHealthPolicy = EffectHealthPolicy()
     ) async -> EffectSelectionOutcome {
         generation += 1
         let mine = generation
@@ -276,7 +283,7 @@ actor EffectCatalogSession {
             }
         let block = model.block
         prepared = Prepared(id: id, source: source, answer: nil, model: model, sent: block)
-        armed = ArmedHealth(id: id, fingerprint: .of(source), policy: EffectHealthPolicy())
+        armed = ArmedHealth(id: id, fingerprint: .of(source), policy: policy)
         unreadableSource = nil
         if let verb {
             developerLog.record(.effect, "effect '\(source.name)' \(verb)")
@@ -356,6 +363,7 @@ actor EffectCatalogSession {
     /// ignores cancellation) publishes nothing into the next one.
     func clear() {
         generation += 1
+        cancelTrial()
         entries = []
         selection = nil
         prepared = nil

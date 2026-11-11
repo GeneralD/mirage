@@ -26,6 +26,8 @@ struct EffectCatalogRig {
     let runtime: FakeEffectRuntimeRepository
     let settings: FakeSettingsRepository
     let log: RecordingLog
+    /// The clock every wait of the catalog sleeps on (a cool-down before a trial): stepped by hand, never the wall clock.
+    let clock: GatedClock
     let subject: EffectCatalogUseCaseImpl
 
     /// - Parameters:
@@ -43,16 +45,19 @@ struct EffectCatalogRig {
         let runtime = FakeEffectRuntimeRepository()
         let settings = FakeSettingsRepository(selected: persisted, disabled: disabled, parameters: parameters)
         let log = RecordingLog()
+        let clock = GatedClock()
         self.packages = packages
         self.runtime = runtime
         self.settings = settings
         self.log = log
+        self.clock = clock
         subject = withDependencies {
             $0.effectPackageRepository = packages
             $0.effectRuntimeRepository = runtime
             $0.settingsRepository = settings
             $0.developerLog = log
             $0.errorLog = log
+            $0.continuousClock = clock
         } operation: {
             EffectCatalogUseCaseImpl()
         }
