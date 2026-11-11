@@ -5,8 +5,9 @@ import Testing
 
 @testable import PreviewDataSource
 
-/// The original a draw is given. For now the frame is its own original: the
-/// preview kernel does not read index 2 yet, so nothing is drawn differently.
+/// The original a draw is given. A frame presented alone is its own original;
+/// one presented with an original is drawn by the split, which binds it
+/// (PreviewDataSourceSplitTests).
 @Suite("PreviewDataSourceImpl original", .timeLimit(.minutes(1)))
 struct PreviewDataSourceOriginalTests {
     private let rig = PreviewRig()
@@ -56,7 +57,7 @@ struct PreviewDataSourceOriginalTests {
 
         #expect(rig.completed.values == [1])
         #expect(rig.preview.draws.count == 1)
-        #expect(rig.textures.bindCount == 1, "the original is not bound")
+        #expect(rig.textures.bindCount == 2, "the original is bound beside the frame for the split")
         #expect(rig.textures.isBalanced)
         #expect(rig.pool.liveCount == 0)
     }

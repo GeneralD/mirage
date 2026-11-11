@@ -5,8 +5,8 @@ import Testing
 
 @testable import PreviewDataSource
 
-/// Seeded interleavings of everything that can reach the preview: presents,
-/// attaches (good, foreign, or with a kernel that does not compile), GPU
+/// Seeded interleavings of everything that can reach the preview: presents (with
+/// or without an original), attaches (good, foreign, or with a kernel that does not compile), GPU
 /// completions (clean or faulted), leases released early (stale tokens) and
 /// executor drains. Whatever the order, every present completes exactly once,
 /// no more than one draw is ever in flight, no older frame is drawn after a
@@ -14,7 +14,8 @@ import Testing
 @Suite("PreviewDataSource properties", .timeLimit(.minutes(1)))
 struct PreviewDataSourcePropertyTests {
     private enum Step: CaseIterable {
-        case present, present2, attach, attachForeign, detach, toggleCompileFailure, complete, completeFaulted, releaseEarly, drain
+        case present, present2, presentWithOriginal, attach, attachForeign, detach, toggleCompileFailure, complete, completeFaulted, releaseEarly,
+            drain
     }
 
     private static let steps = 80
@@ -22,7 +23,8 @@ struct PreviewDataSourcePropertyTests {
     @Test("every present completes exactly once, one draw at most is in flight, and frames are drawn oldest first", arguments: Seeds.range(0..<50))
     func exactlyOnce(seed: UInt64) async throws {
         var generator = SeededGenerator(seed: seed)
-        let rig = PreviewRig(capacity: Self.steps)
+        // A present with an original leases two surfaces, so the pool holds twice the steps.
+        let rig = PreviewRig(capacity: Self.steps * 2)
         var frames: [FrameRef] = []
         var compileFails = false
         var lastAttached: FakePreviewTargetHandle?
@@ -33,6 +35,10 @@ struct PreviewDataSourcePropertyTests {
                 let frame = try rig.frame(frames.count + 1)
                 frames.append(frame)
                 rig.present(frame)
+            case .presentWithOriginal:
+                let frame = try rig.frame(frames.count + 1)
+                frames.append(frame)
+                rig.present(frame, original: try rig.frame(0))
             case .attach:
                 let target = FakePreviewTargetHandle()
                 try await rig.attach(target)

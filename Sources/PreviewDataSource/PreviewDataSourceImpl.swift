@@ -7,9 +7,10 @@ import Domain
 /// one-element slot where the newest wins; the frame it replaces completes at
 /// once, undrawn. A frame is drawn by resolving its token through the pool,
 /// binding the surface to a texture on the attach's GPU context and running
-/// `PreviewKernel` into the view's next drawable; when the GPU is done the
-/// texture is unbound and the frame completed, then the waiting frame (if any)
-/// is drawn. Every `present` completes exactly once — undrawn when nothing is
+/// `PreviewKernel` into the view's next drawable: the split, with the original
+/// bound beside the frame, when the request carries one; otherwise the blit.
+/// When the GPU is done the textures are unbound and the frame completed, then
+/// the waiting frame (if any) is drawn. Every `present` completes exactly once — undrawn when nothing is
 /// attached, its token is stale, or binding or encoding fails.
 ///
 /// Executor-confined: every state change runs on `FrameExecutor`, so there is
@@ -19,7 +20,7 @@ public final class PreviewDataSourceImpl: @unchecked Sendable {
     /// What one attach produced: the target's identity, the GPU context, the
     /// layer the view is drawn through and the preview kernel compiled for that
     /// context. The split kernel is compiled alongside it, nil when it did not
-    /// compile; nothing draws with it yet. The identity is kept, not the target:
+    /// compile; a draw without it is the blit. The identity is kept, not the target:
     /// the layer already holds it, and `detach` only needs to tell whether it is
     /// the same one.
     private struct Attachment: Sendable {
@@ -31,8 +32,8 @@ public final class PreviewDataSourceImpl: @unchecked Sendable {
     }
 
     /// A presented frame, its original when there is one, and the completion
-    /// that ends the borrow of both surfaces. The original is carried, not yet
-    /// drawn: nothing reads it here.
+    /// that ends the borrow of both surfaces. The split binds and reads the
+    /// original when the attach has a split kernel; otherwise it is not drawn.
     private struct Request: Sendable {
         let frame: FrameRef
         let original: FrameRef?
@@ -146,28 +147,53 @@ extension PreviewDataSourceImpl {
             errorLog.record(.preview, "frame not shown, binding its surface failed: \(error)")
             return request.completion()
         }
+        // The split reads the original at index 2; the blit reads the frame there, as its own original.
+        let split = splitPass(for: request, with: attachment)
+        let kernel = split?.kernel ?? attachment.kernel
+        let original = split?.original ?? texture
+        let textures = split.map { [texture, $0.original] } ?? [texture]
         drawing = true
         do {
-            // The frame is its own original for now: the kernel does not read index 2 yet.
             try previewGateway.draw(
-                texture, original: texture, with: attachment.kernel, into: attachment.layer, on: attachment.context
+                texture, original: original, with: kernel, into: attachment.layer, on: attachment.context
             ) { [self] outcome in
-                frameExecutor.run { [self] in finish(request, texture: texture, outcome: outcome) }
+                frameExecutor.run { [self] in finish(request, textures: textures, outcome: outcome) }
             }
         } catch {
             drawing = false
             errorLog.record(.preview, "frame not shown, encoding the draw failed: \(error)")
-            unbind(texture)
+            textures.forEach(unbind)
             request.completion()
         }
     }
 
-    /// The texture goes back before the frame completes: the completion ends the
-    /// caller's lease on the surface the texture wraps.
-    private func finish(_ request: Request, texture: any TextureHandle, outcome: GPUCompletion) {
+    /// The split's pass when the request carries an original the split can draw:
+    /// the split kernel and the original's bound texture. Nil when there is no
+    /// original or no split kernel, which binds nothing. A stale original token or
+    /// a failed bind is logged and nil too, so the frame goes to the blit and the
+    /// attachment is left as it is.
+    private func splitPass(for request: Request, with attachment: Attachment) -> (kernel: any LibraryHandle, original: any TextureHandle)? {
+        guard let original = request.original, let splitKernel = attachment.splitKernel else { return nil }
+        let token = original.token
+        guard let surface = pool.handle(for: token) else {
+            errorLog.record(.preview, "split not shown, original token \(token.index)/\(token.generation) is stale")
+            return nil
+        }
+        do {
+            let texture = try textureCache.bind(surface, on: attachment.context)
+            return (kernel: splitKernel, original: texture)
+        } catch {
+            errorLog.record(.preview, "split not shown, binding the original failed: \(error)")
+            return nil
+        }
+    }
+
+    /// The textures go back before the frame completes: the completion ends the
+    /// caller's lease on the surfaces the textures wrap.
+    private func finish(_ request: Request, textures: [any TextureHandle], outcome: GPUCompletion) {
         drawing = false
         outcome.error.map { errorLog.record(.preview, "preview draw failed: \($0.domain) \($0.code)") }
-        unbind(texture)
+        textures.forEach(unbind)
         request.completion()
         let next = waiting
         waiting = nil
