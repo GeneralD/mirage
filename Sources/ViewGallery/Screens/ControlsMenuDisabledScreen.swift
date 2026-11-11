@@ -1,3 +1,5 @@
+import Domain
+
 extension GalleryScreen {
     /// The menu over the catalog in which health has switched two effects off: the chosen `Glitch` and `Ripple`, each with a Re-enable row.
     static var controlsMenuDisabled: GalleryScreen {
