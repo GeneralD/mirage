@@ -2,8 +2,11 @@
 name: Auto Tag
 
 # version.txt is the single source of truth: every push to main whose version
-# has no tag yet gets one. Building, signing, notarizing and attaching the DMG
-# is the release workflow's job (added with the Xcode shell; it needs the
+# has no tag yet gets one, and every tag gets a GitHub release whose notes are
+# generated from the pull requests merged since the previous tag. The release is
+# created in this job because a tag pushed with GITHUB_TOKEN starts no other
+# workflow. It carries notes only: building, signing, notarizing and attaching
+# the DMG is the release workflow's job (added with the Xcode shell; it needs the
 # Developer ID certificate and the two provisioning profiles as secrets).
 
 on:
@@ -42,4 +45,20 @@ jobs:
           else
             git tag "$TAG"
             git push origin "$TAG"
+          fi
+
+      - name: Create release with generated notes if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists"
+            exit 0
+          fi
+          PREVIOUS=$(git tag --merged "$TAG" --sort=-v:refname | grep -vxF "$TAG" | head -n 1 || true)
+          if [ -n "$PREVIOUS" ]; then
+            gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" --generate-notes --notes-start-tag "$PREVIOUS"
+          else
+            gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" --generate-notes
           fi
