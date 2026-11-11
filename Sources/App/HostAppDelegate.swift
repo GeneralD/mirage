@@ -13,7 +13,7 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
     @Dependency(\.cameraInteractor) private var cameraInteractor
     @Dependency(\.developerLog) private var developerLog
 
-    let router = AppRouter()
+    let router = AppRouter(showsPreview: true)
     private let launch = LaunchHandle()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
