@@ -13,5 +13,7 @@ var galleryScreens: [GalleryScreen] {
         .cameraMenu,
         .cameraMenuMissing,
         .cameraMenuNone,
+        .parameterPanel,
+        .parameterPanelEmpty,
     ]
 }
