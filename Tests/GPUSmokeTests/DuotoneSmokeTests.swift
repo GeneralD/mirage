@@ -24,9 +24,9 @@ struct DuotoneSmokeTests {
         _ image: SurfacePixels, width: Int = EffectSmokeRig.width, height: Int = EffectSmokeRig.height,
         expected: (Int, Int) -> [UInt8]
     ) -> Int {
-        (0..<height).flatMap { y in
-            (0..<width).filter { x in GPUSmokeSupport.distance(image.pixel(x: x, y: y), expected(x, y)) > GPUSmokeSupport.tolerance }
-        }.count
+        (0..<height).reduce(0) { count, y in
+            count + (0..<width).filter { x in GPUSmokeSupport.distance(image.pixel(x: x, y: y), expected(x, y)) > GPUSmokeSupport.tolerance }.count
+        }
     }
 
     @Test(
@@ -103,9 +103,9 @@ struct DuotoneSmokeTests {
     @Test("every output pixel is written opaque")
     func alphaIsOpaque() async throws {
         let image = try await Self.render(shadows: Self.defaultShadows, highlights: Self.defaultHighlights, amount: 1)
-        let translucent = (0..<EffectSmokeRig.height).flatMap { y in
-            (0..<EffectSmokeRig.width).filter { x in image.pixel(x: x, y: y)[3] != 255 }
-        }.count
+        let translucent = (0..<EffectSmokeRig.height).reduce(0) { count, y in
+            count + (0..<EffectSmokeRig.width).filter { x in image.pixel(x: x, y: y)[3] != 255 }.count
+        }
         #expect(translucent == 0, "\(translucent) pixels are not opaque")
     }
 }
