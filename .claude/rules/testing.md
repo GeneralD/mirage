@@ -6,8 +6,10 @@ paths:
 # Testing — Deterministic by Construction
 
 Tests are the specification. Swift Testing only (`@Suite` / `@Test("display name")`).
-Every suite that waits carries `.timeLimit(.minutes(1))`; CI adds
-`timeout-minutes: 30` as the outer bound for anything a time limit cannot reach.
+Every suite that waits carries `.timeLimit(.minutes(1))` (one exception:
+`HostAbsenceCoverageTests` carries `.minutes(3)`, because a suite's limit caps its
+tests and its fifty-seed scenario passes a minute under a loaded parallel run, #373);
+CI adds `timeout-minutes: 30` as the outer bound for anything a time limit cannot reach.
 
 ## Pick the wait by what you are waiting on (lyra's TestSupport, verbatim)
 
@@ -151,6 +153,18 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   menu shows the same as before, so its marker is the compile that finished, not a state; one
   that changes what the menu shows (the recovery from `.failed` to `.prepared`) does publish,
   and that state is what a test waits for.
+  The loopback suites that sit on these rigs: `EffectHealthIntegrationTests` (five
+  timeouts in a row switch a chosen package off, and every frame still reaches the
+  extension), `ParameterIntegrationTests` (the `Tuner` package of
+  `ParameterLoopback.swift`: a value set through the catalog is in the block of the
+  next frame the runtime admits) and `ParameterKeepIntegrationTests` (what a
+  parameter keeps across the catalog's runs), `SplitPreviewIntegrationTests` and
+  `PreviewVisibilityIntegrationTests` (`LoopbackRig(preview: .rendered)`: the split
+  draw, and a view that attaches and detaches while frames keep flowing),
+  `HostAbsenceIntegrationTests` with `HostAbsenceCoverageTests` (a lease-balance
+  property over `Seeds.range(0..<50)` and the proof that every absence path is
+  taken) and `HostReconnectClockTests` (the next look-up waits for the retry
+  policy's first delay on a stepped clock).
 - `FakePreviewGateway` — what `PreviewDataSource` is proven against: `prepare`
   answers a `FakePreviewLayerHandle`, `draw` records a pending `Draw` until
   `complete(_:with:)`, exactly once, in any order. Its draws carry their issuing
@@ -236,6 +250,25 @@ Fixed `Task.sleep` anywhere in a test is a review rejection.
   the cancel, like the other manual-completion fakes; `heldRunCount` counts them) until
   `releaseCancelledRuns()`, which is how a subject that must wait for the run it ends
   is proven; `FakeEffectInteractor.publish(_:)` pushes into its `CurrentValueSubject`.
+- The fakes of the app's own controls record and script, and do nothing on their
+  own (all under contract test in `Tests/TestDoublesTests`). Calls are recorded in
+  call order, a failing one included wherever the fake can fail, so a subject that
+  must not call is asserted to have made no entry. `FakeHotkeyGateway`: `press(id:)`
+  delivers a press, `liveHandleCount` and `doubleReleaseCount` count handles (a
+  release of a handle already given back is one the live handle cannot see),
+  `script(status:forID:)` and `failObserve(with:)` choose the next answers;
+  `FakeHotkeys` sends `press(_:)` to the stream `presses()` opened.
+  `FakeLoginItemGateway` holds a raw `SMAppService.Status` that `register` /
+  `unregister` move as the system does (`failNext`), and `FakeLoginItem` a
+  `LaunchAtLoginStatus` moved as `LoginItemDataSourceImpl` moves it (`set(status:)`
+  is the user in System Settings). `FakeLogStoreGateway` answers a fixed list and
+  records `queries`; `FakeImageIOGateway` reads only the bytes the test named as an
+  image (any others are `ImageIOError.notAnImage`); `FakeStillImages` answers what
+  was scripted per path; `InMemoryKeyValueStore` keeps `values`, `writes` and
+  `resets`; `FakeStoreMaintenance` keeps the schema version and `stamps`;
+  `RecordingConsole` keeps `lines` and `errorLines` apart, so a result is asserted
+  to reach standard output and a failure standard error; `FixedHostEnvironment`,
+  `ZeroRandomSource` and `SequenceRandomSource` fix the version and the draws.
 
 ## Property tests
 
@@ -257,8 +290,8 @@ Generators live in `Tests/TestSupport/Generators/`. Targets are listed in
 - A live Gateway smoke (real IOSurface, real file system under a UUID temp
   dir, `UserDefaults(suiteName: UUID)`, real `DispatchSource`) asserts `≥ 1`
   event, never "exactly one" — the OS coalesces.
-- The real file system is a Gateway smoke's alone, with one read-only exception:
-  `ExamplePackagesTests` reads the repository's own `Examples/` from disk (found
+- The real file system is a Gateway smoke's alone, with one read-only exception,
+  the repository's own files: `ExamplePackagesTests` reads the repository's own `Examples/` from disk (found
   from `#filePath`) and copies the files into an `InMemoryFileSystemGateway`, so
   the packages the README points to stay held to the format. It writes nothing,
   and the subject under test never sees the disk. A suite that reads another
@@ -274,6 +307,22 @@ Generators live in `Tests/TestSupport/Generators/`. Targets are listed in
   `ParameterTourExampleTests`, `ParametersDocTests`, `FirstEffectDocTests` and
   `ExampleEffectsSmokeTests` read `Examples/` and `docs/authoring/` from disk (found
   from `#filePath`). They write nothing, and the subject under test never sees the disk.
+- `MarkdownFences` (`Tests/TestSupport/MarkdownFences.swift`) reads the fenced code
+  blocks of a document, so a suite runs the examples a page shows
+  (`ParametersDocTests`, `FirstEffectDocTests`, `ExampleEffectsSmokeTests`).
+  `StaleStatementTests` scans every Swift file under `Sources/` and `Tests/` and every
+  `.claude/rules/*.md` for sentences the code made untrue, so a rule document
+  must not bring back a phrase it lists.
+- `LensToolRenderSmokeTests` (GPU lane, `.claude/rules/gpu-testing.md`) is the one
+  suite besides the Gateway smokes that writes: it runs the `LensTool` command over the
+  host's live registrations in a UUID folder under the temporary directory and
+  removes it when it ends; only the console and the random source are fakes.
+- Only `HarnessLiveWiringTests` resolves `\.effectInteractor` or
+  `\.effectCatalogUseCase` under `.live`, or calls `HarnessMenu.live()`: those live
+  values hold a task and a session for the life of the process, and the test bundle is
+  one process whose suites run concurrently. Every other suite overrides them
+  (`$0.effectInteractor = fake`), which resolves nothing
+  (`scripts/check-live-owner.sh`).
 - Test doubles shared across layers live in `Tests/TestDoubles`; nothing
   test-only lives under `Sources/`.
 - GPU-touching suites follow `.claude/rules/gpu-testing.md`.

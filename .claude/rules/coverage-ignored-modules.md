@@ -24,8 +24,8 @@ When a Gateway cannot run in CI, keep it thin and move every decision one
 layer up into a DataSource that is tested against the fake:
 
 ```text
-Sources/Domain/Gateway/MachMessageGateway.swift   # ignored — protocol + Unimplemented
-Sources/MachGateway/MachMessageGateway+Live.swift  # ignored — thin pass-through
+Sources/Domain/Gateway/MachGateways.swift          # ignored — protocol + Unimplemented
+Sources/MachGateway/MachMessageGatewayImpl.swift   # ignored — thin pass-through
 Sources/FrameReceiverDataSource/                   # covered — the receive loop, framing, timeouts
 Tests/FrameReceiverDataSourceTests/                # tests against FakeMachMessageGateway
 ```
