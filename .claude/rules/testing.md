@@ -269,6 +269,11 @@ Generators live in `Tests/TestSupport/Generators/`. Targets are listed in
   the same way: those under `Tests/TestSupportTests/RepositoryDocs/` do, with `repositoryText`
   and `repositoryHas` (`Tests/TestSupport/RepositoryFile.swift`, found from `#filePath`). They
   write nothing, and no subject under test is handed the disk.
+- The read-only exception above extends to the suites that hold an example package
+  or a document to what the code says: `TintExampleTests`,
+  `ParameterTourExampleTests`, `ParametersDocTests`, `FirstEffectDocTests` and
+  `ExampleEffectsSmokeTests` read `Examples/` and `docs/authoring/` from disk (found
+  from `#filePath`). They write nothing, and the subject under test never sees the disk.
 - Test doubles shared across layers live in `Tests/TestDoubles`; nothing
   test-only lives under `Sources/`.
 - GPU-touching suites follow `.claude/rules/gpu-testing.md`.
