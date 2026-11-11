@@ -172,6 +172,184 @@ struct EffectHealthPolicyTests {
                     coolDown: .seconds(300), maximumCoolDown: .seconds(3600)))
     }
 
+    // MARK: - Trial
+
+    /// Begins a trial before each failure, so every one of them is judged as a trial of its own.
+    private static func trials(_ failures: [EffectFailure], into policy: inout EffectHealthPolicy) -> [Verdict] {
+        failures.map { failure in
+            policy.beginTrial()
+            return policy.record(.failure(failure))
+        }
+    }
+
+    @Test("a trial pass over budget disables the effect at once with the first doubled cool-down, not after thirty passes")
+    func overBudgetTrialDisablesAtOnce() {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        let verdict = policy.record(passOverBudget)
+        #expect(verdict == Verdict.disable(.overBudget, retryAfter: .seconds(600)))
+    }
+
+    @Test(
+        "a counted failure in a trial disables the effect on that one failure, retrying only where a retry cannot hang or fault the call again",
+        arguments: [
+            HealthCase(failure: .timeout, passes: 1, reason: .timeout, retryAfter: nil),
+            HealthCase(failure: .pageFault, passes: 1, reason: .pageFault, retryAfter: nil),
+            HealthCase(failure: .accessRevoked, passes: 1, reason: .accessRevoked, retryAfter: nil),
+            HealthCase(failure: .outOfMemory, passes: 1, reason: .outOfMemory, retryAfter: .seconds(600)),
+            HealthCase(failure: .unknown(code: 7), passes: 1, reason: .unknown, retryAfter: .seconds(600)),
+        ])
+    func countedFailureInTrialDisablesAtOnce(testCase: HealthCase) {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        let verdict = policy.record(.failure(testCase.failure))
+        #expect(verdict == Verdict.disable(.failure(testCase.reason), retryAfter: testCase.retryAfter))
+    }
+
+    @Test("a trial begun inside a failure streak still disables on its first counted failure, the streak not being counted")
+    func trialIgnoresStreakBegunBefore() {
+        var policy = EffectHealthPolicy(healthBudget)
+        let counting = Self.record(Self.repeating(.failure(.timeout), 4), into: &policy)
+        policy.beginTrial()
+        let trial = policy.record(.failure(.timeout))
+        #expect(counting == Self.quiet(4))
+        #expect(trial == Verdict.disable(.failure(.timeout), retryAfter: nil))
+    }
+
+    @Test("beginTrial called again during a trial leaves the level where it is, so the first failed trial still names 600 seconds")
+    func repeatedBeginTrialKeepsLevel() {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        policy.beginTrial()
+        let verdict = policy.record(.failure(.outOfMemory))
+        #expect(verdict == Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(600)))
+    }
+
+    @Test("beginTrial on a fresh policy restored from a record starts at the first doubled cool-down, 600 seconds, when the trial fails")
+    func beginTrialOnRestoredPolicyNamesFirstCoolDown() {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        let verdict = policy.record(.failure(.outOfMemory))
+        #expect(verdict == Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(600)))
+    }
+
+    @Test(
+        "a trial pass within budget or with no GPU data recovers the effect",
+        arguments: [passWithinBudget, passExactlyBudget, passNoData, passReversed])
+    func passingTrialRecovers(pass: HealthPass) {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        let verdict = policy.record(pass)
+        #expect(verdict == Verdict.recovered)
+    }
+
+    @Test(
+        "a failure the runtime owns during a trial is no verdict, and the trial's next pass still decides",
+        arguments: [EffectFailure.compileFailed, .invalidResource, .internalError])
+    func notCountedFailureKeepsTrial(failure: EffectFailure) {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        let verdicts = Self.record([.failure(failure), passWithinBudget], into: &policy)
+        #expect(verdicts == [Verdict.none, Verdict.recovered])
+    }
+
+    @Test("a failed trial ends the trial: four more out-of-memory failures are no verdict and the fifth disables with the ordinary cool-down")
+    func failedTrialReturnsToCounting() {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        let trial = policy.record(.failure(.outOfMemory))
+        let counting = Self.record(Self.repeating(.failure(.outOfMemory), 5), into: &policy)
+        #expect(trial == Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(600)))
+        #expect(counting == Self.quiet(4) + [Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(300))])
+    }
+
+    @Test("a recovered trial returns the policy to counting: five out-of-memory failures disable it with the ordinary 300-second cool-down")
+    func recoveredTrialReturnsToCounting() {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        let trial = policy.record(passWithinBudget)
+        let counting = Self.record(Self.repeating(.failure(.outOfMemory), 5), into: &policy)
+        #expect(trial == Verdict.recovered)
+        #expect(counting == Self.quiet(4) + [Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(300))])
+    }
+
+    @Test("a recovery resets the doubling: the next failed trial names 600 seconds, the first cool-down again")
+    func recoveryResetsDoubling() {
+        var policy = EffectHealthPolicy(healthBudget)
+        _ = Self.trials([.outOfMemory, .outOfMemory], into: &policy)
+        policy.beginTrial()
+        let recovered = policy.record(passWithinBudget)
+        policy.beginTrial()
+        let retried = policy.record(.failure(.outOfMemory))
+        #expect(recovered == Verdict.recovered)
+        #expect(retried == Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(600)))
+    }
+
+    @Test("an over-budget trial that fails doubles the cool-down the next failed trial names")
+    func overBudgetTrialDoublesCoolDown() {
+        var policy = EffectHealthPolicy(healthBudget)
+        policy.beginTrial()
+        let first = policy.record(passOverBudget)
+        policy.beginTrial()
+        let second = policy.record(passOverBudget)
+        #expect(first == Verdict.disable(.overBudget, retryAfter: .seconds(600)))
+        #expect(second == Verdict.disable(.overBudget, retryAfter: .seconds(1200)))
+    }
+
+    @Test("each failed trial doubles the cool-down, 600 then 1200, 2400 and 3600 seconds, and then stays at the 3600-second cap")
+    func failedTrialsDoubleToTheCap() {
+        var policy = EffectHealthPolicy(healthBudget)
+        let verdicts = Self.trials([EffectFailure](repeating: .outOfMemory, count: 5), into: &policy)
+        #expect(
+            verdicts == [
+                Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(600)),
+                Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(1200)),
+                Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(2400)),
+                Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(3600)),
+                Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(3600)),
+            ])
+    }
+
+    @Test("a timeout in a trial names no cool-down, and the doubling still counts it as a failed trial")
+    func timeoutTrialNamesNoCoolDown() {
+        var policy = EffectHealthPolicy(healthBudget)
+        let verdicts = Self.trials([.timeout, .outOfMemory], into: &policy)
+        #expect(verdicts[0] == Verdict.disable(.failure(.timeout), retryAfter: nil))
+        #expect(verdicts[1] == Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(1200)))
+    }
+
+    @Test("the trial cool-down doubles from the configured cool-down and stops at the configured maximum")
+    func trialCoolDownComesFromConfiguration() {
+        var policy = EffectHealthPolicy(
+            EffectHealthPolicy.Configuration(budgetSeconds: 0.125, coolDown: .seconds(42), maximumCoolDown: .seconds(100)))
+        let verdicts = Self.trials([.outOfMemory, .outOfMemory, .outOfMemory], into: &policy)
+        #expect(
+            verdicts == [
+                Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(84)),
+                Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(100)),
+                Verdict.disable(.failure(.outOfMemory), retryAfter: .seconds(100)),
+            ])
+    }
+
+    @Test("across seeded runs of failed trials, the cool-down never shrinks and never passes the 3600-second maximum")
+    func trialCoolDownIsMonotoneAndCapped() {
+        forAll(seeds: Seeds.range(0..<100)) { generator in
+            let seed = generator.seed
+            var policy = EffectHealthPolicy(healthBudget)
+            var previous = Duration.zero
+            for _ in 0..<(1 + Int(generator.next() % 40)) {
+                policy.beginTrial()
+                let failed: HealthPass = generator.next() % 2 == 0 ? passOverBudget : .failure(.outOfMemory)
+                guard case .disable(_, let retryAfter?) = policy.record(failed) else {
+                    Issue.record("seed \(seed): a failed trial gave no cool-down")
+                    return
+                }
+                #expect(retryAfter >= previous && retryAfter <= .seconds(3600), "seed \(seed): \(retryAfter) after \(previous)")
+                previous = retryAfter
+            }
+        }
+    }
+
     // MARK: - Seeded property against the table
 
     @Test("across seeded bursts of every kind of pass, the policy gives the verdict the table gives, pass by pass")
