@@ -28,12 +28,15 @@ import FramePipelineUseCase
 import FrameTransportDataSource
 import GPURenderDataSource
 import HarnessInteractor
+import HostEnvironment
 import HotkeyDataSource
 import HotkeyGateway
+import LogStoreGateway
 import LoginItemDataSource
 import LoginItemGateway
 import MetalGateway
 import MetalKitPreviewGateway
+import OnboardingInteractor
 import PreferencesDataStore
 import PreviewDataSource
 import PreviewRepository
@@ -46,6 +49,9 @@ import StandardStreams
 import StillImageDataSource
 import StillImageRepository
 import StoreMaintenanceDataStore
+import SupportLogDataSource
+import SupportLogRepository
+import SupportLogUseCase
 import SystemExtensionGateway
 import UserDefaultsGateway
 import VirtualCameraRepository
@@ -287,4 +293,28 @@ extension EffectAuthoringInteractorKey: DependencyKey {
 
 extension RandomSourceKey: DependencyKey {
     public static let liveValue: any RandomSource = RandomSourceImpl()
+}
+
+extension OnboardingInteractorKey: DependencyKey {
+    public static let liveValue: any OnboardingInteractor = OnboardingInteractorImpl()
+}
+
+extension SupportLogUseCaseKey: DependencyKey {
+    public static let liveValue: any SupportLogUseCase = SupportLogUseCaseImpl()
+}
+
+extension SupportLogRepositoryKey: DependencyKey {
+    public static let liveValue: any SupportLogRepository = SupportLogRepositoryImpl()
+}
+
+extension SupportLogsKey: DependencyKey {
+    public static let liveValue: any SupportLogs = SupportLogDataSourceImpl()
+}
+
+extension LogStoreGatewayKey: DependencyKey {
+    public static let liveValue: any LogStoreGateway = LogStoreGatewayImpl()
+}
+
+extension HostEnvironmentProviderKey: DependencyKey {
+    public static let liveValue: any HostEnvironmentProvider = HostEnvironmentProviderImpl()
 }
