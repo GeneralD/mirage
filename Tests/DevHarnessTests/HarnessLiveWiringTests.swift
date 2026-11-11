@@ -36,7 +36,8 @@ import Testing
 /// by hand over the same fakes — so what this proves is the route the harness takes at launch:
 /// `live()` wraps the construction, the substitution it applies reaches the pipeline that is resolved
 /// later, lazily, from the registrations, and the menu's Presenter reaches a catalog that lists the
-/// bundled effect, compiles it, keeps the choice and opens the folder.
+/// bundled effect, compiles it, keeps the choice and opens the folder. The same route carries the
+/// controls and the global hotkeys to the live pipeline, and stamps the store's schema version on it.
 ///
 /// There is deliberately ONE test here, and the rule is the bundle's, not this target's: no other test
 /// may resolve the stateful values below live. The `liveValue`s in `HostRegistrations` are `static let`s:
@@ -215,6 +216,44 @@ struct HarnessLiveWiringTests {
         #expect(chosen, "the command never reached Finder, the choice never reached the store, or the select did not end prepared")
         #expect(workspace.opened.values == [folder])
         #expect(store.values[selectedEffectKey] == "bundled:Chromatic Grain")
+
+        // The controls and the hotkeys, through the same live route. The listener that `menu.start()` began registers
+        // the three hotkeys, and `prepareStore()` stamps the schema version before it does.
+        let schemaVersionKey = "storeSchemaVersion"  // the store key the schema version lives under: persisted, so never renamed
+        let registered = await tickUntil(
+            tick: { executor.drain() },
+            until: { hotkeyGateway.registrations.count == 3 && store.values[schemaVersionKey] != nil })
+
+        #expect(registered, "the listener never registered the hotkeys or stamped the schema version")
+        #expect(
+            hotkeyGateway.registrations.values == [
+                FakeHotkeyGateway.Registration(id: 1, keyCode: 11, modifiers: 6400),
+                FakeHotkeyGateway.Registration(id: 2, keyCode: 124, modifiers: 6400),
+                FakeHotkeyGateway.Registration(id: 3, keyCode: 123, modifiers: 6400),
+            ], "the three hotkeys are registered under the keys of defaultHotkeyBindings")
+        #expect(hotkeyGateway.liveHandleCount == 4, "the press observer and the three hotkeys are held")
+        #expect(store.values[schemaVersionKey] == "1")
+
+        // A press of the bypass hotkey reaches the pipeline: the controls flip the bypass, the pipeline logs it on the
+        // executor, and the state comes back to the Presenter.
+        let bypassPressed = wired { hotkeyGateway.press(id: UInt32(HotkeyAction.toggleBypass.rawValue)) }
+        #expect(bypassPressed, "no press reached the bypass hotkey: it is not registered, or its observer was released")
+        let bypassOn = await tickUntil(tick: { executor.drain() }, until: { presenter.isBypassed && developer.contains("bypass on") })
+        #expect(bypassOn, "the bypass press never reached the pipeline, or the Presenter never saw the bypass on")
+
+        // The menu's toggle takes the same route back.
+        wired { presenter.toggleBypass() }
+        let bypassOff = await tickUntil(tick: { executor.drain() }, until: { !presenter.isBypassed && developer.contains("bypass off") })
+        #expect(bypassOff, "the menu's toggle never reached the pipeline, or the Presenter never saw the bypass off")
+
+        // The next-effect hotkey reaches the live catalog. Only the bundled effect is ready, so there is no neighbour to
+        // switch to: one developer line, and the stored choice does not move.
+        let nextPressed = wired { hotkeyGateway.press(id: UInt32(HotkeyAction.nextEffect.rawValue)) }
+        #expect(nextPressed, "no press reached the next-effect hotkey: it is not registered, or its observer was released")
+        let noNeighbour = await tickUntil(tick: { executor.drain() }, until: { developer.contains("hotkey next effect: nothing to switch to") })
+        #expect(noNeighbour, "the next-effect press never reached the catalog's switch")
+        #expect(store.values[selectedEffectKey] == "bundled:Chromatic Grain", "a switch with no neighbour leaves the saved choice alone")
+
         #expect(errors.entries.count == 0)
     }
 }
