@@ -17,11 +17,14 @@ import SwiftUI
 /// instead and leave `state` off. *Browse Effects…* goes to the Presenter like every other item;
 /// the Presenter hands it to the Router, which opens the picker's window. *Adjust Effect…* takes
 /// its title from the Presenter and is disabled unless the Presenter says the chosen effect has parameters.
+/// A non-nil `camera` adds the Camera submenu after *Open Effects Folder…*; the dev harness passes none, so its menu has none.
 public struct EffectMenu: View {
     @ObservedObject private var presenter: MenuBarPresenter
+    private let camera: CameraMenuPresenter?
 
-    public init(presenter: MenuBarPresenter) {
+    public init(presenter: MenuBarPresenter, camera: CameraMenuPresenter? = nil) {
         self.presenter = presenter
+        self.camera = camera
     }
 
     public var body: some View {
@@ -45,6 +48,10 @@ public struct EffectMenu: View {
         Button(presenter.adjustEffectTitle) { presenter.adjustEffect() }
             .disabled(!presenter.canAdjustEffect)
         Button("Open Effects Folder…") { presenter.openEffectsFolder() }
+        if let camera {
+            Divider()
+            Menu(camera.title) { CameraMenuSection(presenter: camera) }
+        }
         Divider()
         Button("Settings…") { presenter.openSettings() }
             .keyboardShortcut(",")

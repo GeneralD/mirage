@@ -7,13 +7,14 @@ import Domain
 /// launch the camera interactor; on termination, stop both. The Router is built with the
 /// delegate, so the scene (`HostApplication`) can draw the menu from its Presenter before
 /// anything starts; the entry lane starts and stops the Router and nothing below it (the
-/// Presenter owns the effect Interactor's lifecycle).
+/// Presenter owns the effect Interactor's lifecycle). The camera menu's Presenter is the Router's too
+/// (`showsCameraMenu`), so the Router starts and stops it together with the menu.
 @MainActor
 final class HostAppDelegate: NSObject, NSApplicationDelegate {
     @Dependency(\.cameraInteractor) private var cameraInteractor
     @Dependency(\.developerLog) private var developerLog
 
-    let router = AppRouter(showsPreview: true)
+    let router = AppRouter(showsCameraMenu: true, showsPreview: true)
     private let launch = LaunchHandle()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
