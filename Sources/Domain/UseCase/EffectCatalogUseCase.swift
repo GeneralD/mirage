@@ -51,7 +51,8 @@ public protocol EffectCatalogUseCase: Sendable {
     func select(_ id: EffectID) async -> EffectSelectionOutcome
 
     /// Chooses the ready effect after (or before) the chosen one in catalog order, wrapping around, and answers as
-    /// `select` does. `nil` when no other ready effect exists: nothing changes.
+    /// `select` does. An effect the health policy disabled is skipped like a broken one. `nil` when no other such
+    /// effect exists: nothing changes.
     func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome?
 
     /// Lifts the switch-off of `id`, a package effect that health switched off, and chooses it again. The record is

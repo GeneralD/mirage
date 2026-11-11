@@ -183,7 +183,7 @@ actor EffectCatalogSession {
     /// Chooses the ready neighbour of the chosen effect, as `select` chooses it. The neighbour is found in the same
     /// actor turn that `select` starts from, so no other message can move the choice in between.
     func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome? {
-        guard let id = effectNeighbor(of: selection, in: entries, step: step) else { return nil }
+        guard let id = effectNeighbor(of: selection, in: entries, step: step, skipping: Set(disabled.keys)) else { return nil }
         return await select(id)
     }
 
