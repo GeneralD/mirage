@@ -58,3 +58,53 @@ public final class ParameterPanelPresenter: ObservableObject {
         if self.heading != heading { self.heading = heading }
     }
 }
+
+/// The panel's setters and reset (#114). Each one only converts its value to the Interactor's type and
+/// forwards it; clamping and snapping are the UseCase's. They do not depend on the observation, so
+/// they reach the Interactor whether or not the Presenter was started.
+extension ParameterPanelPresenter {
+    /// Sends a `.float` value. A value that is not finite as a `Float` is not sent.
+    public func setFloat(_ id: String, to value: Double) {
+        let converted = Float(value)
+        guard converted.isFinite else { return }
+        interactor.setParameter(id, to: .float(converted))
+    }
+
+    /// Sends an `.int` value, clamped to the `Int32` range.
+    public func setInt(_ id: String, to value: Int) {
+        interactor.setParameter(id, to: .int(Int32(clamping: value)))
+    }
+
+    /// Sends a `.bool` value.
+    public func setBool(_ id: String, to value: Bool) {
+        interactor.setParameter(id, to: .bool(value))
+    }
+
+    /// Sends a `.color` value. If any component is not finite as a `Float`, nothing is sent.
+    public func setColor(_ id: String, red: Double, green: Double, blue: Double, opacity: Double) {
+        let r = Float(red)
+        let g = Float(green)
+        let b = Float(blue)
+        let a = Float(opacity)
+        guard [r, g, b, a].allSatisfy(\.isFinite) else { return }
+        interactor.setParameter(id, to: .color(SIMD4<Float>(r, g, b, a)))
+    }
+
+    /// Sends a `.vector2` value. If either component is not finite as a `Float`, nothing is sent.
+    public func setVector(_ id: String, x: Double, y: Double) {
+        let fx = Float(x)
+        let fy = Float(y)
+        guard fx.isFinite, fy.isFinite else { return }
+        interactor.setParameter(id, to: .vector2(SIMD2<Float>(fx, fy)))
+    }
+
+    /// Sends a `.choice` value: the index into the parameter's options, passed through as it is.
+    public func setChoice(_ id: String, to index: Int) {
+        interactor.setParameter(id, to: .choice(index))
+    }
+
+    /// Resets every parameter. Sends one reset and no value.
+    public func reset() {
+        interactor.resetParameters()
+    }
+}
