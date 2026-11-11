@@ -19,6 +19,8 @@ extension GalleryEffectInteractor: EffectInteractor {
 
     func select(_ id: EffectID) {}
 
+    func reenable(_ id: EffectID) {}
+
     func openEffectsFolder() {}
 
     func setParameter(_ id: String, to value: EffectParameterValue) {}

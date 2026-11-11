@@ -22,10 +22,11 @@ struct GalleryEffectInteractorTests {
         #expect(firstState(of: interactor) == [effectPickerCatalog])
     }
 
-    @Test("start, stop, select, openEffectsFolder, setParameter and resetParameters change nothing")
+    @Test("start, stop, select, reenable, openEffectsFolder, setParameter and resetParameters change nothing")
     func commandsDoNothing() {
         interactor.start()
         interactor.select(EffectID(origin: .package, key: "ripple"))
+        interactor.reenable(EffectID(origin: .package, key: "ripple"))
         interactor.openEffectsFolder()
         interactor.setParameter("amount", to: .float(0.5))
         interactor.resetParameters()

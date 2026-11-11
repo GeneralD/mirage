@@ -18,9 +18,9 @@ import Domain
 /// `CurrentValueSubject` underneath: it holds nothing before the first `start()`, and
 /// after that the latest state, which a subscriber that arrives later still receives first.
 ///
-/// `select(_:)` does not wait for the answer. The outcome reaches the menu through
+/// `select(_:)` and `reenable(_:)` do not wait for the answer. The outcome reaches the menu through
 /// `state`; the Interactor adds one log line, to `DeveloperLog` when the effect is
-/// running and to `ErrorLog` when it is not. It is not one of the queued commands, nor does it
+/// running and to `ErrorLog` when it is not. They are not among the queued commands, nor does either
 /// wait for an earlier `select`: each call is its own task, because the runtime lets a newer
 /// preparation overtake a slow compile (newest wins) and a queue here would hold the newer
 /// choice back behind the older one's compile. The price is that two calls made in the same
@@ -92,7 +92,15 @@ extension EffectInteractorImpl: EffectInteractor {
         let (catalog, errorLog, developerLog) = (catalog, errorLog, developerLog)
         Task {
             let outcome = await catalog.select(id)
-            Self.record(outcome, of: id, errorLog: errorLog, developerLog: developerLog)
+            Self.record(outcome, of: id, verb: "select", errorLog: errorLog, developerLog: developerLog)
+        }
+    }
+
+    public func reenable(_ id: EffectID) {
+        let (catalog, errorLog, developerLog) = (catalog, errorLog, developerLog)
+        Task {
+            let outcome = await catalog.reenable(id)
+            Self.record(outcome, of: id, verb: "reenable", errorLog: errorLog, developerLog: developerLog)
         }
     }
 
@@ -155,17 +163,23 @@ extension EffectInteractorImpl {
         await run?.value
     }
 
-    private static func record(_ outcome: EffectSelectionOutcome, of id: EffectID, errorLog: any ErrorLog, developerLog: any DeveloperLog) {
+    private static func record(
+        _ outcome: EffectSelectionOutcome,
+        of id: EffectID,
+        verb: String,
+        errorLog: any ErrorLog,
+        developerLog: any DeveloperLog
+    ) {
         let effect = "\(id.origin.rawValue)/\(id.key)"
         switch outcome {
         case .prepared:
-            developerLog.record(.effect, "select \(effect): prepared")
+            developerLog.record(.effect, "\(verb) \(effect): prepared")
         case .failed(let failure):
-            errorLog.record(.effect, "select \(effect): failed (\(failure))")
+            errorLog.record(.effect, "\(verb) \(effect): failed (\(failure))")
         case .unavailable(let problem?):
-            errorLog.record(.effect, "select \(effect): unavailable (\(problem))")
+            errorLog.record(.effect, "\(verb) \(effect): unavailable (\(problem))")
         case .unavailable(nil):
-            errorLog.record(.effect, "select \(effect): unavailable (not in the catalog)")
+            errorLog.record(.effect, "\(verb) \(effect): unavailable (not in the catalog)")
         }
     }
 }
