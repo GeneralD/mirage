@@ -31,6 +31,7 @@ import HarnessInteractor
 import HostEnvironment
 import HotkeyDataSource
 import HotkeyGateway
+import ImageIOGateway
 import LogStoreGateway
 import LoginItemDataSource
 import LoginItemGateway
@@ -261,6 +262,10 @@ extension WorkspaceGatewayKey: DependencyKey {
 
 extension AppDirectoriesProviderKey: DependencyKey {
     public static let liveValue: any AppDirectoriesProvider = AppDirectoriesProviderImpl()
+}
+
+extension ImageIOGatewayKey: DependencyKey {
+    public static let liveValue: any ImageIOGateway = ImageIOGatewayImpl()
 }
 
 extension KeyValueStoreGatewayKey: DependencyKey {
