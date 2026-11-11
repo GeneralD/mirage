@@ -53,7 +53,7 @@ struct PreviewGeometryTests {
 
     @Test(
         "a container that is not finite gives an empty pane",
-        arguments: [-.infinity, .infinity, .nan])
+        arguments: [-Double.infinity, Double.infinity, Double.nan])
     func nonFiniteContainerGivesAnEmptyPane(containerWidth: Double) {
         let geometry = PreviewGeometry(containerWidth: containerWidth)
 
