@@ -12,7 +12,7 @@ import Views
 
 @testable import PreviewDataSource
 
-/// The preview against a real device: the `previewBlit` kernel's pixels (run as
+/// The preview against a real device: the `previewBlit` and `previewSplit` kernels' pixels (run as
 /// an ordinary compute pass between two IOSurfaces, so they can be read back),
 /// `MetalKitPreviewGateway` readying an `MTKView` and drawing into its layer's
 /// drawable, and `PreviewDataSource` driving the live gateways end to end.
@@ -39,6 +39,22 @@ struct PreviewSmokeTests {
         let context = try metal.makeContext()
         let kernel = try metal.compile(source: PreviewKernel.source, options: PreviewKernel.options, on: context).get()
         let textures = [try metal.bind(input, on: context), try metal.bind(output, on: context)]
+        let size = surfaces.descriptor(output)
+        let uniforms = EffectUniforms(time: 0, frameIndex: 0, resolution: SIMD2(Float(size.width), Float(size.height)), seed: 0)
+        let pass = ComputePass(
+            kernel: kernel, textures: textures, uniforms: uniforms, parameters: .none, grid: .covering(width: size.width, height: size.height))
+        let completion = try await GPUSmokeSupport.run(pass, on: context, through: metal)
+        #expect(completion.error == nil)
+        try textures.forEach(metal.unbind)
+        return try Self.rows(of: output)
+    }
+
+    /// Runs `previewSplit` with `result` as the frame (texture 0), `output` as the drawable (texture 1) and
+    /// `original` at texture 2, and returns the output's rows of BGRA pixels.
+    private func split(original: any SurfaceHandle, result: any SurfaceHandle, into output: any SurfaceHandle) async throws -> [[[UInt8]]] {
+        let context = try metal.makeContext()
+        let kernel = try metal.compile(source: PreviewKernel.splitSource, options: PreviewKernel.splitOptions, on: context).get()
+        let textures = [try metal.bind(result, on: context), try metal.bind(output, on: context), try metal.bind(original, on: context)]
         let size = surfaces.descriptor(output)
         let uniforms = EffectUniforms(time: 0, frameIndex: 0, resolution: SIMD2(Float(size.width), Float(size.height)), seed: 0)
         let pass = ComputePass(
@@ -96,6 +112,45 @@ struct PreviewSmokeTests {
 
         let mismatches = (0..<size).flatMap { y in (0..<size).filter { x in rows[y][x] != pattern(x, y) } }
         #expect(mismatches.isEmpty, "\(mismatches.count) pixels moved or changed")
+    }
+
+    // MARK: - Split pixels
+
+    private static let blue: [UInt8] = [255, 0, 0, 255]
+    private static let red: [UInt8] = [0, 0, 255, 255]
+    private static let white: [UInt8] = [255, 255, 255, 255]
+    private static let black: [UInt8] = [0, 0, 0, 255]
+
+    /// One row of the split at 64 pixels wide: the original in columns 0..30, the rule in 31..32, the frame in 33..63.
+    private static let splitRow: [[UInt8]] = (0..<64).map { x in x < 31 ? blue : (x < 33 ? white : red) }
+
+    @Test("the split puts the original left of a two-pixel white rule at the centre and the frame right of it")
+    func splitDrawsOriginalAndFrame() async throws {
+        let original = try surfaces.create(.bgra(width: 64, height: 36))
+        try GPUSmokeSupport.write(original) { _, _ in Self.blue }
+        let result = try surfaces.create(.bgra(width: 64, height: 36))
+        try GPUSmokeSupport.write(result) { _, _ in Self.red }
+        let rows = try await split(original: original, result: result, into: try surfaces.create(.bgra(width: 64, height: 36)))
+
+        let differing = (0..<36).filter { rows[$0] != Self.splitRow }
+        #expect(differing.isEmpty, "\(differing.count) rows differ from the split row, first \(differing.prefix(4))")
+    }
+
+    @Test("a frame shorter than its drawable is letterboxed in opaque black, and the rule is not drawn into the bars")
+    func splitLetterboxesWithoutRule() async throws {
+        let original = try surfaces.create(.bgra(width: 64, height: 36))
+        try GPUSmokeSupport.write(original) { _, _ in Self.blue }
+        let result = try surfaces.create(.bgra(width: 64, height: 36))
+        try GPUSmokeSupport.write(result) { _, _ in Self.red }
+        let rows = try await split(original: original, result: result, into: try surfaces.create(.bgra(width: 64, height: 64)))
+
+        // The 36-row frame in a 64-row drawable leaves 14 bars above and 14 below.
+        let fitted = 14..<50
+        let bars = (0..<64).filter { !fitted.contains($0) }
+        let unblack = bars.filter { y in rows[y].contains { $0 != Self.black } }
+        #expect(unblack.isEmpty, "bar rows that are not opaque black: \(unblack)")
+        let differing = fitted.filter { rows[$0] != Self.splitRow }
+        #expect(differing.isEmpty, "\(differing.count) fitted rows differ from the split row, first \(differing.prefix(4))")
     }
 
     // MARK: - Gateway and stack
