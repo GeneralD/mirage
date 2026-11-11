@@ -1,0 +1,14 @@
+{
+  "formatVersion": 1,
+  "name": "Parameter Tour",
+  "author": "Example Author",
+  "description": "One parameter of every kind: tints the picture by its distance from a center you place.",
+  "parameters": [
+    { "id": "strength", "label": "Strength", "type": "float", "min": 0, "max": 1, "default": 0.5, "step": 0.05 },
+    { "id": "reach", "label": "Reach", "type": "int", "min": 1, "max": 8, "default": 4 },
+    { "id": "inverted", "label": "Inverted", "type": "bool", "default": false },
+    { "id": "tint", "label": "Tint", "type": "color", "default": [1, 0.8, 0.6, 1] },
+    { "id": "center", "label": "Center", "type": "vec2", "min": [0, 0], "max": [1, 1], "default": [0.5, 0.5] },
+    { "id": "mode", "label": "Falloff", "type": "choice", "options": ["Linear", "Squared"], "default": "Linear" }
+  ]
+}
