@@ -36,4 +36,20 @@ struct PreviewTextTests {
     func accessibilityLabelIsNotEmpty() {
         #expect(!previewAccessibilityLabel.isEmpty)
     }
+
+    @Test("each mode's title and accessibility label is not empty, and differs from the other mode's")
+    func modeWordingIsNotEmptyAndDistinct() {
+        let titles = PreviewMode.allCases.map(previewModeTitle)
+        let labels = PreviewMode.allCases.map(previewModeAccessibilityLabel)
+
+        #expect(titles.allSatisfy { !$0.isEmpty })
+        #expect(Set(titles).count == PreviewMode.allCases.count)
+        #expect(labels.allSatisfy { !$0.isEmpty })
+        #expect(Set(labels).count == PreviewMode.allCases.count)
+    }
+
+    @Test("the mode group's accessibility label is not empty")
+    func modeGroupAccessibilityLabelIsNotEmpty() {
+        #expect(!previewModeGroupAccessibilityLabel.isEmpty)
+    }
 }
