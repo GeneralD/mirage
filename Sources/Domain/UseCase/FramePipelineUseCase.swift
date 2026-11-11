@@ -16,6 +16,13 @@ public protocol FramePipelineUseCase: Sendable {
 
     /// While true, every frame the pipeline takes goes through the pass-through delivery a failed effect pass already uses: no effect pass is started and the effect runtime is not called. Returns at once; the change reaches the next tick. It is kept across `stop()` and `start(...)`.
     func setBypass(_ bypassed: Bool)
+
+    /// Sets what the preview shows of each frame it presents. `after` (the default) shows the
+    /// frame alone. `split` also hands the preview the input of a successful pass as the frame's
+    /// original, so the input stays leased until the preview's completion, not the pass's answer;
+    /// a failed pass presents its input as the frame, with no original. Returns at once; the change
+    /// reaches the next answer the pipeline takes. It is kept across `stop()` and `start(...)`.
+    func setPreviewMode(_ mode: PreviewMode)
     var stats: PipelineStats { get }
 
     /// Main thread: hands the preview window's view to the `PreviewSink` the
@@ -55,6 +62,10 @@ private struct UnimplementedFramePipelineUseCase: FramePipelineUseCase {
 
     func setBypass(_ bypassed: Bool) {
         reportIssue("FramePipelineUseCase.setBypass not implemented")
+    }
+
+    func setPreviewMode(_ mode: PreviewMode) {
+        reportIssue("FramePipelineUseCase.setPreviewMode not implemented")
     }
 
     var stats: PipelineStats {

@@ -3,7 +3,7 @@ import TestSupport
 
 /// `FramePipelineUseCase` as the interactor suites see it: records what the
 /// launch asked of the pipeline — starts (descriptor and rate), stops, the bypass
-/// values set and the views attached to its preview — and appends `"start"` to `order` so a launch
+/// values set, the preview modes set and the views attached to its preview — and appends `"start"` to `order` so a launch
 /// that shares the collector with other fakes can be checked for order.
 /// `start` throws `failure` when given one; `attachPreview` throws `attachRefusal`
 /// (recording nothing), like a sink that refuses a foreign target, and then `attachFailure`
@@ -19,6 +19,8 @@ public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
     public let stops = Collector<Void>()
     /// The values handed to `setBypass`, in call order.
     public let bypasses = Collector<Bool>()
+    /// The modes handed to `setPreviewMode`, in call order.
+    public let modes = Collector<PreviewMode>()
     /// The views handed to `attachPreview`, by identity.
     public let attached = Collector<ObjectIdentifier>()
     /// The views handed to `detachPreview`, by identity.
@@ -57,6 +59,10 @@ public final class FakeFramePipelineUseCase: FramePipelineUseCase, Sendable {
 
     public func setBypass(_ bypassed: Bool) {
         bypasses.append(bypassed)
+    }
+
+    public func setPreviewMode(_ mode: PreviewMode) {
+        modes.append(mode)
     }
 
     @MainActor
