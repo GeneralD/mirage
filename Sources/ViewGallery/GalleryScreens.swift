@@ -19,5 +19,8 @@ var galleryScreens: [GalleryScreen] {
         .settingsAttention,
         .onboardingApproval,
         .onboardingCompileFailed,
+        .effectPickerPreview,
+        .effectPickerPreviewSplit,
+        .effectPickerPreviewRefused,
     ]
 }
