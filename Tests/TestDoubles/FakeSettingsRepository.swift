@@ -18,6 +18,9 @@ import TestSupport
 /// The hotkeys flag and the schema version answer at once and are never held. `hotkeyFlagWrites`
 /// records every `setHotkeysEnabled`, `stamps` every `stampSchemaVersion` version, and `resets` one
 /// entry per `resetAll()`. `resetAll()` puts every value back to its default, as the live reset does.
+/// The parameter values answer at once and are never held: `parameterReads` records every
+/// `parameterValues(of:)` call, and `parameterWrites` records every `setParameterValues` call, which
+/// replaces the values of its effect and leaves the other effects alone.
 ///
 /// The system members answer at once as well (hackathon #183). The launch-at-login status starts at
 /// `launchAtLogin` and moves the way `LoginItem` does: `setLaunchAtLogin` answers `on ? .on : .off`
@@ -42,12 +45,24 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         fileprivate let origin: ObjectIdentifier
     }
 
+    /// One `setParameterValues` call: the effect, and the dictionary that replaced its values.
+    public struct ParameterWrite: Sendable, Equatable {
+        public let id: EffectID
+        public let values: [String: EffectParameterValue]
+
+        public init(id: EffectID, values: [String: EffectParameterValue]) {
+            self.id = id
+            self.values = values
+        }
+    }
+
     private struct State {
         var selected: EffectID?
         var disabled: [DisabledEffectRecord]
         var hotkeysEnabled: Bool
         var schemaVersion: StoredSchemaVersion
         var launchAtLogin: LaunchAtLoginStatus
+        var parameters: [EffectID: [String: EffectParameterValue]]
         var scripted: HotkeyRegistration?
         var hotkeyRegistration: HotkeyRegistration = .empty
         var pressContinuation: AsyncStream<HotkeyAction>.Continuation?
@@ -84,13 +99,18 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
     public let registeredBindings = Collector<[HotkeyBinding]>()
     /// One entry per `unregisterHotkeys()` call, in call order.
     public let unregisters = Collector<Void>()
+    /// One entry per `parameterValues(of:)` call, in call order.
+    public let parameterReads = Collector<EffectID>()
+    /// The `setParameterValues` calls, in call order.
+    public let parameterWrites = Collector<ParameterWrite>()
 
     public init(
         selected: EffectID? = nil,
         disabled: [DisabledEffectRecord] = [],
         hotkeysEnabled: Bool = true,
         schemaVersion: StoredSchemaVersion = .missing,
-        launchAtLogin: LaunchAtLoginStatus = .off
+        launchAtLogin: LaunchAtLoginStatus = .off,
+        parameters: [EffectID: [String: EffectParameterValue]] = [:]
     ) {
         state = Locked(
             State(
@@ -98,7 +118,8 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
                 disabled: disabled,
                 hotkeysEnabled: hotkeysEnabled,
                 schemaVersion: schemaVersion,
-                launchAtLogin: launchAtLogin
+                launchAtLogin: launchAtLogin,
+                parameters: parameters
             ))
     }
 
@@ -176,6 +197,16 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         hotkeyFlagWrites.append(on)
     }
 
+    public func parameterValues(of id: EffectID) async -> [String: EffectParameterValue] {
+        parameterReads.append(id)
+        return state.current.parameters[id] ?? [:]
+    }
+
+    public func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async {
+        state.withLock { $0.parameters[id] = values }
+        parameterWrites.append(ParameterWrite(id: id, values: values))
+    }
+
     public func storedSchemaVersion() async -> StoredSchemaVersion {
         state.current.schemaVersion
     }
@@ -185,13 +216,15 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         stamps.append(version)
     }
 
-    /// Clears everything the live reset removes: the selection, the disabled records, the flag and the version.
+    /// Clears everything the live reset removes: the selection, the disabled records, the flag, the version
+    /// and the parameter values of every effect (the live reset calls `removeAll()` on the key-value store).
     public func resetAll() async {
         state.withLock {
             $0.selected = nil
             $0.disabled = []
             $0.hotkeysEnabled = true
             $0.schemaVersion = .missing
+            $0.parameters = [:]
         }
         resets.append(())
     }
