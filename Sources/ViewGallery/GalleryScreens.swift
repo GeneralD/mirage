@@ -15,5 +15,7 @@ var galleryScreens: [GalleryScreen] {
         .cameraMenuNone,
         .parameterPanel,
         .parameterPanelEmpty,
+        .settings,
+        .settingsAttention,
     ]
 }
