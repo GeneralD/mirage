@@ -10,16 +10,19 @@ extension CaptureRig {
             ?? AVCaptureDevice.default(for: .video).orThrow(CaptureSessionError.deviceUnavailable)
     }
 
-    func configure(_ device: AVCaptureDevice, for choice: CameraFormatChoice?) throws {
-        try choice.map { try apply($0, to: device) } ?? applyPreset()
+    /// Applies the format choice, or the 1280x720 preset when there is none, to `session`.
+    /// Returns the release that undoes the choice; `stop()` calls it once the session has stopped.
+    static func configure(_ device: AVCaptureDevice, for choice: CameraFormatChoice?, session: AVCaptureSession) throws -> () -> Void {
+        try choice.map { try apply($0, to: device, session: session) } ?? applyPreset(session: session)
     }
 
-    private func applyPreset() throws {
+    private static func applyPreset(session: AVCaptureSession) throws -> () -> Void {
         try session.canSetSessionPreset(.hd1280x720).orThrow(CaptureSessionError.configurationFailed("no 1280x720 preset"))
         session.sessionPreset = .hd1280x720
+        return {}
     }
 
-    private func apply(_ choice: CameraFormatChoice, to device: AVCaptureDevice) throws {
+    private static func apply(_ choice: CameraFormatChoice, to device: AVCaptureDevice, session: AVCaptureSession) throws -> () -> Void {
         try device.formats.indices.contains(choice.index).orThrow(CaptureSessionError.configurationFailed("no format #\(choice.index)"))
         try (1...240).contains(choice.framesPerSecond).orThrow(CaptureSessionError.configurationFailed("bad frame rate \(choice.framesPerSecond)"))
         let format = device.formats[choice.index]
@@ -30,7 +33,6 @@ extension CaptureRig {
         let duration = CMTimeMinimum(CMTimeMaximum(CMTime(value: 1, timescale: CMTimeScale(choice.framesPerSecond)), shortest), longest)
         try Result { try device.lockForConfiguration() }
             .mapError { CaptureSessionError.configurationFailed("\($0)") }.get()
-        defer { device.unlockForConfiguration() }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
         device.activeFormat = format
@@ -38,5 +40,7 @@ extension CaptureRig {
         device.activeVideoMaxFrameDuration = duration
         // `AVCaptureSessionPresetInputPriority` is API_UNAVAILABLE(macos), so the preset is left as the
         // session has it. Whether macOS keeps the chosen `activeFormat` is for the real-device check.
+        // Held past `startRunning()`, so the session cannot override `activeFormat` on start.
+        return { device.unlockForConfiguration() }
     }
 }
