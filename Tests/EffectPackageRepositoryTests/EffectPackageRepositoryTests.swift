@@ -18,6 +18,12 @@ struct EffectPackageRepositoryTests {
         let defaultEffect: EffectSource
     }
 
+    /// A bundled port that ships several effects, listed in the order it gives them.
+    private struct ListedBundledEffects: BundledEffects {
+        let defaultEffect: EffectSource
+        let effects: [EffectSource]
+    }
+
     /// A watch that ends at once, as a stream the contract only ends on the consumer's say.
     private struct EndedWatch: EffectWatch {
         func changes(of watchSet: EffectWatchSet) -> AsyncStream<Void> {
@@ -76,7 +82,10 @@ struct EffectPackageRepositoryTests {
 
         /// With `sequenced`, the developer log also carries the Repository's calls on the folder and on the
         /// watch, in the order it made them, between the "catalog listed" lines it writes itself.
-        init(inventory: EffectPackageInventory = .empty, effectWatch: (any EffectWatch)? = nil, sequenced: Bool = false) {
+        init(
+            inventory: EffectPackageInventory = .empty, effectWatch: (any EffectWatch)? = nil, sequenced: Bool = false,
+            bundled: (any BundledEffects)? = nil
+        ) {
             let packages = FakeEffectPackages(inventory: inventory)
             let watch = FakeEffectWatch()
             let errors = RecordingLog()
@@ -88,7 +97,7 @@ struct EffectPackageRepositoryTests {
             subject = withDependencies {
                 $0.effectPackages = sequenced ? SequencedPackages(base: packages, watch: watch, log: developer) : packages
                 $0.effectWatch = effectWatch ?? (sequenced ? SequencedWatch(base: watch, log: developer) : watch)
-                $0.bundledEffects = StubBundledEffects(defaultEffect: EffectPackageRepositoryTests.bundledEffect)
+                $0.bundledEffects = bundled ?? StubBundledEffects(defaultEffect: EffectPackageRepositoryTests.bundledEffect)
                 $0.errorLog = errors
                 $0.developerLog = developer
             } operation: {
@@ -106,6 +115,13 @@ struct EffectPackageRepositoryTests {
     private static let bundledEffect = EffectSource(name: "Chromatic Grain", source: "kernel void effect() {}")
 
     private static let bundledEntry = EffectCatalogEntry.fixture(.bundled("Chromatic Grain"))
+
+    private static let zeta = EffectSource(name: "Zeta", source: "kernel void effect() {}")
+
+    private static let alpha = EffectSource(name: "Alpha", source: "kernel void effect() {}")
+
+    /// Two bundled effects, `Zeta` first, whose display names sort the other way round.
+    private static let twoBundled = ListedBundledEffects(defaultEffect: zeta, effects: [zeta, alpha])
 
     private static let glowSet = EffectWatchSet(
         directories: ["/effects", "/effects/glow.lens"],
@@ -313,6 +329,66 @@ struct EffectPackageRepositoryTests {
         let entries = await firstCatalog(of: rig.subject)
 
         #expect(entries?.dropFirst().map(\.id.key) == ["a", "b", "c"])
+    }
+
+    // MARK: - Several bundled effects
+
+    @Test("a bundled port that names only its defaultEffect lists that one effect as its effects")
+    func defaultEffectIsTheOnlyEffect() {
+        let port: any BundledEffects = StubBundledEffects(defaultEffect: Self.zeta)
+
+        #expect(port.effects == [Self.zeta])
+    }
+
+    @Test("with two bundled effects, the first catalog is both in the port's order, then the package, all of them bundled and ready")
+    func twoBundledEffectsComeBeforeThePackages() async {
+        let rig = Rig(inventory: Self.inventory([Self.ready("glow", named: "Glow")]), bundled: Self.twoBundled)
+
+        let entries = await firstCatalog(of: rig.subject)
+
+        #expect(
+            entries == [
+                .fixture(.bundled("Zeta")),
+                .fixture(.bundled("Alpha")),
+                .fixture(.package("glow"), displayName: "Glow"),
+            ])
+        #expect(entries?.map(\.origin) == [.bundled, .bundled, .package])
+        #expect(entries?.prefix(2).map(\.availability) == [.ready, .ready])
+    }
+
+    @Test("the bundled effects keep the order the port gives them and are not sorted by name, so Zeta stays ahead of Alpha")
+    func bundledOrderIsNotSorted() async {
+        let rig = Rig(bundled: Self.twoBundled)
+
+        #expect(await firstCatalog(of: rig.subject)?.map(\.displayName) == ["Zeta", "Alpha"])
+    }
+
+    @Test(
+        "the packages follow the bundled effects in display-name order, whatever order the DataSource listed them in, even with two bundled effects",
+        arguments: [false, true])
+    func packagesFollowTheBundledEffectsByName(reversed: Bool) async {
+        let listings: [EffectPackageListing] = [Self.ready("mist", named: "Mist"), Self.ready("glow", named: "Glow")]
+        let rig = Rig(inventory: Self.inventory(reversed ? listings.reversed() : listings), bundled: Self.twoBundled)
+
+        let entries = await firstCatalog(of: rig.subject)
+
+        #expect(entries?.map(\.displayName) == ["Zeta", "Alpha", "Glow", "Mist"])
+    }
+
+    @Test("the source of the second bundled effect is that effect's own, as a success, and no package is read for it")
+    func secondBundledEffectSource() async {
+        let rig = Rig(bundled: Self.twoBundled)
+
+        #expect(await rig.subject.source(of: .bundled("Alpha")) == .success(Self.alpha))
+        #expect(await rig.subject.source(of: .bundled("Zeta")) == .success(Self.zeta))
+        #expect(rig.packages.packageRequests.count == 0)
+    }
+
+    @Test("a bundled id that none of the bundled effects has is sourceMissing")
+    func unlistedBundledEffectSource() async {
+        let rig = Rig(bundled: Self.twoBundled)
+
+        #expect(await rig.subject.source(of: .bundled("Nope")) == .failure(.sourceMissing))
     }
 
     // MARK: - Broken packages
