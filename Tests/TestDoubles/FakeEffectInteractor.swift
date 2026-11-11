@@ -4,7 +4,7 @@ import TestSupport
 
 /// `EffectInteractor` as the Presenter suites see it: `state` is a `CurrentValueSubject`
 /// the test drives with `publish(_:)`, so a subscriber gets the current state at once
-/// and every later one. Commands are only recorded (`starts`, `stops`, `selections`,
+/// and every later one. Commands are only recorded (`starts`, `stops`, `selections`, `reenables`,
 /// `parameterCalls`, `folderOpens`); nothing they would cause happens unless the test publishes it.
 public final class FakeEffectInteractor: EffectInteractor, @unchecked Sendable {
     private let subject: CurrentValueSubject<EffectCatalogState, Never>
@@ -14,6 +14,8 @@ public final class FakeEffectInteractor: EffectInteractor, @unchecked Sendable {
     public let stops = Collector<Void>()
     /// The ids `select` was called with, in call order.
     public let selections = Collector<EffectID>()
+    /// The ids `reenable` was called with, in call order. A re-enable is not a `select`, so it is recorded here only.
+    public let reenables = Collector<EffectID>()
     /// The parameter calls, in call order.
     public let parameterCalls = Collector<FakeEffectCatalogUseCase.ParameterCall>()
     /// One entry per `openEffectsFolder()` call.
@@ -40,6 +42,10 @@ public final class FakeEffectInteractor: EffectInteractor, @unchecked Sendable {
 
     public func select(_ id: EffectID) {
         selections.append(id)
+    }
+
+    public func reenable(_ id: EffectID) {
+        reenables.append(id)
     }
 
     public func setParameter(_ id: String, to value: EffectParameterValue) {

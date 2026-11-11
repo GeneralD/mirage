@@ -244,6 +244,47 @@ struct EffectInteractorTests {
         #expect(rig.catalog.runs.count == 0)
     }
 
+    @Test("reenable reaches the catalog, and a prepared effect is a developer-log line only")
+    func reenablePrepared() async {
+        let rig = InteractorRig(selectOutcome: .prepared)
+
+        rig.subject.reenable(.package("glitch"))
+        await rig.developerLog.entries.waitForCount(1)
+
+        #expect(rig.catalog.reenables.values == [.package("glitch")])
+        #expect(rig.developerLog.entries.values == [LogEntry(.effect, "reenable package/glitch: prepared")])
+        #expect(rig.errorLog.entries.count == 0)
+    }
+
+    @Test("a reenable that did not run the effect is an error-log line only, naming why")
+    func reenableNotRunning() async {
+        let cases: [(EffectSelectionOutcome, String)] = [
+            (.failed(.timeout), "reenable package/glitch: failed (timeout)"),
+            (.unavailable(.sourceMissing), "reenable package/glitch: unavailable (sourceMissing)"),
+            (.unavailable(nil), "reenable package/glitch: unavailable (not in the catalog)"),
+        ]
+        for (outcome, line) in cases {
+            let rig = InteractorRig(selectOutcome: outcome)
+
+            rig.subject.reenable(.package("glitch"))
+            await rig.errorLog.entries.waitForCount(1)
+
+            #expect(rig.errorLog.entries.values == [LogEntry(.effect, line)])
+            #expect(rig.developerLog.entries.count == 0)
+        }
+    }
+
+    @Test("reenable does not need the Interactor to be started, and every call is logged")
+    func reenableWithoutStart() async {
+        let rig = InteractorRig(selectOutcome: .prepared)
+
+        rig.subject.reenable(.package("a"))
+        rig.subject.reenable(.package("b"))
+        await rig.developerLog.entries.waitForCount(2)
+
+        #expect(rig.catalog.runs.count == 0)
+    }
+
     @Test("openEffectsFolder is the catalog's, once per call")
     func openEffectsFolder() {
         let rig = InteractorRig()

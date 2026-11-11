@@ -25,6 +25,11 @@ public protocol EffectInteractor: Sendable {
     /// A caller that needs an order waits for the first outcome in `state`.
     func select(_ id: EffectID)
 
+    /// Forgets the record that switched `id` off and chooses it again. Like `select(_:)`, it is not queued
+    /// behind `start()`, `stop()` or another choice, it needs no `start()`, and the answer arrives in `state`
+    /// as the outcome.
+    func reenable(_ id: EffectID)
+
     /// Sets the parameter `id` of the chosen effect to `value`. The UseCase clamps and snaps it, and the
     /// result arrives in `state`. Calls are carried out one at a time, in the order they were made, by a
     /// queue of their own: `start()`, `stop()` and `select(_:)` neither wait for it nor hold it back.
@@ -65,6 +70,10 @@ private struct UnimplementedEffectInteractor: EffectInteractor {
 
     func select(_ id: EffectID) {
         reportIssue("EffectInteractor.select not implemented")
+    }
+
+    func reenable(_ id: EffectID) {
+        reportIssue("EffectInteractor.reenable not implemented")
     }
 
     func setParameter(_ id: String, to value: EffectParameterValue) {
