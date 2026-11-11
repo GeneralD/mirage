@@ -278,6 +278,8 @@ extension StillImageRepositoryKey: DependencyKey {
 
 extension ConsoleWriterKey: DependencyKey {
     public static let liveValue: any ConsoleWriter = StandardStreamsImpl()
+}
+
 extension EffectAuthoringInteractorKey: DependencyKey {
     public static let liveValue: any EffectAuthoringInteractor = EffectAuthoringInteractorImpl()
 }
