@@ -14,7 +14,8 @@ import Views
 /// The Presenters are built in `init`, not on first read or in `start()`. Each captures the
 /// dependencies of the scope it is made in, so a test (or a harness) that wraps the router's
 /// construction in `withDependencies` decides what both talk to, and the View reads
-/// `menuBarPresenter` before anything is started.
+/// `menuBarPresenter` before anything is started. The camera menu's Presenter is built the same way, but
+/// only when `showsCameraMenu` is true, and `start()` and `stop()` start and stop it with the menu.
 ///
 /// What `start()` and `stop()` guarantee for the menu is its Presenter's: a second `start()` while
 /// started does nothing, a started Presenter that is let go stops itself, and the Router adds no
@@ -53,6 +54,9 @@ public final class AppRouter {
     /// The one Presenter the parameter panel draws from; the same instance on every read, started only
     /// while the parameter panel's window is open.
     public let parameterPanelPresenter: ParameterPanelPresenter
+    /// The one Presenter the camera menu draws from; `nil` unless `showsCameraMenu` is true. The same
+    /// instance on every read, started and stopped with the menu.
+    public let cameraMenuPresenter: CameraMenuPresenter?
     private let makePickerWindow: PickerWindowFactory
     /// The picker's open window; `nil` while none is open.
     private var pickerWindow: (any PickerWindow)?
@@ -63,9 +67,10 @@ public final class AppRouter {
     /// The parameter panel's open window; `nil` while none is open.
     private var parameterWindow: (any ParameterWindow)?
 
-    /// Each factory runs once, here, except the window factories, which run at every opening of their
-    /// window. The defaults build the live Presenters and the live windows; a test passes its own to see
-    /// how often and where the Router asks for one, and to open no real window.
+    /// Each factory runs once, here (the camera menu's only when `showsCameraMenu` is true), except the window
+    /// factories, which run at every opening of their window. The defaults build the live Presenters and the
+    /// live windows; a test passes its own to see how often and where the Router asks for one, and to open no
+    /// real window.
     public init(
         makeMenuBarPresenter: @MainActor () -> MenuBarPresenter = { MenuBarPresenter() },
         makeEffectPickerPresenter: @MainActor () -> EffectPickerPresenter = { EffectPickerPresenter() },
@@ -73,7 +78,9 @@ public final class AppRouter {
         makeSettingsPresenter: @MainActor () -> SettingsPresenter = { SettingsPresenter() },
         makeSettingsWindow: @escaping SettingsWindowFactory = AppRouter.settingsWindow(over:onClose:),
         makeParameterPanelPresenter: @MainActor () -> ParameterPanelPresenter = { ParameterPanelPresenter() },
-        makeParameterWindow: @escaping ParameterWindowFactory = AppRouter.parameterWindow(over:onClose:)
+        makeParameterWindow: @escaping ParameterWindowFactory = AppRouter.parameterWindow(over:onClose:),
+        makeCameraMenuPresenter: @MainActor () -> CameraMenuPresenter = { CameraMenuPresenter() },
+        showsCameraMenu: Bool = false
     ) {
         menuBarPresenter = makeMenuBarPresenter()
         effectPickerPresenter = makeEffectPickerPresenter()
@@ -82,22 +89,27 @@ public final class AppRouter {
         self.makeSettingsWindow = makeSettingsWindow
         parameterPanelPresenter = makeParameterPanelPresenter()
         self.makeParameterWindow = makeParameterWindow
+        cameraMenuPresenter = showsCameraMenu ? makeCameraMenuPresenter() : nil
         menuBarPresenter.router = self
         settingsPresenter.router = self
     }
 
-    /// Starts the menu: the Presenter observes the catalog and starts the Interactor.
+    /// Starts the menu: the Presenter observes the catalog and starts the Interactor. The camera menu's
+    /// Presenter, when there is one, starts the camera Interactor the same way.
     public func start() {
         menuBarPresenter.start()
+        cameraMenuPresenter?.start()
     }
 
     /// Ends the menu, and the windows with it: the picker's window, the settings window and the parameter
     /// panel's window close, and the menu's Presenter lets go of the observation and stops the Interactor.
+    /// The camera menu's Presenter, when there is one, does the same for the camera.
     public func stop() {
         closeEffectPicker()
         closeSettings()
         closeParameterPanel()
         menuBarPresenter.stop()
+        cameraMenuPresenter?.stop()
     }
 
     /// Closes the picker's window, if one is open, and ends its Presenter's observation.
