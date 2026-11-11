@@ -12,23 +12,23 @@ import Testing
 /// `.claude/rules/dev-verification.md`); only the shape is pinned here.
 @Suite("Example packages", .timeLimit(.minutes(1)))
 struct ExamplePackagesTests {
-    private static let examples = URL(fileURLWithPath: #filePath)
+    static let examples = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appending(path: "Examples", directoryHint: .isDirectory)
 
-    private static let suffix = ".lens"
+    static let suffix = ".lens"
 
     /// The ids of the packages in `Examples/`, in the order the DataSource lists them: the folder's name
     /// without `.lens`, in plain string order. Sorting the folder names instead would not do: with
     /// `Ripple.lens` and `Ripple-b.lens` the names put `Ripple-b` first (`-` sorts before `.`) and the
     /// ids put `Ripple` first.
-    private static func packageIDs() throws -> [String] {
+    static func packageIDs() throws -> [String] {
         try FileManager.default.contentsOfDirectory(atPath: examples.path)
             .filter { $0.hasSuffix(suffix) }.map { String($0.dropLast(suffix.count)) }.sorted()
     }
 
     /// Every file under the package `id`, as a path relative to the package and its bytes.
-    private static func files(in id: String) throws -> [(path: String, bytes: Data)] {
+    static func files(in id: String) throws -> [(path: String, bytes: Data)] {
         let package = examples.appending(path: id + suffix)
         let paths = FileManager.default.subpaths(atPath: package.path) ?? []
         return try paths.sorted().compactMap { path in
