@@ -15,7 +15,8 @@ import SwiftUI
 /// drawn on macOS 14 for an attributed title: `docs/ARCHITECTURE.md` → *Menu bar*); a bare `Text`
 /// is a disabled item. A `Button` with a checkmark image would put the mark in the image column
 /// instead and leave `state` off. *Browse Effects…* goes to the Presenter like every other item;
-/// the Presenter hands it to the Router, which opens the picker's window.
+/// the Presenter hands it to the Router, which opens the picker's window. *Adjust Effect…* takes
+/// its title from the Presenter and is disabled unless the Presenter says the chosen effect has parameters.
 public struct EffectMenu: View {
     @ObservedObject private var presenter: MenuBarPresenter
 
@@ -41,6 +42,8 @@ public struct EffectMenu: View {
             Text(status)
         }
         Button("Browse Effects…") { presenter.browseEffects() }
+        Button(presenter.adjustEffectTitle) { presenter.adjustEffect() }
+            .disabled(!presenter.canAdjustEffect)
         Button("Open Effects Folder…") { presenter.openEffectsFolder() }
         Divider()
         Button("Settings…") { presenter.openSettings() }

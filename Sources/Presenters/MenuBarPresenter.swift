@@ -28,7 +28,10 @@ public final class MenuBarPresenter: ObservableObject {
     @Published public private(set) var isBypassed = false
     /// The frame-rate readout (`"30 fps"`); `nil` while the pipeline is not running.
     @Published public private(set) var frameRateLine: String?
-    /// Where *Browse Effects…* and *Settings…* go: the Router that built this Presenter, which opens the picker or the settings window.
+    /// Whether *Adjust Effect…* is offered: the chosen effect declares parameters. `false` until the first state arrives.
+    @Published public private(set) var canAdjustEffect = false
+    /// Where *Browse Effects…*, *Adjust Effect…* and *Settings…* go: the Router that built this Presenter,
+    /// which opens the picker, the parameter panel or the settings window.
     /// Weak, because the Router owns the Presenter; until a Router takes it the item does nothing.
     public weak var router: (any MenuBarRouting)?
 
@@ -102,11 +105,23 @@ public final class MenuBarPresenter: ObservableObject {
         router?.openSettings()
     }
 
+    /// The title of *Adjust Effect…*: the View draws this value rather than a literal of its own.
+    public var adjustEffectTitle: String {
+        MenuBarText.adjustEffectTitle
+    }
+
+    /// *Adjust Effect…*: asks the Router for the parameter panel's window.
+    public func adjustEffect() {
+        router?.openParameterPanel()
+    }
+
     private func apply(_ state: EffectCatalogState) {
         let items = MenuBarText.items(of: state)
         let status = MenuBarText.status(of: state)
+        let canAdjust = MenuBarText.canAdjustEffect(of: state)
         if self.items != items { self.items = items }
         if self.status != status { self.status = status }
+        if canAdjustEffect != canAdjust { canAdjustEffect = canAdjust }
     }
 
     private func apply(controls state: ControlsState) {

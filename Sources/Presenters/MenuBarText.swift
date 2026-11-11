@@ -85,4 +85,13 @@ enum MenuBarText {
         if let disabled = state.disabled[entry.id] { return "Disabled: \(reason(disabled))" }
         return entry.author
     }
+
+    /// The title of *Adjust Effect…*, the one item that opens the parameter panel.
+    static let adjustEffectTitle = "Adjust Effect…"
+
+    /// Whether *Adjust Effect…* can be chosen: the chosen effect declares parameters. Only the parameters are
+    /// read, so the outcome of the chosen effect does not decide it.
+    static func canAdjustEffect(of state: EffectCatalogState) -> Bool {
+        !state.parameters.isEmpty
+    }
 }
