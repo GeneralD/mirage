@@ -11,7 +11,8 @@
 /// (`EffectSession`). `resolution` is the output surface's size in pixels; the
 /// pass's grid is rounded up to whole threadgroups (`DispatchGrid.covering`), so it
 /// can overshoot it and a kernel bounds-checks its `gid`. `seed` is what the
-/// hash-noise helpers consume: 0 until a `RandomSource` exists (MVP-C).
+/// hash-noise helpers consume: the seed of the effect session the pass belongs to, drawn once from
+/// `RandomSource` when that session starts (`EffectSession`), 0 for a session that drew none.
 public struct EffectUniforms: Sendable, Hashable {
     public let time: Float
     public let frameIndex: UInt32

@@ -15,10 +15,12 @@ struct StateFixture {
     /// One element per time `admit` asked for the effect to compile while nothing was prepared.
     let fallbackReads = Collector<Void>()
 
-    init() {
+    /// `randomSource` is what the state draws each session's seed from; the default draws 0.
+    init(randomSource: any RandomSource = ZeroRandomSource()) {
         let executor = executor
         subject = withDependencies {
             $0.frameExecutor = executor
+            $0.randomSource = randomSource
         } operation: {
             EffectRuntimeStateDataSourceImpl()
         }
