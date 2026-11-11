@@ -101,7 +101,8 @@ extension EffectCatalogSession {
     /// Prepares the switched-off `id` once more, from the source it was switched off with, and counts the next pass alone
     /// (`EffectHealthPolicy.beginTrial`). Nothing happens when the wait was overtaken, the choice moved on, the run ended, the
     /// record was lifted or replaced, or the files no longer hold the source the record names: an edit is then released
-    /// by the listing that sees it, and nothing is tried.
+    /// by the listing that sees it, and nothing is tried. A trial the runtime refuses to prepare counts no pass: the record and
+    /// the policy stay as they were, the bundled effect stands in once more, and the next trial waits the base cool-down.
     func runTrial(of id: EffectID, in run: Int, token: Int) async {
         guard epoch == run, trialToken == token, selection == id, var entry = disabled[id], entry.record.retriesAutomatically else { return }
         trial = nil
@@ -113,7 +114,12 @@ extension EffectCatalogSession {
         entry.policy.beginTrial()
         entry.isTrialing = true
         disabled[id] = entry
-        await prepare(source, for: id, announcing: "retrying", policy: entry.policy)
+        let outcome = await prepare(source, for: id, announcing: "retrying", policy: entry.policy)
+        guard case .failed = outcome else { return }
+        guard epoch == run else { return }
+        disabled[id]?.isTrialing = false
+        await holdBundled(instead: id, in: run)
+        scheduleTrial(of: id, after: EffectHealthPolicy.Configuration().coolDown, in: run)
     }
 
     /// The bundled effect that is ready in the listing: what the menu falls back to.
