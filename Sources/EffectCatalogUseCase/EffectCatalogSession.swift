@@ -139,7 +139,11 @@ actor EffectCatalogSession {
         // Another choice, a newer read, a fallback, a new run or a switch-off came in while this one waited: it owns the effect now.
         guard epoch == mine, isNewest(source), selection == id, disabled[id] == nil else { return .unavailable(nil) }
         switch source.answer {
-        case .success(let source): return await prepare(source, for: id, announcing: "selected")
+        case .success(let effect):
+            let restoring = await startingValues(for: id, source: effect)
+            // The stored values were read in an await of their own: the same check again before anything is prepared.
+            guard epoch == mine, isNewest(source), selection == id, disabled[id] == nil else { return .unavailable(nil) }
+            return await prepare(effect, for: id, announcing: "selected", restoring: restoring)
         case .failure(let problem): return unreadable(id, problem)
         }
     }
@@ -209,10 +213,13 @@ actor EffectCatalogSession {
             unreadableSource = nil
             prepared?.id = settled.id
             publish()
-        case .success(let source):
+        case .success(let effect):
+            let restoring = await startingValues(for: settled.id, source: effect)
+            // The stored values were read in an await of their own: the listing's check again before anything is prepared.
+            guard epoch == run, isNewest(source), selection == settled.id else { return }
             // A fallback says what happened itself; a first choice and a hot reload are announced here.
             let announcement = settled.fellBack ? nil : (prepared?.id == settled.id ? "reloaded" : "selected")
-            await prepare(source, for: settled.id, announcing: announcement)
+            await prepare(effect, for: settled.id, announcing: announcement, restoring: restoring)
         }
     }
 
@@ -242,19 +249,30 @@ actor EffectCatalogSession {
 
     // MARK: - Handing the runtime an effect
 
+    /// The stored values a choice of `id` starts from: what the settings hold for it, read once, when `source` declares
+    /// parameters and `id` is not the effect already prepared. A hot reload or a re-choice of that one keeps the values in
+    /// memory, which are the newest, so it reads nothing; a source that declares none reads nothing either.
+    private func startingValues(for id: EffectID, source: EffectSource) async -> [String: EffectParameterValue] {
+        guard !source.parameters.isEmpty, prepared?.id != id else { return [:] }
+        return await settings.parameterValues(of: id)
+    }
+
     /// Prepares `source` as the effect `id` and publishes how that went, unless a newer
     /// request was issued while the runtime was busy: that one publishes its own, and this
     /// answer only reaches its caller.
     @discardableResult
-    func prepare(_ source: EffectSource, for id: EffectID, announcing verb: String?) async -> EffectSelectionOutcome {
+    func prepare(
+        _ source: EffectSource, for id: EffectID, announcing verb: String?, restoring stored: [String: EffectParameterValue] = [:]
+    ) async -> EffectSelectionOutcome {
         generation += 1
         let mine = generation
-        // A hot reload or a re-choice of the same effect keeps its values; any other choice starts from the defaults.
+        // A hot reload or a re-choice of the same effect keeps its values; any other choice starts from the stored ones
+        // (the defaults, when it holds none).
         let model =
             if let previous = prepared, previous.id == id {
                 previous.model.respecified(source.parameters)
             } else {
-                ParameterModel(specs: source.parameters, restoring: [:])
+                ParameterModel(specs: source.parameters, restoring: stored)
             }
         let block = model.block
         prepared = Prepared(id: id, source: source, answer: nil, model: model, sent: block)
