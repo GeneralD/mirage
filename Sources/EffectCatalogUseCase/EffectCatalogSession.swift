@@ -84,7 +84,8 @@ actor EffectCatalogSession {
     /// Taken anew whenever a wait is cancelled or replaced, so a wait that was overtaken does nothing when it wakes.
     var trialToken = 0
     /// The parameter writes waiting for the quiet period, one entry per effect, and the one timer that persists them.
-    /// A run neither clears nor cancels either: a write made before a run ends is still persisted.
+    /// A run does not clear them: the run that ends persists what still waits, at once, and cancels the timer (`run()`).
+    /// A run that a newer one took over leaves both to that run.
     private var pending = PendingParameterWrites()
     private var persistTimer: Task<Void, Never>?
 
@@ -106,7 +107,8 @@ actor EffectCatalogSession {
     /// package and an edited shader all arrive (the Repository lists again after every
     /// change). The Interactor owns the task, and starts the next run only after the one before
     /// has returned, but a run that is started while the one before it still waits for the
-    /// runtime takes over at once: the old one leaves without touching what is the new one's.
+    /// runtime takes over at once: the old one leaves without touching what is the new one's. A run that ends while it is
+    /// still the newest persists the parameter values waiting for their quiet period before it closes the streams.
     func run() async {
         epoch += 1
         let mine = epoch
@@ -119,6 +121,16 @@ actor EffectCatalogSession {
             await listen(in: mine)
             group.cancelAll()
         }
+        guard epoch == mine else { return }
+        // Taken in the turn of the guard, with no suspension before the timer is cancelled, so that a write made from here on
+        // starts a timer of its own.
+        let waiting = pending.drainedAll()
+        persistTimer?.cancel()
+        persistTimer = nil
+        for write in waiting {
+            await settings.setParameterValues(write.values, of: write.id)
+        }
+        // The writes above suspend: a newer run may have begun meanwhile, and then the streams are its own to close.
         guard epoch == mine else { return }
         end()
     }
