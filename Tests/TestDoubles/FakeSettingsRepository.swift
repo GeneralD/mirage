@@ -18,9 +18,12 @@ import TestSupport
 /// The hotkeys flag and the schema version answer at once and are never held. `hotkeyFlagWrites`
 /// records every `setHotkeysEnabled`, `stamps` every `stampSchemaVersion` version, and `resets` one
 /// entry per `resetAll()`. `resetAll()` puts every value back to its default, as the live reset does.
-/// The parameter values answer at once and are never held: `parameterReads` records every
-/// `parameterValues(of:)` call, and `parameterWrites` records every `setParameterValues` call, which
-/// replaces the values of its effect and leaves the other effects alone.
+/// The parameter values answer at once unless the test asked to hold the reads (`holdParameterReads()`): then
+/// each read answers what was stored when it began and suspends until `releaseParameterRead(_:)`. `parameterReads`
+/// records every `parameterValues(of:)` call, and `parameterWrites` records every `setParameterValues` call, which
+/// replaces the values of its effect and leaves the other effects alone. A parked parameter read is parked apart
+/// from the selection and disabled calls: it is not in `heldRequests` or `pendingCount`, `reads` and `writes` do
+/// not count it, and `heldParameterReads` is where a test sees it.
 ///
 /// The system members answer at once as well (hackathon #183). The launch-at-login status starts at
 /// `launchAtLogin` and moves the way `LoginItem` does: `setLaunchAtLogin` answers `on ? .on : .off`
@@ -41,6 +44,14 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
 
         public let id: Int
         public let call: Call
+        /// The repository that issued it: ids restart at 1 per instance, so the id alone cannot tell a stranger's request.
+        fileprivate let origin: ObjectIdentifier
+    }
+
+    /// One `parameterValues(of:)` call parked by `holdParameterReads()`, until `releaseParameterRead(_:)` resumes it.
+    public struct ParameterReadRequest: Sendable {
+        public let id: Int
+        public let effect: EffectID
         /// The repository that issued it: ids restart at 1 per instance, so the id alone cannot tell a stranger's request.
         fileprivate let origin: ObjectIdentifier
     }
@@ -71,6 +82,9 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         var holdingDisabledWrites = false
         var nextRequest = 1
         var parked: [Int: CheckedContinuation<Void, Never>] = [:]
+        var holdingParameterReads = false
+        var nextParameterRead = 1
+        var parkedParameterReads: [Int: CheckedContinuation<Void, Never>] = [:]
     }
 
     private let state: Locked<State>
@@ -103,6 +117,9 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
     public let parameterReads = Collector<EffectID>()
     /// The `setParameterValues` calls, in call order.
     public let parameterWrites = Collector<ParameterWrite>()
+    /// The `parameterValues(of:)` calls that were parked by `holdParameterReads()`, in call order. A request is recorded
+    /// in the same step that parks it, so a test that sees one can always release it.
+    public let heldParameterReads = Collector<ParameterReadRequest>()
 
     public init(
         selected: EffectID? = nil,
@@ -153,6 +170,21 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
         return true
     }
 
+    /// From now on every `parameterValues(of:)` suspends, after answering what was stored when it began, until
+    /// `releaseParameterRead(_:)`; `holdParameterReads(false)` goes back to answering at once (calls already parked stay parked).
+    public func holdParameterReads(_ holding: Bool = true) {
+        state.withLock { $0.holdingParameterReads = holding }
+    }
+
+    /// Resumes a parked parameter read; `false` when it is unknown, came from another repository, or is already resumed.
+    @discardableResult
+    public func releaseParameterRead(_ request: ParameterReadRequest) -> Bool {
+        guard request.origin == ObjectIdentifier(self) else { return false }
+        guard let continuation = state.withLock({ $0.parkedParameterReads.removeValue(forKey: request.id) }) else { return false }
+        continuation.resume()
+        return true
+    }
+
     /// Makes the next `registerHotkeys` answer `registration`, and sets `hotkeyRegistration` to it. The script is
     /// used once: the `registerHotkeys` after it answers that every binding is registered.
     public func script(registration: HotkeyRegistration) {
@@ -199,7 +231,9 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
 
     public func parameterValues(of id: EffectID) async -> [String: EffectParameterValue] {
         parameterReads.append(id)
-        return state.current.parameters[id] ?? [:]
+        let answer = state.current.parameters[id] ?? [:]
+        await parkParameterReadIfHeld(id)
+        return answer
     }
 
     public func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async {
@@ -288,6 +322,18 @@ public final class FakeSettingsRepository: SettingsRepository, Sendable {
                 state.nextRequest += 1
                 state.parked[id] = continuation
                 heldRequests.append(Request(id: id, call: call, origin: ObjectIdentifier(self)))
+            }
+        }
+    }
+
+    private func parkParameterReadIfHeld(_ id: EffectID) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            state.withLock { state in
+                guard state.holdingParameterReads else { return continuation.resume() }
+                let request = state.nextParameterRead
+                state.nextParameterRead += 1
+                state.parkedParameterReads[request] = continuation
+                heldParameterReads.append(ParameterReadRequest(id: request, effect: id, origin: ObjectIdentifier(self)))
             }
         }
     }
