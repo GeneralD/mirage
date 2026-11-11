@@ -29,7 +29,9 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
    the PR body with `Decision: <one line>`. A question of which approach is right is not yours:
    comment on the issue, add the label `hk:research`, and proceed with what is known.
 3. Implement inside `Scope` only. Tests with the implementation, one per `Interface` item, named as a
-   spec sentence. If `Off-limits` or a hot file must be touched: do not implement; comment why, add
+   spec sentence — unless the issue says it adds no unit tests, which wins over any Done line. Never
+   write a test that evaluates a SwiftUI view's `body`: views are not unit-tested, and such a test
+   stalled CI's whole `test` job on PR #467. If `Off-limits` or a hot file must be touched: do not implement; comment why, add
    the label `hk:regen`, stop.
 4. `make format`, commit what it rewrites, then gate `<the issue's Done command>` through the two
    helpers your brief names (they run `scripts/gate -- <the issue's Done command>`).
