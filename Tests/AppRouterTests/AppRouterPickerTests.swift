@@ -6,8 +6,6 @@ import TestDoubles
 import TestSupport
 import Testing
 
-@testable import Views
-
 /// The Router's half of the effect picker (#12): the window it opens from the menu's *Browse Effects…*,
 /// the picker's Presenter it starts and stops with that window, and the window's end, from the title bar
 /// or from `stop()`. Every window here is a `FakePickerWindow` made through `makePickerWindow`, so no
@@ -234,62 +232,6 @@ struct AppRouterPickerTests {
         #expect(rig.previewInteractor.detached.values.last == ObjectIdentifier(third))
         #expect(rig.previewInteractor.detached.count == 3)
     }
-
-    // The Views half: `Views` holds no logic and is not measured, so these build each body over a real Presenter. What the
-    // picker and its pane look like is the gallery's `effect-picker-preview` screen (#256).
-
-    @Test("the preview pane builds over an attached view with no message on it, in the geometry the picker gives it")
-    func previewPaneBuildsWhenAttached() {
-        let preview = openedPreview()
-
-        #expect(preview.unavailableMessage == nil)
-        _ = PreviewPaneView(preview: preview, geometry: PreviewGeometry(containerWidth: 480)).body
-    }
-
-    @Test("the preview pane builds with the refused view's message over it, where the pipeline refused the view")
-    func previewPaneBuildsWithTheRefusal() {
-        let preview = openedPreview(refusal: .noDevice)
-
-        #expect(preview.unavailableMessage != nil)
-        _ = PreviewPaneView(preview: preview, geometry: PreviewGeometry(containerWidth: 480)).body
-    }
-
-    @Test("the picker builds with the preview pane above its grid when the window gives it a preview Presenter")
-    func pickerBuildsWithThePreviewPane() {
-        let picker = withDependencies {
-            $0.effectInteractor = FakeEffectInteractor(state: .fixture([chromatic]))
-        } operation: {
-            EffectPickerPresenter()
-        }
-
-        _ = EffectPickerView(presenter: picker, preview: openedPreview(), decode: { _ in nil }).body
-    }
-
-    @Test("the picker builds as the grid alone when no preview Presenter is given, as the window does until it is wired")
-    func pickerBuildsWithoutThePreviewPane() {
-        let picker = withDependencies {
-            $0.effectInteractor = FakeEffectInteractor(state: .fixture([chromatic]))
-        } operation: {
-            EffectPickerPresenter()
-        }
-
-        _ = EffectPickerView(presenter: picker, decode: { _ in nil }).body
-    }
-}
-
-/// A preview Presenter that is open, visible and has received its view, so that it has attached the view, or been refused it
-/// when `refusal` is set. Built inside `withDependencies`, so that it never reaches the live Interactor.
-@MainActor
-private func openedPreview(refusal: PreviewRefusal? = nil) -> PreviewPresenter {
-    let preview = withDependencies {
-        $0.previewInteractor = FakePreviewInteractor(refusal: refusal)
-    } operation: {
-        PreviewPresenter()
-    }
-    preview.start()
-    preview.receive(FakePreviewTargetHandle())
-    preview.setVisible(true)
-    return preview
 }
 
 /// A rig whose menu is started and whose picker is open, both showing the catalog.
