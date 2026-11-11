@@ -60,8 +60,10 @@ that lands the piece.
 
 ## Machine budget
 
-10 cores, 64 GB. `scripts/gate` takes one of 5 slots; a screenshot is one at a time. A worktree is
-removed the moment its worker exits. Never run the dev harness from a worker unless the issue says
+10 cores, 64 GB. Workers run at most five at a time, and their gates share 3 slots (`HK_GATE_SLOTS=3`,
+set by the detached gate helper; the script's own default is 5); a screenshot is one at a time. A
+worker's worktree outlives it when it holds changes, so the orchestrator deletes its `.build` (about
+1.2 GiB) once the worker is gone. Never run the dev harness from a worker unless the issue says
 so: its camera prompt is modal on the human's screen.
 
 ## Verification lanes
