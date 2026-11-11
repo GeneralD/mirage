@@ -7,9 +7,12 @@ struct ArmedHealth {
     var policy: EffectHealthPolicy
 }
 
-/// An effect health has switched off in this run: the record the menu takes its reason from.
+/// An effect health has switched off in this run: the record the menu takes its reason from, the policy that counted its
+/// passes (so a failed trial carries its doubled cool-down on), and whether a trial of it is running.
 struct DisabledEntry {
     var record: DisabledEffectRecord
+    var policy = EffectHealthPolicy()
+    var isTrialing = false
 }
 
 /// `EffectCatalogSession`, health half: counts the pass outcomes the runtime reports for the effect it holds, and switches a
@@ -35,20 +38,82 @@ extension EffectCatalogSession {
         }
         let verdict = health.policy.record(outcome.result)
         armed = health
-        guard case .disable(let reason, let retryAfter) = verdict else { return }
-        guard health.id.origin == .package else {
-            isGPUUnavailable = true
-            publish()
+        switch verdict {
+        case .none:
             return
+        case .recovered:
+            await lift(health.id, in: run)
+        case .disable(let reason, let retryAfter):
+            guard health.id.origin == .package else {
+                isGPUUnavailable = true
+                publish()
+                return
+            }
+            disabled[health.id] = DisabledEntry(
+                record: DisabledEffectRecord(
+                    id: health.id, fingerprint: health.fingerprint, reason: reason, retriesAutomatically: retryAfter != nil),
+                policy: health.policy)
+            // The record is written before the fallback, so that a crash after the switch-off cannot run the effect again.
+            await settings.setDisabledEffects(disabled.values.map(\.record))
+            guard epoch == run else { return }
+            errorLog.record(.effect, switchOffMessage(of: health.id, reason: reason))
+            await holdBundled(instead: health.id, in: run)
+            if let retryAfter { scheduleTrial(of: health.id, after: retryAfter, in: run) }
         }
-        disabled[health.id] = DisabledEntry(
-            record: DisabledEffectRecord(
-                id: health.id, fingerprint: health.fingerprint, reason: reason, retriesAutomatically: retryAfter != nil))
-        // The record is written before the fallback, so that a crash after the switch-off cannot run the effect again.
+    }
+
+    /// A trial pass came back within budget: the effect is back on, its record is forgotten and the settings written without it.
+    private func lift(_ id: EffectID, in run: Int) async {
+        guard disabled[id] != nil else { return }
+        disabled[id] = nil
         await settings.setDisabledEffects(disabled.values.map(\.record))
         guard epoch == run else { return }
-        errorLog.record(.effect, switchOffMessage(of: health.id, reason: reason))
-        await holdBundled(instead: health.id, in: run)
+        publish()
+    }
+
+    /// Whether `id` is switched off and not on trial: a listing keeps such an effect off, and a trial in flight is not held off.
+    func isHeldOff(_ id: EffectID) -> Bool {
+        disabled[id].map { !$0.isTrialing } ?? false
+    }
+
+    /// Waits `delay` on the clock for the cool-down of `id`, then runs one trial of it. A wait still pending is cancelled first:
+    /// only one trial waits at a time. Nothing is scheduled for a run that has ended, or for an effect no longer chosen.
+    func scheduleTrial(of id: EffectID, after delay: Duration, in run: Int) {
+        guard epoch == run, selection == id else { return }
+        cancelTrial()
+        let token = trialToken
+        trial = Task { [self] in await wake(of: id, after: delay, in: run, token: token) }
+    }
+
+    /// Cancels the wait that is pending, if any, and makes a wait that was already woken do nothing.
+    func cancelTrial() {
+        trial?.cancel()
+        trial = nil
+        trialToken += 1
+    }
+
+    /// Sleeps the cool-down out. A cancelled sleep ends here without a trial.
+    func wake(of id: EffectID, after delay: Duration, in run: Int, token: Int) async {
+        guard (try? await clock.sleep(for: delay)) != nil else { return }
+        await runTrial(of: id, in: run, token: token)
+    }
+
+    /// Prepares the switched-off `id` once more, from the source it was switched off with, and counts the next pass alone
+    /// (`EffectHealthPolicy.beginTrial`). Nothing happens when the wait was overtaken, the choice moved on, the run ended, the
+    /// record was lifted or replaced, or the files no longer hold the source the record names: an edit is then released
+    /// by the listing that sees it, and nothing is tried.
+    func runTrial(of id: EffectID, in run: Int, token: Int) async {
+        guard epoch == run, trialToken == token, selection == id, var entry = disabled[id], entry.record.retriesAutomatically else { return }
+        trial = nil
+        let mine = generation
+        let answer = await peek(id)
+        guard epoch == run, generation == mine, selection == id, disabled[id]?.record == entry.record,
+            case .success(let source) = answer, EffectFingerprint.of(source) == entry.record.fingerprint
+        else { return }
+        entry.policy.beginTrial()
+        entry.isTrialing = true
+        disabled[id] = entry
+        await prepare(source, for: id, announcing: "retrying", policy: entry.policy)
     }
 
     /// The bundled effect that is ready in the listing: what the menu falls back to.
