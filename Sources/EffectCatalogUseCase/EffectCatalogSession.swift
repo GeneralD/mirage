@@ -33,6 +33,9 @@ actor EffectCatalogSession {
         let source: EffectSource
         var answer: EffectSelectionOutcome?
         var model: ParameterModel
+        /// The block the runtime was last handed for `source`: the one `prepare` carried, or the last resend. A write made
+        /// while the prepare is out goes to the runtime at once but does not update this, so the answer can tell it moved.
+        var sent: EffectParameterBlock
     }
 
     @Dependency(\.effectPackageRepository) var packages
@@ -251,18 +254,32 @@ actor EffectCatalogSession {
             } else {
                 ParameterModel(specs: source.parameters, restoring: [:])
             }
-        prepared = Prepared(id: id, source: source, answer: nil, model: model)
+        let block = model.block
+        prepared = Prepared(id: id, source: source, answer: nil, model: model, sent: block)
         armed = ArmedHealth(id: id, fingerprint: .of(source), policy: EffectHealthPolicy())
         unreadableSource = nil
         if let verb {
             developerLog.record(.effect, "effect '\(source.name)' \(verb)")
         }
 
-        let answer = await runtime.prepare(source, parameters: model.block).selectionOutcome
+        let answer = await runtime.prepare(source, parameters: block).selectionOutcome
         guard generation == mine else { return answer }
         prepared?.answer = answer
         publish()
+        resendIfMoved(for: id)
         return answer
+    }
+
+    /// Hands the runtime the model's block again when a write made while the prepare of `id` was out left it different from
+    /// the block that prepare carried. That write reached the runtime at once, but the runtime may have dropped it: it can
+    /// land before the `begin` of the prepare (`EffectRuntimeStateDataSourceImpl.setParameters`). Synchronous, so the answer
+    /// adds no suspension, and the outcome the prepare returns is left as it is.
+    private func resendIfMoved(for id: EffectID) {
+        guard let current = prepared, current.id == id else { return }
+        let block = current.model.block
+        guard block != current.sent else { return }
+        prepared?.sent = block
+        runtime.setParameters(block, of: current.source)
     }
 
     /// The chosen effect is listed as usable but its source could not be read just now (the
