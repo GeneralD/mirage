@@ -186,13 +186,13 @@ struct HarnessLiveWiringTests {
         #expect(scheduler.isRunning)
         #expect(developer.messages(in: .camera) == ["camera authorization: authorized"])
 
-        // The menu: the bundled effect alone, chosen and enabled, compiled once from its own source.
+        // The menu: the bundled effects, all enabled, the default one chosen and compiled once from its own source.
         let chromatic = EffectID.bundled("Chromatic Grain")
         let selectedEffectKey = "selectedEffect"  // the defaults key the choice lives under: persisted, so never renamed
-        #expect(presenter.items.map(\.id) == [chromatic])
-        #expect(presenter.items.map(\.title) == ["Chromatic Grain"])
-        #expect(presenter.items.map(\.isSelected) == [true])
-        #expect(presenter.items.map(\.isEnabled) == [true])
+        #expect(presenter.items.first?.id == chromatic)
+        #expect(presenter.items.first?.title == "Chromatic Grain")
+        #expect(presenter.items.filter(\.isSelected).map(\.id) == [chromatic])
+        #expect(presenter.items.allSatisfy(\.isEnabled))
         #expect(presenter.status == nil)
         #expect(shaders.calls.count == 1, "the chosen effect is compiled once")
         // The effects folder: made, and watched for packages coming and going.
