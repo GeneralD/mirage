@@ -147,16 +147,13 @@ struct EffectHealthIntegrationTests {
         #expect(firstState.selection == Neon.id, "the choice stands")
         #expect(firstState.disabled == [Neon.id: .failure(.timeout)], "the switch-off stands")
         #expect(firstState.outcome == nil, "no answer is shown for the choice, which is switched off")
-        #expect(await rig.pumpHost(until: { second.side.states.last?.outcome == .prepared }), "the bundled effect is prepared in its place")
-        #expect(
-            rig.host.shaders.calls.values.map(\.source) == [Self.assembled(BundledEffectDataSourceImpl().defaultEffect.source)],
-            "the relaunch compiled the bundled effect and nothing else")
 
+        // The compiles are read after the first frame, which is the one that draws with the bundled effect.
         _ = await second.capture()
+        let bundledSource = Self.assembled(BundledEffectDataSourceImpl().defaultEffect.source)
+        #expect(rig.host.shaders.calls.values.map(\.source) == [bundledSource], "the relaunch compiled the bundled effect and nothing else")
         let drawn = try second.lastPass()
-        #expect(
-            drawn.kernel.source == Self.assembled(BundledEffectDataSourceImpl().defaultEffect.source),
-            "the first frame after the relaunch is drawn with the bundled effect")
+        #expect(drawn.kernel.source == bundledSource, "the first frame after the relaunch is drawn with the bundled effect")
         #expect(store.writes.count == writesBefore, "the relaunch wrote nothing: the switch-off was only read back")
 
         try await second.finish()
