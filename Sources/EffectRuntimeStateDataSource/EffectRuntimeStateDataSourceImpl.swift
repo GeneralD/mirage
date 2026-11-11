@@ -57,6 +57,8 @@ import Domain
 /// nothing, and any number may be open.
 public final class EffectRuntimeStateDataSourceImpl: @unchecked Sendable {
     @Dependency(\.frameExecutor) private var executor
+    /// Drawn from only when a session starts, on the executor, so a frame that continues one draws nothing.
+    @Dependency(\.randomSource) private var randomSource
 
     // Executor-confined.
     private var cache: [CompileKey: any LibraryHandle] = [:]
@@ -117,7 +119,9 @@ extension EffectRuntimeStateDataSourceImpl: EffectRuntimeState {
     ) async -> EffectAdmission {
         await withCheckedContinuation { continuation in
             executor.run { [self] in
-                let current = EffectSession.of(context, after: session)
+                let current = EffectSession.of(
+                    context, after: session,
+                    drawingSeed: { UInt32(truncatingIfNeeded: randomSource.next(below: 1 << 32)) })
                 session = current
                 let uniforms = EffectUniforms.pass(context, in: current, output: output)
                 if let effect = compilable(fallback: fallback), case .compile(let ticket) = takeTicket(for: effect) {
