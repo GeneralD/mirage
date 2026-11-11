@@ -22,5 +22,6 @@ var galleryScreens: [GalleryScreen] {
         .effectPickerPreview,
         .effectPickerPreviewSplit,
         .effectPickerPreviewRefused,
+        .controlsMenuDisabled,
     ]
 }
