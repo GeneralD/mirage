@@ -55,7 +55,10 @@ beyond `docs/hackathon/mvp-cd/PRODUCT.md` and your issue. You ask no questions.
 7. `gh pr merge <pr> -R GeneralD/mirage --squash --delete-branch`, then
    `gh issue close <n> -R GeneralD/mirage --reason completed` (a closing keyword does not fire on a
    non-default base). A conflict: `git rebase origin/hackathon/mvp-cd` once, gate, push with a new
-   branch name `task/<n>-r1`, and open a new PR. Still conflicting: step 8.
+   branch name `task/<n>-r1`, and open a new PR. Then close the old one, or it lingers as a
+   duplicate: write the agent badge, a blank line and `#<new PR> に置き換えたので閉じます。` to a
+   file, `gh pr comment <old PR> -R GeneralD/mirage --body-file <file>`, then
+   `gh pr close <old PR> -R GeneralD/mirage --delete-branch`. Still conflicting: step 8.
 8. Red: regenerate up to twice with the failure log: `git reset --hard origin/hackathon/mvp-cd` and
    implement again rather than patching. Still red: comment the log on the issue, add `hk:regen`, stop.
 
