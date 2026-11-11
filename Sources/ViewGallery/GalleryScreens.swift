@@ -17,5 +17,7 @@ var galleryScreens: [GalleryScreen] {
         .parameterPanelEmpty,
         .settings,
         .settingsAttention,
+        .onboardingApproval,
+        .onboardingCompileFailed,
     ]
 }
