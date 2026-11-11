@@ -37,6 +37,7 @@ import MetalKitPreviewGateway
 import PreferencesDataStore
 import PreviewDataSource
 import PreviewRepository
+import RandomSource
 import SettingsInteractor
 import SettingsRepository
 import SettingsUseCase
@@ -282,4 +283,8 @@ extension ConsoleWriterKey: DependencyKey {
 
 extension EffectAuthoringInteractorKey: DependencyKey {
     public static let liveValue: any EffectAuthoringInteractor = EffectAuthoringInteractorImpl()
+}
+
+extension RandomSourceKey: DependencyKey {
+    public static let liveValue: any RandomSource = RandomSourceImpl()
 }

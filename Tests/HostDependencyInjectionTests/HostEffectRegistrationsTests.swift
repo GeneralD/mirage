@@ -6,6 +6,7 @@ import EffectPackageRepository
 import EffectWatchDataSource
 import HostDependencyInjection
 import PreferencesDataStore
+import RandomSource
 import SettingsRepository
 import TestDoubles
 import TestSupport
@@ -33,7 +34,7 @@ import Testing
 /// concurrently). The catalog's values come in two kinds:
 ///
 /// - **Stateless** (`effectPackageRepository`, `settingsRepository`, `effectPackages`, `effectWatch`,
-///   `preferences`): structs that hold nothing between calls. A caller's own overrides win over the
+///   `preferences`, `randomSource`): structs that hold nothing between calls. A caller's own overrides win over the
 ///   scope such a value captured, so these are resolved here, inside `live(_:)`, with every Gateway
 ///   they reach overridden by a fake of this suite, whichever suite built the singleton first.
 /// - **Stateful** (`effectInteractor`, `effectCatalogUseCase`): `EffectInteractorImpl` resolves the
@@ -58,12 +59,14 @@ struct HostEffectRegistrationsTests {
             @Dependency(\.effectPackages) var effectPackages
             @Dependency(\.effectWatch) var effectWatch
             @Dependency(\.preferences) var preferences
+            @Dependency(\.randomSource) var randomSource
 
             #expect(effectPackageRepository is EffectPackageRepositoryImpl)
             #expect(settingsRepository is SettingsRepositoryImpl)
             #expect(effectPackages is EffectPackageDataSourceImpl)
             #expect(effectWatch is EffectWatchDataSourceImpl)
             #expect(preferences is PreferencesDataStoreImpl)
+            #expect(randomSource is RandomSourceImpl)
         }
     }
 
