@@ -93,7 +93,7 @@ is a raw code the main suite writes down.
   Those scenarios are a manual VM lane (`.claude/rules/dev-verification.md`).
 - The compile cache is `EffectRuntimeStateDataSource`'s (behind
   `EffectRuntimeRepository`), in-process only: it is keyed by
-  `(source, compile options)`, and a cache on disk (which would need a device id
+  `(source, compile options, parameter layout)`, and a cache on disk (which would need a device id
   and an OS version) is deferred to Later, epic #42 D12. A GPU test builds its own
   runtime and state, so it never shares cache state with another test.
 - **GitHub-hosted macOS runners do expose a Metal device** (measured
