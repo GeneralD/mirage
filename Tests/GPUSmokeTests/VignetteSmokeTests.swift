@@ -8,16 +8,21 @@ import Testing
 /// nothing here can hang or fault.
 @Suite("Vignette smoke", .serialized, .enabled(if: MetalDeviceProbe.isAvailable), .timeLimit(.minutes(1)))
 struct VignetteSmokeTests {
+    /// How many of the `width × height` pixels satisfy `predicate`, counted one by one.
+    private static func count(width: Int, height: Int, where predicate: (Int, Int) -> Bool) -> Int {
+        (0..<height).reduce(0) { total, y in
+            total + (0..<width).filter { x in predicate(x, y) }.count
+        }
+    }
+
     /// How many pixels of `image` differ from `VignetteReference` by more than the tolerance in some channel.
     private static func outsideTolerance(
         _ image: SurfacePixels, width: Int, height: Int, strength: Float, radius: Float
     ) -> Int {
-        (0..<height).flatMap { y in
-            (0..<width).filter { x in
-                let expected = VignetteReference.pixel(x: x, y: y, width: width, height: height, strength: strength, radius: radius)
-                return GPUSmokeSupport.distance(image.pixel(x: x, y: y), expected) > GPUSmokeSupport.tolerance
-            }
-        }.count
+        count(width: width, height: height) { x, y in
+            let expected = VignetteReference.pixel(x: x, y: y, width: width, height: height, strength: strength, radius: radius)
+            return GPUSmokeSupport.distance(image.pixel(x: x, y: y), expected) > GPUSmokeSupport.tolerance
+        }
     }
 
     @Test(
@@ -55,11 +60,9 @@ struct VignetteSmokeTests {
     @Test("strength 0 leaves every pixel at the input, whatever the radius", arguments: [Float(0.2), Float(0.8), Float(1.5)])
     func zeroStrengthKeepsTheInput(radius: Float) async throws {
         let image = try await EffectSmokeRig.render(VignetteEffect.effect, values: [.float(0), .float(radius)])
-        let mismatches = (0..<EffectSmokeRig.height).flatMap { y in
-            (0..<EffectSmokeRig.width).filter { x in
-                GPUSmokeSupport.distance(image.pixel(x: x, y: y), EffectSmokeRig.testImage(x, y)) > GPUSmokeSupport.tolerance
-            }
-        }.count
+        let mismatches = Self.count(width: EffectSmokeRig.width, height: EffectSmokeRig.height) { x, y in
+            GPUSmokeSupport.distance(image.pixel(x: x, y: y), EffectSmokeRig.testImage(x, y)) > GPUSmokeSupport.tolerance
+        }
         #expect(mismatches == 0, "\(mismatches) pixels differ from the input at radius \(radius)")
     }
 
@@ -69,7 +72,7 @@ struct VignetteSmokeTests {
         let image = try await EffectSmokeRig.render(VignetteEffect.effect, values: [.float(0.5), .float(0.8)], width: width, height: height)
         let outside = Self.outsideTolerance(image, width: width, height: height, strength: 0.5, radius: 0.8)
         #expect(outside == 0, "\(outside) pixels outside the tolerance at \(width) by \(height)")
-        let transparent = (0..<height).flatMap { y in (0..<width).filter { x in image.pixel(x: x, y: y)[3] != 255 } }.count
+        let transparent = Self.count(width: width, height: height) { x, y in image.pixel(x: x, y: y)[3] != 255 }
         #expect(transparent == 0, "\(transparent) pixels whose alpha is not 255")
     }
 }
