@@ -20,6 +20,13 @@ extension GalleryScreen {
         }
     }
 
+    /// The chosen camera is suspended (a laptop's lid is closed): the status line says so, and a running camera is the one in use.
+    static var cameraMenuSuspended: GalleryScreen {
+        GalleryScreen(name: "camera-menu-suspended", summary: "Camera menu: the chosen camera is suspended") {
+            openCameraMenu(showing: cameraMenuSuspendedState)
+        }
+    }
+
     /// No camera is connected at all: the status line says so, and the resolution and frame rate submenus are disabled.
     static var cameraMenuNone: GalleryScreen {
         GalleryScreen(name: "camera-menu-none", summary: "Camera menu: no camera found") {
@@ -99,6 +106,8 @@ extension GalleryCameraMenuWindow: CameraMenuWindow {
 
 private let faceTimeCamera = CameraDevice(id: "face-time", name: "FaceTime HD Camera")
 private let studioCamera = CameraDevice(id: "studio", name: "Studio Display Camera")
+private let closedLidCamera = CameraDevice(id: "face-time", name: "FaceTime HD Camera", isSuspended: true)
+private let continuityCamera = CameraDevice(id: "phone", name: "iPhone Camera")
 private let hd720 = CameraResolution(width: 1280, height: 720)
 private let hd900 = CameraResolution(width: 1600, height: 900)
 private let fullHD = CameraResolution(width: 1920, height: 1080)
@@ -127,6 +136,19 @@ var cameraMenuMissingState: CameraState {
         frameRates: [24, 30],
         selectedFrameRate: 30,
         isMirrored: true)
+}
+
+/// The chosen camera, FaceTime HD Camera, is suspended with the lid closed: the running iPhone Camera is chosen instead.
+var cameraMenuSuspendedState: CameraState {
+    CameraState(
+        devices: [closedLidCamera, continuityCamera],
+        selectedDeviceID: "phone",
+        availability: .suspended("FaceTime HD Camera"),
+        resolutions: [hd720, fullHD],
+        selectedResolution: hd720,
+        frameRates: [24, 30],
+        selectedFrameRate: 30,
+        isMirrored: false)
 }
 
 /// No camera is connected at all.

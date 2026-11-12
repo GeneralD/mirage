@@ -49,11 +49,12 @@ struct CameraMenuScreenTests {
         return try #require(windows.values.first)
     }
 
-    @Test("the three camera menu screens are registered under their names")
+    @Test("the four camera menu screens are registered under their names")
     func registered() {
         let names = galleryScreens.map(\.name)
         #expect(names.contains("camera-menu"))
         #expect(names.contains("camera-menu-missing"))
+        #expect(names.contains("camera-menu-suspended"))
         #expect(names.contains("camera-menu-none"))
     }
 
@@ -94,6 +95,21 @@ struct CameraMenuScreenTests {
         #expect(presenter.resolutions.map(\.title) == ["1280 × 720", "1920 × 1080"])
         #expect(presenter.frameRates.map(\.title) == ["24 fps", "30 fps"])
         #expect(presenter.isMirrored == true)
+    }
+
+    @Test("camera-menu-suspended's Presenter says the chosen camera is suspended, and shows the running camera chosen")
+    func cameraMenuSuspended() async throws {
+        let window = try openedWindow(showing: cameraMenuSuspendedState)
+        #expect(window.shows == 1)
+
+        let presenter = window.presenter
+        await settle(presenter.$devices) { !$0.isEmpty }
+        #expect(presenter.status == "FaceTime HD Camera is suspended")
+        #expect(presenter.devices.map(\.title) == ["FaceTime HD Camera", "iPhone Camera"])
+        #expect(presenter.devices.map(\.isSelected) == [false, true])
+        #expect(presenter.resolutions.map(\.title) == ["1280 × 720", "1920 × 1080"])
+        #expect(presenter.frameRates.map(\.title) == ["24 fps", "30 fps"])
+        #expect(presenter.isMirrored == false)
     }
 
     @Test("camera-menu-none's Presenter says no camera was found, and lists nothing to choose")
