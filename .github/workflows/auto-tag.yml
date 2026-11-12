@@ -60,7 +60,7 @@ jobs:
           # 0.7 s after its push (#543). Poll the tag's ref, about a minute at most, and say how long
           # it took; a tag still unreadable then fails --verify-tag below, as before.
           for i in $(seq 1 20); do
-            gh api "repos/${REPO}/git/refs/tags/${TAG}" >/dev/null 2>&1 && break
+            gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1 && break
             echo "Waiting for the API to read ${TAG} (${i}/20)"
             sleep 3
           done
