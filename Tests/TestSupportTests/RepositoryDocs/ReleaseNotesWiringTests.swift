@@ -35,6 +35,19 @@ struct ReleaseNotesWiringTests {
         #expect(push.lowerBound < create.lowerBound)
     }
 
+    @Test("between the push and the release, the step waits a bounded number of times for the API to see the tag")
+    func releaseWaitsForThePushedTag() throws {
+        let text = try repositoryText(Self.workflow)
+        let push = try #require(text.range(of: "git push origin \"$TAG\""))
+        let create = try #require(text.range(of: "gh release create"))
+        try #require(push.upperBound <= create.lowerBound)
+        let between = text[push.upperBound..<create.lowerBound]
+
+        for phrase in ["for i in $(seq 1 ", "gh api \"repos/${REPO}/git/refs/tags/${TAG}\"", "&& break", "sleep "] {
+            #expect(between.contains(phrase), "the wait lacks: \(phrase)")
+        }
+    }
+
     @Test("the step that creates the release has the token and the repository in its environment")
     func releaseStepHasItsEnvironment() throws {
         let text = try repositoryText(Self.workflow)
