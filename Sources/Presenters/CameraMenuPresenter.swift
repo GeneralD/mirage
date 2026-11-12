@@ -25,7 +25,7 @@ public final class CameraMenuPresenter: ObservableObject {
     /// Whether the picture is mirrored, as the state says. `setMirrored(_:)` changes it only through the
     /// Interactor, so it stays as it was until that state comes back.
     @Published public private(set) var isMirrored = false
-    /// One line about why the chosen camera cannot be used (`"<name> is not connected"`, `"No camera found"`);
+    /// One line about why the chosen camera cannot be used (`"<name> is not connected"`, `"<name> is suspended"`, `"No camera found"`);
     /// `nil` when it can.
     @Published public private(set) var status: String?
 

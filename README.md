@@ -217,7 +217,10 @@ From the top, the menu holds:
 - *Settings…* (`⌘,`) and *Quit Mirage* (`⌘Q`).
 
 The *Camera* submenu lists the cameras the system offers, the chosen one checked (a line says
-`<name> is not connected` or `No camera found` when the chosen camera cannot be used), then a
+`<name> is not connected`, `<name> is suspended` or `No camera found` when the chosen camera cannot
+be used). When no camera is chosen, or the chosen one is not connected or is suspended (a laptop's
+built-in camera with the lid closed), the app uses a camera that gives frames, a physical camera
+before another app's virtual camera, and keeps your choice for when it comes back. Then comes a
 *Resolution* submenu (`1280 × 720` and the other 16:9 sizes up to 1920 wide that the camera
 supports), a *Frame Rate* submenu (`15 fps`, `24 fps` and `30 fps`, as the camera supports) and a
 *Mirror* check item. The camera, resolution, frame rate and mirror choice are kept across launches,
