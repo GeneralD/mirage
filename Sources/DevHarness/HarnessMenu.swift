@@ -13,7 +13,10 @@ import Views
 /// The main menu is a Quit item under the application menu and an Effects menu: the host's
 /// `EffectMenu`, hosted by an `NSHostingMenu` over the Presenter of the `AppRouter` this owns.
 /// Choosing an effect there is what the host's menu bar does, so the effect switch and the hot
-/// reload can be tried in the harness without the extension. `start()` and `stop()` are the
+/// reload can be tried in the harness without the extension. The live Router has the host's Camera
+/// submenu too: starting it applies the camera choice (the remembered camera, or the one picked when
+/// none is remembered or it cannot give frames) before the first frame matters, as the host's does,
+/// and the submenu changes it. `start()` and `stop()` are the
 /// Router's, called beside the session's as `HostAppDelegate` calls them; this resolves nothing
 /// itself (`scripts/check-dependency-keypaths.sh` denies `App` and `DevHarness` `\.effectInteractor`).
 ///
@@ -39,7 +42,7 @@ final class HarnessMenu {
         withDependencies {
             $0.useDiscardingVirtualCameraSink()
         } operation: {
-            HarnessMenu(router: AppRouter())
+            HarnessMenu(router: AppRouter(showsCameraMenu: true))
         }
     }
 
@@ -70,11 +73,11 @@ final class HarnessMenu {
         router.stop()
     }
 
-    /// The host's `EffectMenu` in an `NSHostingMenu`. `NSHostingMenu` is macOS 14.4+ while the
-    /// package's floor is 14.0: on an older macOS the harness has no Effects menu, and the host's
-    /// `MenuBarExtra` is unaffected.
+    /// The host's `EffectMenu` in an `NSHostingMenu`, with the Camera submenu when the Router has
+    /// one. `NSHostingMenu` is macOS 14.4+ while the package's floor is 14.0: on an older macOS the
+    /// harness has no Effects menu, and the host's `MenuBarExtra` is unaffected.
     static func hostingMenu(for router: AppRouter) -> NSMenu? {
         guard #available(macOS 14.4, *) else { return nil }
-        return NSHostingMenu(rootView: EffectMenu(presenter: router.menuBarPresenter))
+        return NSHostingMenu(rootView: EffectMenu(presenter: router.menuBarPresenter, camera: router.cameraMenuPresenter))
     }
 }

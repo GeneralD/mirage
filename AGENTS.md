@@ -362,10 +362,10 @@ Shared conventions:
   the lifecycle and the view wiring; the session resolves only `HarnessInteractor`,
   which drives `CameraControlUseCase` and `FramePipelineUseCase`. Each layer is
   tested against fakes. `HarnessMenu` owns an `AppRouter`, started beside the
-  session by `HarnessAppDelegate`, and shows the host's `EffectMenu` as the main menu's Effects item
-  (`NSHostingMenu`, macOS 14.4+; `HarnessMenuTests` run it over a fake Interactor);
-  `HarnessLiveWiringTests` builds that menu (`HarnessMenu.live()`) beside the session and drives
-  its Presenter through the real catalog. It logs through `DeveloperLog` / `ErrorLog` like
+  session by `HarnessAppDelegate`, and shows the host's `EffectMenu` as the main menu's Effects item,
+  Camera submenu included (`NSHostingMenu`, macOS 14.4+; `HarnessMenuTests` run it over a fake Interactor);
+  `HarnessLiveWiringTests` builds that menu (`HarnessMenu.live()`) beside the session, checks that
+  starting it applies the camera choice, and drives its Presenter through the real catalog. It logs through `DeveloperLog` / `ErrorLog` like
   every other module, never `print`. `HarnessSession.live()` builds the
   session inside `withDependencies { $0.useDiscardingVirtualCameraSink() }`:
   the host's real graph with one substitution, `DiscardingVirtualCameraSink`
