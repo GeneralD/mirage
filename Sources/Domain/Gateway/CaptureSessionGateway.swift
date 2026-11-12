@@ -21,16 +21,20 @@ public struct CapturedSurface: Sendable {
 /// keeps no record of it.
 public protocol CaptureSessionHandle: Sendable {
     func stop()
+    /// Flips the picture of the running session without restarting it.
+    func setMirrored(_ mirrored: Bool)
 }
 
-/// Thin pass-through to `AVCaptureSession`: configure the default camera for
-/// `descriptor`, deliver each sample buffer's surface to `onFrame` on the
-/// session's own queue, report the end of the session to `onEnd`. Stateless:
+/// Thin pass-through to `AVCaptureSession`: configure the camera `capture`
+/// names for `descriptor` (`CameraCapture.standard` is the default camera at
+/// the 1280x720 preset), deliver each sample buffer's surface to `onFrame` on
+/// the session's own queue, report the end of the session to `onEnd`. Stateless:
 /// the running session lives in the returned handle, so which session is
 /// current is decided one layer up, where it is tested.
 public protocol CaptureSessionGateway: Sendable {
     func start(
         descriptor: SurfaceDescriptor,
+        capture: CameraCapture,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws -> any CaptureSessionHandle
@@ -50,6 +54,7 @@ extension DependencyValues {
 private struct UnimplementedCaptureSessionGateway: CaptureSessionGateway {
     func start(
         descriptor: SurfaceDescriptor,
+        capture: CameraCapture,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws -> any CaptureSessionHandle {

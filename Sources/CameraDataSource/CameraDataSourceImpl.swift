@@ -1,3 +1,4 @@
+import Combine
 import Dependencies
 import Domain
 
@@ -12,6 +13,10 @@ import Domain
 /// before a `stop` (or a restart) never surface afterwards and never occupy a
 /// pool slot. The gateway itself keeps no state: which session is live, and
 /// when its handle is stopped, is decided here.
+///
+/// `configure` names the capture the next session starts with. A live session
+/// on another capture is replaced by a new one on the executor, so the frames
+/// that follow come from the new camera; the replaced session reports no end.
 public final class CameraDataSourceImpl: @unchecked Sendable {
     /// Identity token for one capture session; compared by reference. Keeps the
     /// session's `onEnd` so an explicit `stop` can report `.stopped` to its owner.
@@ -26,14 +31,30 @@ public final class CameraDataSourceImpl: @unchecked Sendable {
         }
     }
 
+    /// What `start` was given, kept so a restart can open the same session again.
+    private struct Launch: Sendable {
+        let descriptor: SurfaceDescriptor
+        let onFrame: @Sendable (IncomingSurface) -> Void
+        let onEnd: @Sendable (CaptureEnd) -> Void
+    }
+
     @Dependency(\.captureSessionGateway) private var captureSessionGateway
     @Dependency(\.frameExecutor) private var frameExecutor
     @Dependency(\.developerLog) private var developerLog
+    @Dependency(\.errorLog) private var errorLog
 
+    // Read from any thread: the capture the next session should start with.
+    private let wanted = CurrentValueSubject<CameraCapture, Never>(.standard)
+    // Read from any thread: the mirror flag the next session should start with (off by default).
+    private let mirrored = CurrentValueSubject<Bool, Never>(false)
     // Executor-confined: every mutation runs on FrameExecutor.
     private var current: Session?
     // Executor-confined: the running gateway session of `current`, once `start` has it.
     private var handle: (any CaptureSessionHandle)?
+    // Executor-confined: what `current` was launched with; nil when nothing is running.
+    private var launch: Launch?
+    // Executor-confined: the capture `current` was opened on.
+    private var startedWith: CameraCapture?
     // Executor-confined: every mutation runs on FrameExecutor.
     private var lastPresentation: HostTimestamp?
 
@@ -52,15 +73,18 @@ extension CameraDataSourceImpl: CameraSource {
             throw CaptureSessionError.configurationFailed("unsupported descriptor \(descriptor.width)x\(descriptor.height)")
         }
         let session = Session(onEnd: onEnd)
+        let launch = Launch(descriptor: descriptor, onFrame: onFrame, onEnd: onEnd)
+        // Read once, here: a `configure` that lands after this read is caught by `adopt`.
+        let capture = wanted.value
         // Queued before the gateway starts, so it runs ahead of the session's first frame.
-        frameExecutor.run { [self] in begin(session) }
+        frameExecutor.run { [self] in
+            begin(session)
+            self.launch = launch
+            startedWith = capture
+        }
         let started: any CaptureSessionHandle
         do {
-            started = try captureSessionGateway.start(
-                descriptor: descriptor,
-                onFrame: { [self] captured in frameExecutor.run { self.deliver(captured, from: session, to: onFrame) } },
-                onEnd: { [self] reason in frameExecutor.run { self.finish(reason, from: session, to: onEnd) } }
-            )
+            started = try open(session, launch: launch, capture: capture)
         } catch {
             // A session that never started has nothing to report: the throw is its outcome.
             frameExecutor.run { [self] in close(session, reporting: false) }
@@ -76,6 +100,20 @@ extension CameraDataSourceImpl: CameraSource {
     public func stop() {
         frameExecutor.run { [self] in close(current, reporting: true) }
     }
+
+    /// Names the capture the next session starts with. A live session on another
+    /// capture is restarted on it, on the executor; the same capture changes nothing.
+    public func configure(_ capture: CameraCapture) {
+        wanted.value = capture
+        frameExecutor.run { [self] in restartIfNeeded() }
+    }
+
+    /// Remembers the mirror flag, and hands it to the running session's handle on the executor.
+    /// With nothing running there is no handle to touch; the next session receives the flag when it opens.
+    public func setMirrored(_ mirrored: Bool) {
+        self.mirrored.value = mirrored
+        frameExecutor.run { [self] in handle?.setMirrored(mirrored) }
+    }
 }
 
 extension CameraDataSourceImpl {
@@ -87,11 +125,50 @@ extension CameraDataSourceImpl {
         lastPresentation = nil
     }
 
-    /// Runs on the executor. Keeps the handle only while its session is still
-    /// current; a session replaced or stopped before its start returned is ended here.
+    /// Starts the gateway session for `session` on `capture`. `start` calls it on the
+    /// caller's thread; a restart calls it on the executor.
+    private func open(_ session: Session, launch: Launch, capture: CameraCapture) throws -> any CaptureSessionHandle {
+        try captureSessionGateway.start(
+            descriptor: launch.descriptor,
+            capture: capture,
+            onFrame: { [self] captured in frameExecutor.run { self.deliver(captured, from: session, to: launch.onFrame) } },
+            onEnd: { [self] reason in frameExecutor.run { self.finish(reason, from: session, to: launch.onEnd) } }
+        )
+    }
+
+    /// Runs on the executor. Restarts the live session when the wanted capture differs
+    /// from the one it opened on, or when it has already ended; otherwise does nothing.
+    private func restartIfNeeded() {
+        let capture = wanted.value
+        guard let launch, startedWith != capture || current?.hasEnded == true else { return }
+        restart(launch, with: capture)
+    }
+
+    /// Runs on the executor. Retires the running session and opens a new one on `capture`.
+    /// A failed open ends the new session with `.runtimeError`; the next `configure` retries.
+    private func restart(_ launch: Launch, with capture: CameraCapture) {
+        let session = Session(onEnd: launch.onEnd)
+        begin(session)
+        startedWith = capture
+        developerLog.record(.camera, "restarting the capture session")
+        do {
+            let started = try open(session, launch: launch, capture: capture)
+            adopt(started, for: session)
+        } catch {
+            errorLog.record(.camera, "capture restart failed: \(error)")
+            finish(.runtimeError("\(error)"), from: session, to: launch.onEnd)
+        }
+    }
+
+    /// Runs on the executor. Keeps the handle only while its session is still current;
+    /// a session replaced or stopped before its start returned is ended here. A `configure`
+    /// that landed while the gateway was starting found no launch yet, so it is compared now.
     private func adopt(_ started: any CaptureSessionHandle, for session: Session) {
         guard session === current else { return started.stop() }
         handle = started
+        // Sent even when off: a new handle starts with the flag the user last set, whatever it is.
+        started.setMirrored(mirrored.value)
+        if startedWith != wanted.value { restartIfNeeded() }
     }
 
     /// Runs on the executor. Retires `session` (or whatever is current when `nil`);
@@ -102,6 +179,8 @@ extension CameraDataSourceImpl {
         retireHandle()
         current = nil
         lastPresentation = nil
+        launch = nil
+        startedWith = nil
         guard reporting, !session.hasEnded else { return }
         session.onEnd(.stopped)
     }

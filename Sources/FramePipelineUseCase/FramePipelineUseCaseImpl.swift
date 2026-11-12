@@ -9,7 +9,8 @@ import Domain
 /// two are decoupled by a one-element slot where the newest frame wins: a frame
 /// that was never taken is released the moment a newer one arrives, and nothing
 /// is ever queued. A tick hands the frame it takes to the effect runtime off the
-/// executor, at most one pass at a time; a tick that finds a pass still running
+/// executor, at most one pass at a time; while bypassed (`setBypass`) a tick sends
+/// its frame unchanged and starts no pass. A tick that finds a pass still running
 /// drops its frame as `.inFlightCapReached`, so every frame a tick takes is
 /// sent, counted as a drop, or abandoned by `stop`. The pass's answer comes back
 /// on the executor: on success the rendered output goes to the sink and then to
@@ -65,10 +66,16 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
     // and the index the next pass of this run hands the effect.
     private var inFlight: EffectPass?
     private var frameIndex: UInt32 = 0
+    // Executor-confined, the bypass `setBypass` sets: while true, a tick hands its frame on
+    // unchanged and starts no pass. Neither `start` nor `stop` resets it.
+    private var bypassed = false
     // Executor-confined, the preview: frames handed to it whose completion has not come
     // back onto the executor yet. Each keeps its lease until then, and `stop`'s pool
     // reset waits for them as it waits for a pass in flight.
     private var presenting = 0
+    // Executor-confined, the preview's mode `setPreviewMode` sets: `split` hands a successful
+    // pass's input to the preview as the frame's original. Neither `start` nor `stop` resets it.
+    private var previewMode: PreviewMode = .after
     /// How many times `stop` was called. `stop` bumps it first thing, from the caller's
     /// context (the subject synchronizes its `value`; `stop` is its only writer), and
     /// the executor compares a pass's epoch with it before sending anything. A pass's
@@ -120,6 +127,13 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
         try previewSink.attach(target)
     }
 
+    /// A pass-through of `PreviewSink.detach`, as `attachPreview` is of `attach`: which view
+    /// is attached is the preview's state, so this touches none of the executor-confined
+    /// state above and needs no main thread.
+    public func detachPreview(_ target: any PreviewTargetHandle) {
+        previewSink.detach(target)
+    }
+
     public func stop() {
         // First, from the caller's context: every pass of the run this ends is abandoned
         // now — one already started, or one a tick still under way starts after this
@@ -141,6 +155,24 @@ public final class FramePipelineUseCaseImpl: FramePipelineUseCase, @unchecked Se
             releaseLatest()
             resetPoolWhenIdle()
         }
+    }
+
+    /// The flag changes on the executor, so a tick that is already running sees the old
+    /// value and the next tick the new one. A value equal to the current one is no change
+    /// and logs nothing.
+    public func setBypass(_ enabled: Bool) {
+        frameExecutor.run { [self] in
+            guard bypassed != enabled else { return }
+            bypassed = enabled
+            developerLog.record(.pipeline, enabled ? "bypass on" : "bypass off")
+        }
+    }
+
+    /// The mode changes on the executor, in queue order: an answer queued before this call is
+    /// finished under the old mode, one queued after it under the new. The mode decides only
+    /// what the preview is handed; the sink and the pool see the same frames either way.
+    public func setPreviewMode(_ mode: PreviewMode) {
+        frameExecutor.run { [self] in previewMode = mode }
     }
 }
 
@@ -164,10 +196,12 @@ extension FramePipelineUseCaseImpl {
 
     /// Takes the latest frame into the effect stage. A pass still running means the
     /// in-flight cap is reached: the frame drops here rather than waiting behind
-    /// the GPU, and the next tick takes whatever is newest by then.
+    /// the GPU, and the next tick takes whatever is newest by then. While bypassed, the
+    /// frame is delivered unchanged instead of starting a pass.
     private func flushLatest(run: Int) {
         guard let frame = takeLatest() else { return }
         guard inFlight == nil else { return drop(frame, because: .inFlightCapReached) }
+        guard !bypassed else { return deliver(frame) }
         startEffect(on: frame, run: run)
     }
 
@@ -175,31 +209,33 @@ extension FramePipelineUseCaseImpl {
     /// done with it, sent or not. The send is over when `send` returns, so the
     /// preview's completion is the later of the two and ends the lease. The preview
     /// shows the frame whether or not the extension took it: it is the host's own
-    /// view, not a mirror of the link.
-    private func deliver(_ frame: FrameRef) {
+    /// view, not a mirror of the link. `original` is the input the frame was made from,
+    /// when the preview is to show it too; the sink never sees it.
+    private func deliver(_ frame: FrameRef, original: FrameRef? = nil) {
         let outcome = virtualCameraSink.send(frame)
         update { $0.note(outcome) }
         if outcome.wasSent { lossStreak = 0 }
-        present(frame)
+        present(frame, original: original)
     }
 
-    /// The preview borrows the frame until its completion, which may run on any
-    /// thread and at any point — inside `present` itself (the in-memory double, before
-    /// an attach) or in a later job on the executor (`PreviewDataSource`) — so it hops
-    /// onto the executor before the lease ends.
-    private func present(_ frame: FrameRef) {
+    /// The preview borrows the frame, and the original when there is one, until its
+    /// completion, which may run on any thread and at any point — inside `present` itself
+    /// (the in-memory double, before an attach) or in a later job on the executor
+    /// (`PreviewDataSource`) — so it hops onto the executor before the leases end.
+    private func present(_ frame: FrameRef, original: FrameRef?) {
         presenting += 1
-        previewSink.present(frame) { [weak self] in
-            self?.frameExecutor.run { [weak self] in self?.presentationEnded(frame) }
+        previewSink.present(frame, original: original) { [weak self] in
+            self?.frameExecutor.run { [weak self] in self?.presentationEnded(frame, original: original) }
         }
     }
 
-    /// The preview is done with a frame: its lease ends. A pool reset `stop` deferred
-    /// for it runs now if nothing else is still out; after a restart the pool belongs
-    /// to the new run and is left alone.
-    private func presentationEnded(_ frame: FrameRef) {
+    /// The preview is done with a frame: its lease ends, and the original's with it. A pool
+    /// reset `stop` deferred for it runs now if nothing else is still out; after a restart
+    /// the pool belongs to the new run and is left alone.
+    private func presentationEnded(_ frame: FrameRef, original: FrameRef?) {
         presenting -= 1
         surfaceRepository.release(frame.token)
+        if let original { surfaceRepository.release(original.token) }
         guard phase == .stopped else { return }
         resetPoolWhenIdle()
     }
@@ -283,8 +319,11 @@ extension FramePipelineUseCaseImpl {
         update { $0.noteEffect(result) }
         switch result {
         case .success:
-            surfaceRepository.release(pass.input.token)
-            deliver(pass.output)
+            guard previewMode == .split else {
+                surfaceRepository.release(pass.input.token)
+                return deliver(pass.output)
+            }
+            deliver(pass.output, original: pass.input)
         case .failure:
             surfaceRepository.release(pass.output.token)
             deliver(pass.input)

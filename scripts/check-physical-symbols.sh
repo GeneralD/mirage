@@ -17,7 +17,7 @@ for tool in sg jq; do
 done
 
 # Modules allowed to touch the physical world directly.
-LIVE_MODULES="AVFoundationGateway MetalGateway MetalKitPreviewGateway IOSurfaceGateway MachGateway SystemExtensionGateway CMIOExtensionGateway FileSystemGateway FileWatchGateway UserDefaultsGateway WorkspaceGateway DispatchExecutorGateway UnifiedLog HostTime RandomSource AppDirectories"
+LIVE_MODULES="AVFoundationGateway MetalGateway MetalKitPreviewGateway IOSurfaceGateway MachGateway SystemExtensionGateway CMIOExtensionGateway FileSystemGateway FileWatchGateway UserDefaultsGateway WorkspaceGateway DispatchExecutorGateway UnifiedLog HostTime RandomSource AppDirectories HostEnvironment HotkeyGateway LoginItemGateway LogStoreGateway ImageIOGateway"
 
 # ast-grep patterns (Swift). One per line: <pattern>|<label>
 # shellcheck disable=SC2016
@@ -41,7 +41,7 @@ $X.shuffled()|.shuffled() (use RandomSource)
 SystemRandomNumberGenerator()|SystemRandomNumberGenerator (use RandomSource)
 FileManager.default|FileManager.default (use FileSystemGateway)
 ProcessInfo.processInfo|ProcessInfo.processInfo (inject what you need)
-Bundle.main|Bundle.main (use BundleInfoProvider)
+Bundle.main|Bundle.main (use HostEnvironmentProvider)
 NotificationCenter.default|NotificationCenter.default (expose events through a Gateway)
 setenv($$$)|setenv (inject paths)
 getenv($$$)|getenv (inject paths)

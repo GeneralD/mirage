@@ -50,6 +50,31 @@ public protocol EffectCatalogUseCase: Sendable {
     ///   or a new `run()`.
     func select(_ id: EffectID) async -> EffectSelectionOutcome
 
+    /// Chooses the ready effect after (or before) the chosen one in catalog order, wrapping around, and answers as
+    /// `select` does. An effect the health policy disabled is skipped like a broken one. `nil` when no other such
+    /// effect exists: nothing changes.
+    func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome?
+
+    /// Lifts the switch-off of `id`, a package effect that health switched off, and chooses it again. The record is
+    /// forgotten and the settings written without it before the choice is made, so the choice runs instead of being
+    /// refused; its passes are counted afresh, as for any choice. An effect with no record is only chosen: nothing is written.
+    ///
+    /// The answer is `select`'s, except that a `run()` that begins meanwhile answers `.unavailable(nil)`.
+    func reenable(_ id: EffectID) async -> EffectSelectionOutcome
+
+    /// Sets the parameter `id` of the chosen effect to `value`. The value is clamped and snapped by
+    /// its declaration, the state shows the result, and the runtime is handed the new block in the
+    /// same step. It prepares nothing, and a value the parameter already has changes nothing.
+    ///
+    /// Ignored, with a developer log line, while no effect is chosen (no run yet, or a choice still
+    /// being made). Rejected the same way, and never handed to the runtime, when `id` is not a
+    /// parameter the chosen effect declares or `value` is not of its kind.
+    func setParameter(_ id: String, to value: EffectParameterValue) async
+
+    /// Puts every parameter of the chosen effect back to its default, under the rules of
+    /// `setParameter(_:to:)`: nothing changes when they already are the defaults.
+    func resetParameters() async
+
     /// Shows the effects folder to the user.
     func openEffectsFolder()
 }
@@ -78,6 +103,24 @@ private struct UnimplementedEffectCatalogUseCase: EffectCatalogUseCase {
     func select(_ id: EffectID) async -> EffectSelectionOutcome {
         reportIssue("EffectCatalogUseCase.select not implemented")
         return .unavailable(nil)
+    }
+
+    func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome? {
+        reportIssue("EffectCatalogUseCase.selectAdjacent not implemented")
+        return nil
+    }
+
+    func reenable(_ id: EffectID) async -> EffectSelectionOutcome {
+        reportIssue("EffectCatalogUseCase.reenable not implemented")
+        return .unavailable(nil)
+    }
+
+    func setParameter(_ id: String, to value: EffectParameterValue) async {
+        reportIssue("EffectCatalogUseCase.setParameter not implemented")
+    }
+
+    func resetParameters() async {
+        reportIssue("EffectCatalogUseCase.resetParameters not implemented")
     }
 
     func openEffectsFolder() {

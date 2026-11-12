@@ -22,10 +22,19 @@ private struct ModelPass {
 }
 
 /// Executor work the model orders; a preview completion's hop needs no slot here, since
-/// the next drain runs it whatever it is queued behind.
+/// the next drain runs it whatever it is queued behind. A mode change is queued too: an
+/// answer queued before it is finished under the mode in force before it.
 private enum Queued: Equatable {
     case answer
     case stop
+    case mode(Bool)
+}
+
+/// A frame on the preview: the run that showed it, and the leases it holds (its output,
+/// and its input too when the preview was given one).
+private struct Showing {
+    let run: Int
+    let leases: Int
 }
 
 /// What the test expects the subject to have done, tracked independently of it.
@@ -53,11 +62,17 @@ private struct PreviewModel {
     var applied = 0
     var failed = 0
     /// Frames on the preview, in presentation order (the fake's `pending` order), by the
-    /// run that showed them; each holds its lease.
-    var showing: [Int] = []
+    /// run that showed them and the leases each holds.
+    var showing: [Showing] = []
     /// Completions the test gave whose hop onto the executor has not run yet; their
-    /// leases are still live until the next drain.
+    /// leases are still live until the next drain. Counted in leases, as `showing` is.
     var completing = 0
+    /// The original the preview was handed for each frame, in presentation order, as the model expects it.
+    var originals: [FrameRef?] = []
+    /// The mode the test last asked for: `true` for `split`.
+    var splitWanted = false
+    /// The mode in force for the answers the drain reaches next, as the queue replays it.
+    var splitMode = false
 
     // What the run went through, for the coverage test.
     var refusedEmits = 0
@@ -71,8 +86,12 @@ private struct PreviewModel {
     var refusedShownAtOnce = 0
     var refusedHeld = 0
     var refusedPassedThrough = 0
+    var splitShown = 0
+    var splitHeld = 0
+    var splitHeldAcrossSwitch = 0
+    var modeToggles = 0
 
-    var live: Int { (latest == nil ? 0 : 1) + (pass == nil ? 0 : 2) + showing.count + completing }
+    var live: Int { (latest == nil ? 0 : 1) + (pass == nil ? 0 : 2) + showing.reduce(0) { $0 + $1.leases } + completing }
     var stopQueued: Bool { queue.contains(.stop) }
 }
 
@@ -92,6 +111,10 @@ private struct PreviewCoverage {
     var refusedShownAtOnce = 0
     var refusedHeld = 0
     var refusedPassedThrough = 0
+    var splitShown = 0
+    var splitHeld = 0
+    var splitHeldAcrossSwitch = 0
+    var modeToggles = 0
 
     mutating func add(_ model: PreviewModel) {
         applied += model.applied
@@ -109,6 +132,10 @@ private struct PreviewCoverage {
         refusedShownAtOnce += model.refusedShownAtOnce
         refusedHeld += model.refusedHeld
         refusedPassedThrough += model.refusedPassedThrough
+        splitShown += model.splitShown
+        splitHeld += model.splitHeld
+        splitHeldAcrossSwitch += model.splitHeldAcrossSwitch
+        modeToggles += model.modeToggles
     }
 }
 
@@ -144,6 +171,10 @@ struct FramePipelinePreviewPropertyTests {
         #expect(total.refusedShownAtOnce > 0, "no seed ever showed a refused frame before the preview was attached")
         #expect(total.refusedHeld > 0, "no seed ever showed a refused frame on an attached preview")
         #expect(total.refusedPassedThrough > 0, "no seed ever had the sink refuse a frame that had passed through")
+        #expect(total.modeToggles > 0, "no seed ever changed the preview mode")
+        #expect(total.splitShown > 0, "no seed ever handed the preview an original")
+        #expect(total.splitHeld > 0, "no seed ever held an original on an attached preview")
+        #expect(total.splitHeldAcrossSwitch > 0, "no seed ever switched back to after with an original still on the preview")
     }
 
     private func run(seed: UInt64) async throws -> PreviewModel {
@@ -157,7 +188,7 @@ struct FramePipelinePreviewPropertyTests {
 
         for _ in 0..<80 {
             time += UInt64.random(in: 1...40_000_000, using: &generator)
-            try await step(Int.random(in: 0..<52, using: &generator), at: time, model: &model, rig: rig, generator: &generator)
+            try await step(Int.random(in: 0..<56, using: &generator), at: time, model: &model, rig: rig, generator: &generator)
             #expect(rig.surfaces.liveCount == model.live, "seed \(seed): the pipeline holds exactly the slot, the pass and the frames on the preview")
             #expect(rig.surfaces.refusedReleases == 0, "seed \(seed): no lease released twice")
             #expect(rig.preview.pending.count == model.showing.count, "seed \(seed)")
@@ -185,6 +216,9 @@ struct FramePipelinePreviewPropertyTests {
         #expect(
             rig.preview.presented.values.map(\.frame) == model.shown,
             "seed \(seed): every frame handed on is shown once, in the same order — the ones the link refused too")
+        #expect(
+            rig.preview.presented.values.map(\.original) == model.originals,
+            "seed \(seed): the preview is handed the input as the original exactly when a split pass succeeded")
         let times = rig.sink.sent.values.map(\.presentationTime)
         #expect(zip(times, times.dropFirst()).allSatisfy { $0 < $1 }, "seed \(seed): PTS strictly increasing")
         #expect(stats.framesReceived == model.emitted, "seed \(seed)")
@@ -204,8 +238,9 @@ struct FramePipelinePreviewPropertyTests {
         return model
     }
 
-    /// `roll` in 0..<52 picks the step; stop (48) is rare so most runs do real work
-    /// first, and 49..<52 flip whether the sink refuses sends. A preview completion is
+    /// `roll` in 0..<56 picks the step; stop (48) is rare so most runs do real work
+    /// first, 49..<52 flip whether the sink refuses sends, and 52..<56 flip the preview
+    /// mode between `after` and `split`. A preview completion is
     /// rarer than a send, so frames pile up on the preview and the pool fills. While
     /// stopped (and the stop has run), the emit and tick rolls restart instead, and an
     /// abandoned pass is answered by only a few of the answer rolls.
@@ -250,6 +285,13 @@ struct FramePipelinePreviewPropertyTests {
             // Takes effect at the next send, which is the next drain that runs an answer.
             model.refusing.toggle()
             rig.sink.dropSends(with: model.refusing ? .queueFull : nil)
+        case 52..<56:
+            // Queued in step with the answers, so each answer runs under the mode in force when it was queued.
+            model.splitWanted.toggle()
+            if !model.splitWanted, model.showing.contains(where: { $0.leases == 2 }) { model.splitHeldAcrossSwitch += 1 }
+            model.queue.append(.mode(model.splitWanted))
+            rig.subject.setPreviewMode(model.splitWanted ? .split : .after)
+            model.modeToggles += 1
         default:
             return
         }
@@ -310,8 +352,9 @@ struct FramePipelinePreviewPropertyTests {
         let index = Int.random(in: 0..<pending.count, using: &generator)
         #expect(rig.preview.complete(pending[index]))
         if index > 0 { model.completedOutOfOrder += 1 }
-        if model.showing.remove(at: index) < model.run { model.completionsAfterRestart += 1 }
-        model.completing += 1
+        let ended = model.showing.remove(at: index)
+        if ended.run < model.run { model.completionsAfterRestart += 1 }
+        model.completing += ended.leases
     }
 
     private func abandon(_ model: inout PreviewModel) {
@@ -329,6 +372,7 @@ struct FramePipelinePreviewPropertyTests {
             switch queued {
             case .answer: finish(&model)
             case .stop: model.latest = nil
+            case .mode(let split): model.splitMode = split
             }
         }
         model.queue = []
@@ -346,6 +390,11 @@ struct FramePipelinePreviewPropertyTests {
         // The send comes first and the preview shows the frame whatever its outcome: a refusal
         // is a counted drop, not a frame the pipeline stops owning.
         model.shown.append(sends)
+        // Only a successful pass in split mode hands the preview its input as the original.
+        var original: FrameRef?
+        if case .success = result, model.splitMode { original = pass.input }
+        model.originals.append(original)
+        if original != nil { model.splitShown += 1 }
         if model.refusing {
             model.sinkDrops += 1
             model.refusedSends += 1
@@ -359,8 +408,9 @@ struct FramePipelinePreviewPropertyTests {
             if model.refusing { model.refusedShownAtOnce += 1 }
             return
         }
-        model.showing.append(model.run)
+        model.showing.append(Showing(run: model.run, leases: original == nil ? 1 : 2))
         model.held += 1
         if model.refusing { model.refusedHeld += 1 }
+        if original != nil { model.splitHeld += 1 }
     }
 }

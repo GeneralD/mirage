@@ -9,6 +9,15 @@ import Dependencies
 public protocol BundledEffects: Sendable {
     /// The effect `EffectRuntimeRepository` runs while no other one has been prepared.
     var defaultEffect: EffectSource { get }
+
+    /// The effects that ship in the app, in the order the menu shows them. The first one is the
+    /// same `EffectSource` as `defaultEffect`.
+    var effects: [EffectSource] { get }
+}
+
+extension BundledEffects {
+    /// A port that ships only its `defaultEffect` lists that one effect.
+    public var effects: [EffectSource] { [defaultEffect] }
 }
 
 public enum BundledEffectsKey: TestDependencyKey {

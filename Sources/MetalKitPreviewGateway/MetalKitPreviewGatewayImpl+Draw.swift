@@ -11,19 +11,21 @@ extension MetalKitPreviewGatewayImpl {
     /// are resolved before anything is encoded; no drawable leaves the command
     /// buffer empty, and it still commits so `completion` still runs once.
     public func draw(
-        _ texture: any TextureHandle, with kernel: any LibraryHandle, into layer: any PreviewLayerHandle,
-        on context: any GPUContextHandle, completion: @escaping @Sendable (GPUCompletion) -> Void
+        _ texture: any TextureHandle, original: any TextureHandle, with kernel: any LibraryHandle,
+        into layer: any PreviewLayerHandle, on context: any GPUContextHandle,
+        completion: @escaping @Sendable (GPUCompletion) -> Void
     ) throws {
         let queue = try context.commandQueue()
         let pipeline = try kernel.pipelineState()
         let frame = try texture.metalTexture()
+        let originalTexture = try original.metalTexture()
         let metalLayer = try layer.metalLayer()
         let commandBuffer = try queue.makeCommandBuffer().orThrow(GPUError.commandBufferUnavailable)
         try metalLayer.nextDrawable().map { drawable in
             let grid = DispatchGrid.covering(width: drawable.texture.width, height: drawable.texture.height)
             let encoder = try commandBuffer.makeComputeCommandEncoder().orThrow(GPUError.encoderUnavailable)
             encoder.setComputePipelineState(pipeline)
-            encoder.setTextures([frame, drawable.texture], range: 0..<2)
+            encoder.setTextures([frame, drawable.texture, originalTexture], range: 0..<3)
             encoder.dispatchThreadgroups(grid.threadgroups.metalSize(), threadsPerThreadgroup: grid.threadsPerThreadgroup.metalSize())
             encoder.endEncoding()
             commandBuffer.present(drawable)

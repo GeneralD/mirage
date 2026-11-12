@@ -38,7 +38,7 @@ struct PreviewDataSourceTests {
         rig.executor.drain()
 
         let call = try #require(rig.compiler.calls.values.first)
-        #expect(rig.compiler.calls.count == 1)
+        #expect(rig.compiler.calls.count == 2)
         #expect(call.source == PreviewKernel.source)
         #expect(call.options == PreviewKernel.options)
         #expect(!call.onMainThread)

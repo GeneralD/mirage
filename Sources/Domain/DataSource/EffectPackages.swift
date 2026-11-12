@@ -17,6 +17,20 @@ public protocol EffectPackages: Sendable {
     /// ready package comes without its thumbnail, which travels with `packages()`.
     func package(_ id: EffectID) async -> EffectPackageListing?
 
+    /// One package read afresh from `path`, wherever it is: a directory outside the effects
+    /// folder is read where it is, and neither the folder nor the directory is made or opened.
+    /// `nil` when `path` is not a directory, or its last component does not name a package
+    /// (empty, or `/` alone). The id is the last component without its `.lens` (`EffectID(origin: .package, key:)`).
+    /// A trailing `/` is ignored. A ready package comes without its thumbnail, as in `package(_:)`.
+    func package(atPath path: String) async -> EffectPackageListing?
+
+    /// Writes a new `.lens` package named `name` into `folder`, making the folder when it is not there:
+    /// `effect.metal` first, then `manifest.json`, both of `EffectScaffoldTemplate`. Answers the package's
+    /// directory path. Nothing is written for a name the template refuses (`.invalidName`), or over a
+    /// directory of that name that is there already (`.alreadyExists`, its content left alone); a write
+    /// that fails is `.unwritable` at the path it failed on, and the files after it are not written.
+    func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem>
+
     /// Shows the effects folder to the user (Finder), making it first when it is not there.
     func openFolder()
 }
@@ -41,6 +55,16 @@ private struct UnimplementedEffectPackages: EffectPackages {
     func package(_ id: EffectID) async -> EffectPackageListing? {
         reportIssue("EffectPackages.package not implemented")
         return nil
+    }
+
+    func package(atPath path: String) async -> EffectPackageListing? {
+        reportIssue("EffectPackages.package(atPath:) not implemented")
+        return nil
+    }
+
+    func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem> {
+        reportIssue("EffectPackages.scaffold not implemented")
+        return .failure(.unwritable(path: folder))
     }
 
     func openFolder() {

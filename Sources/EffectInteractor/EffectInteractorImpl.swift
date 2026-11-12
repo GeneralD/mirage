@@ -18,18 +18,30 @@ import Domain
 /// `CurrentValueSubject` underneath: it holds nothing before the first `start()`, and
 /// after that the latest state, which a subscriber that arrives later still receives first.
 ///
-/// `select(_:)` does not wait for the answer. The outcome reaches the menu through
+/// `select(_:)` and `reenable(_:)` do not wait for the answer. The outcome reaches the menu through
 /// `state`; the Interactor adds one log line, to `DeveloperLog` when the effect is
-/// running and to `ErrorLog` when it is not. It is not one of the queued commands, nor does it
+/// running and to `ErrorLog` when it is not. They are not among the queued commands, nor does either
 /// wait for an earlier `select`: each call is its own task, because the runtime lets a newer
 /// preparation overtake a slow compile (newest wins) and a queue here would hold the newer
 /// choice back behind the older one's compile. The price is that two calls made in the same
 /// instant may reach the UseCase in either order, which a person choosing from a menu does not
 /// produce.
+///
+/// `setParameter(_:to:)` and `resetParameters()` have a queue of their own, which neither waits
+/// for nor holds back the run commands or a `select`. A slider makes many calls a second, so they
+/// are not a `Task` each as `select` is: one task (`applyParameters`) carries them out one at a
+/// time, in the order they were made, which keeps a later slider value from overtaking an earlier
+/// one. What a call made while no effect is chosen, or while the catalog is stopped, does is the
+/// UseCase's to decide.
 public final class EffectInteractorImpl: Sendable {
     private enum Command: Sendable {
         case start
         case stop
+    }
+
+    private enum ParameterCommand: Sendable {
+        case set(String, EffectParameterValue)
+        case reset
     }
 
     private let catalog: any EffectCatalogUseCase
@@ -37,6 +49,7 @@ public final class EffectInteractorImpl: Sendable {
     private let developerLog: any DeveloperLog
     private let relay: StateRelay
     private let commands: AsyncStream<Command>.Continuation
+    private let parameterCommands: AsyncStream<ParameterCommand>.Continuation
 
     public init() {
         @Dependency(\.effectCatalogUseCase) var catalog
@@ -44,16 +57,23 @@ public final class EffectInteractorImpl: Sendable {
         @Dependency(\.developerLog) var developerLog
         let relay = StateRelay()
         let (stream, commands) = AsyncStream<Command>.makeStream()
+        let (parameterStream, parameterCommands) = AsyncStream<ParameterCommand>.makeStream()
         self.catalog = catalog
         self.errorLog = errorLog
         self.developerLog = developerLog
         self.relay = relay
         self.commands = commands
-        Task { await Self.supervise(stream, catalog: catalog, relay: relay) }
+        self.parameterCommands = parameterCommands
+        // One immutable copy for both tasks: each closure captures a `let` (a Sendable existential),
+        // not the mutable `@Dependency` binding, which two concurrent tasks may not share.
+        let useCase: any EffectCatalogUseCase = catalog
+        Task { await Self.supervise(stream, catalog: useCase, relay: relay) }
+        Task { await Self.applyParameters(parameterStream, catalog: useCase) }
     }
 
     deinit {
         commands.finish()
+        parameterCommands.finish()
     }
 }
 
@@ -72,8 +92,24 @@ extension EffectInteractorImpl: EffectInteractor {
         let (catalog, errorLog, developerLog) = (catalog, errorLog, developerLog)
         Task {
             let outcome = await catalog.select(id)
-            Self.record(outcome, of: id, errorLog: errorLog, developerLog: developerLog)
+            Self.record(outcome, of: id, verb: "select", errorLog: errorLog, developerLog: developerLog)
         }
+    }
+
+    public func reenable(_ id: EffectID) {
+        let (catalog, errorLog, developerLog) = (catalog, errorLog, developerLog)
+        Task {
+            let outcome = await catalog.reenable(id)
+            Self.record(outcome, of: id, verb: "reenable", errorLog: errorLog, developerLog: developerLog)
+        }
+    }
+
+    public func setParameter(_ id: String, to value: EffectParameterValue) {
+        parameterCommands.yield(.set(id, value))
+    }
+
+    public func resetParameters() {
+        parameterCommands.yield(.reset)
     }
 
     public func openEffectsFolder() {
@@ -107,23 +143,43 @@ extension EffectInteractorImpl {
         }
     }
 
+    /// Carries out the parameter calls one at a time, in the order they were queued, until the
+    /// Interactor is gone. It holds the catalog and the stream, never the Interactor, so that
+    /// `deinit` is what ends it.
+    private static func applyParameters(_ commands: AsyncStream<ParameterCommand>, catalog: any EffectCatalogUseCase) async {
+        for await command in commands {
+            switch command {
+            case .set(let id, let value):
+                await catalog.setParameter(id, to: value)
+            case .reset:
+                await catalog.resetParameters()
+            }
+        }
+    }
+
     /// Cancels `run` and waits for it, so nothing it was forwarding can land after what comes next.
     private static func end(_ run: Task<Void, Never>?) async {
         run?.cancel()
         await run?.value
     }
 
-    private static func record(_ outcome: EffectSelectionOutcome, of id: EffectID, errorLog: any ErrorLog, developerLog: any DeveloperLog) {
+    private static func record(
+        _ outcome: EffectSelectionOutcome,
+        of id: EffectID,
+        verb: String,
+        errorLog: any ErrorLog,
+        developerLog: any DeveloperLog
+    ) {
         let effect = "\(id.origin.rawValue)/\(id.key)"
         switch outcome {
         case .prepared:
-            developerLog.record(.effect, "select \(effect): prepared")
+            developerLog.record(.effect, "\(verb) \(effect): prepared")
         case .failed(let failure):
-            errorLog.record(.effect, "select \(effect): failed (\(failure))")
+            errorLog.record(.effect, "\(verb) \(effect): failed (\(failure))")
         case .unavailable(let problem?):
-            errorLog.record(.effect, "select \(effect): unavailable (\(problem))")
+            errorLog.record(.effect, "\(verb) \(effect): unavailable (\(problem))")
         case .unavailable(nil):
-            errorLog.record(.effect, "select \(effect): unavailable (not in the catalog)")
+            errorLog.record(.effect, "\(verb) \(effect): unavailable (not in the catalog)")
         }
     }
 }

@@ -21,6 +21,9 @@ struct MenuBarPresenterTests {
     private let alpha = EffectCatalogEntry.fixture(.package("alpha"), author: "Ada")
     private let beta = EffectCatalogEntry.fixture(.package("Beta"), availability: .broken(.manifestInvalid(message: "no name")))
 
+    /// The one parameter of a chosen effect that declares any, with the value it has.
+    private let strengthParameter = EffectParameterState(spec: .strength, value: .float(0.25))
+
     // MARK: - Items
 
     @Test("nothing is shown, and nothing is asked of the Interactor, until the Presenter starts")
@@ -170,6 +173,40 @@ struct MenuBarPresenterTests {
         #expect(rig.interactor.selections.values == [.package("glitch"), .package("old")])
     }
 
+    @Test("reenable passes each id to the Interactor's reenables in call order, whichever row it is and whether or not the row is enabled")
+    func reenableGoesToTheInteractor() async {
+        let rig = PresenterRig(state: .fixture([chromatic, glitch, broken]))
+        await rig.start()
+
+        rig.presenter.reenable(.package("old"))
+        rig.presenter.reenable(.package("glitch"))
+
+        #expect(rig.interactor.reenables.values == [.package("old"), .package("glitch")])
+    }
+
+    @Test("reenable is not a selection: it selects nothing, starts and stops nothing, and opens no folder")
+    func reenableTouchesNoOtherCommand() async {
+        let rig = PresenterRig(state: .fixture([chromatic, glitch, broken]))
+        await rig.start()
+
+        rig.presenter.reenable(.package("old"))
+
+        #expect(rig.interactor.selections.values.isEmpty)
+        #expect(rig.interactor.inner.starts.count == 1)
+        #expect(rig.interactor.inner.stops.count == 0)
+        #expect(rig.interactor.folderOpens.count == 0)
+    }
+
+    @Test("reenable reaches the Interactor before the Presenter starts, as select does")
+    func reenableWithoutStart() {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+
+        rig.presenter.reenable(.package("glitch"))
+
+        #expect(rig.interactor.reenables.values == [.package("glitch")])
+        #expect(rig.interactor.starts.count == 0)
+    }
+
     @Test("openEffectsFolder goes to the Interactor")
     func openEffectsFolderGoesToTheInteractor() {
         let rig = PresenterRig(state: .fixture([chromatic]))
@@ -194,6 +231,22 @@ struct MenuBarPresenterTests {
         #expect(rig.interactor.selections.values.isEmpty)
     }
 
+    @Test("Settings… goes to the router, asks nothing of the Interactor, and does nothing without a router")
+    func openSettingsGoesToTheRouter() {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+        rig.presenter.openSettings()
+
+        let router = RecordingRouter()
+        rig.presenter.router = router
+        rig.presenter.openSettings()
+        rig.presenter.openSettings()
+
+        #expect(router.settingsOpens == 2)
+        #expect(router.pickerOpens == 0)
+        #expect(rig.interactor.starts.count == 0)
+        #expect(rig.interactor.selections.values.isEmpty)
+    }
+
     @Test("the Presenter does not keep its router alive: the Router owns the Presenter")
     func routerIsHeldWeakly() {
         let rig = PresenterRig(state: .fixture([chromatic]))
@@ -203,6 +256,89 @@ struct MenuBarPresenterTests {
         router = nil
 
         #expect(rig.presenter.router == nil)
+    }
+
+    // MARK: - Adjust Effect
+
+    @Test("Adjust Effect… is not offered until the Presenter starts, even for an effect that has parameters")
+    func adjustEffectQuietBeforeStart() {
+        let rig = PresenterRig(state: .fixture([chromatic], parameters: [strengthParameter]))
+
+        #expect(rig.presenter.canAdjustEffect == false)
+    }
+
+    @Test("Adjust Effect… is not offered for an effect with no parameters, even after the Presenter starts")
+    func adjustEffectQuietWithoutParameters() async {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+
+        await rig.start()
+
+        #expect(rig.presenter.canAdjustEffect == false)
+    }
+
+    @Test("the Adjust Effect… item is titled Adjust Effect…")
+    func adjustEffectTitleIsFixed() {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+
+        #expect(rig.presenter.adjustEffectTitle == "Adjust Effect…")
+    }
+
+    @Test("Adjust Effect… is offered while the chosen effect has parameters, and withdrawn once a new choice has none")
+    func adjustEffectFollowsTheChoice() async {
+        let rig = PresenterRig(state: .fixture([chromatic], parameters: [strengthParameter]))
+        await rig.start()
+        #expect(rig.presenter.canAdjustEffect)
+
+        rig.interactor.publish(EffectCatalogState(entries: [chromatic, glitch], selection: glitch.id))
+        await settle(rig.presenter.$canAdjustEffect) { !$0 }
+
+        #expect(rig.presenter.canAdjustEffect == false)
+    }
+
+    @Test("Adjust Effect… is withdrawn by a state whose parameters are empty, even for the effect still chosen")
+    func adjustEffectWithdrawnByEmptyParameters() async {
+        let rig = PresenterRig(state: .fixture([chromatic], parameters: [strengthParameter]))
+        await rig.start()
+        #expect(rig.presenter.canAdjustEffect)
+
+        rig.interactor.publish(.fixture([chromatic]))
+        await settle(rig.presenter.$canAdjustEffect) { !$0 }
+
+        #expect(rig.presenter.canAdjustEffect == false)
+    }
+
+    @Test("a state that leaves Adjust Effect… as it was does not publish it again")
+    func adjustEffectPublishedOnlyOnChange() async {
+        let rig = PresenterRig(state: .fixture([chromatic]))
+        await rig.start()
+        let published = Collector<Bool>()
+        let subscription = rig.presenter.$canAdjustEffect.sink { published.append($0) }
+
+        rig.interactor.publish(.fixture([chromatic], parameters: [strengthParameter]))
+        await settle(rig.presenter.$canAdjustEffect) { $0 }
+        rig.interactor.publish(.fixture([chromatic], outcome: .failed(.compileFailed), parameters: [strengthParameter]))
+        await settle(rig.presenter.$status) { $0 != nil }
+
+        #expect(published.values == [false, true], "the state that changed no value published none of its own")
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test("Adjust Effect… goes to the router's parameter panel once per call, asks nothing of the Interactor, and does nothing without a router")
+    func adjustEffectGoesToTheRouter() {
+        let rig = PresenterRig(state: .fixture([chromatic], parameters: [strengthParameter]))
+        rig.presenter.adjustEffect()
+
+        let router = RecordingRouter()
+        rig.presenter.router = router
+        rig.presenter.adjustEffect()
+        rig.presenter.adjustEffect()
+
+        #expect(router.parameterPanelOpens == 2)
+        #expect(router.pickerOpens == 0)
+        #expect(router.settingsOpens == 0)
+        #expect(rig.interactor.starts.count == 0)
+        #expect(rig.interactor.stops.count == 0)
+        #expect(rig.interactor.selections.values.isEmpty)
     }
 
     // MARK: - Lifecycle
@@ -339,6 +475,7 @@ private struct PresenterRig {
 private func makePresenter(over interactor: SpyEffectInteractor) -> MenuBarPresenter {
     withDependencies {
         $0.effectInteractor = interactor
+        $0.controlsInteractor = FakeControlsInteractor()
     } operation: {
         MenuBarPresenter()
     }
@@ -358,10 +495,20 @@ private func startedPresenter(over interactor: SpyEffectInteractor) async -> Men
 @MainActor
 private final class RecordingRouter {
     private(set) var pickerOpens = 0
+    private(set) var settingsOpens = 0
+    private(set) var parameterPanelOpens = 0
 }
 
 extension RecordingRouter: MenuBarRouting {
     func openEffectPicker() {
         pickerOpens += 1
+    }
+
+    func openSettings() {
+        settingsOpens += 1
+    }
+
+    func openParameterPanel() {
+        parameterPanelOpens += 1
     }
 }

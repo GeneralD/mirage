@@ -380,6 +380,34 @@ struct EffectRuntimeRepositoryTests {
         #expect(fixture.renderer.complete(pass, with: .failure(.pageFault)))
         #expect(await fixture.answer(apply) == .failure(.pageFault))
     }
+
+    // MARK: - Compiler message
+
+    @Test("compilerMessage returns the state's answer: the diagnostics of a failed effect, and nil for a succeeded one")
+    func compilerMessageIsTheStatesAnswer() async throws {
+        let fixture = RuntimeFixture()
+        let failed = fixture.prepare(.first)
+        try await fixture.failCompile(1, message: "first:3:5: error: unknown type 'half3x4'")
+        #expect(await fixture.answer(failed) == .failure(.compileFailed))
+        #expect(try await fixture.compilerMessage(of: .first) == "first:3:5: error: unknown type 'half3x4'")
+
+        _ = try await fixture.prepared(.second)
+        #expect(try await fixture.compilerMessage(of: .second) == nil, "a source that compiled has no message")
+    }
+
+    @Test("asking for a compiler message starts no compile and no render, for a failed effect or one never prepared")
+    func compilerMessageCompilesAndRendersNothing() async throws {
+        let fixture = RuntimeFixture()
+        let prepare = fixture.prepare(.first)
+        try await fixture.failCompile(1, message: "first:3:5: error: unknown type 'half3x4'")
+        #expect(await fixture.answer(prepare) == .failure(.compileFailed))
+        #expect(fixture.compiler.requests.count == 1)
+
+        #expect(try await fixture.compilerMessage(of: .first) == "first:3:5: error: unknown type 'half3x4'")
+        #expect(try await fixture.compilerMessage(of: .second) == nil, "nothing was prepared for it")
+        #expect(fixture.compiler.requests.count == 1, "no compile was started by the questions")
+        #expect(fixture.renderer.requests.count == 0, "no render was started by the questions")
+    }
 }
 
 extension Array {

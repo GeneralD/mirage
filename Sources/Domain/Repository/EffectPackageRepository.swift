@@ -30,6 +30,19 @@ public protocol EffectPackageRepository: Sendable {
 
     /// Shows the effects folder to the user.
     func openEffectsFolder()
+
+    /// Checks the `.lens` package at `path` the way an author does before shipping it: reads the package,
+    /// then compiles its shader, and answers the package's source when the shader compiles.
+    ///
+    /// - No package at `path` is `.packageNotFound(path:)`, and nothing is compiled.
+    /// - A package that cannot be used is `.package(problem)`, and nothing is compiled.
+    /// - A shader that does not compile is `.compile(message:)`, with the compiler's text as it is.
+    /// - A compile that succeeds keeps nothing: the library is let go, and no cache is filled.
+    func check(packageAt path: String) async -> Result<EffectSource, AuthoringFailure>
+
+    /// Creates a new package called `name` in `folder` and answers the path it was written at, or the
+    /// reason it could not be written.
+    func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem>
 }
 
 public enum EffectPackageRepositoryKey: TestDependencyKey {
@@ -56,5 +69,15 @@ private struct UnimplementedEffectPackageRepository: EffectPackageRepository {
 
     func openEffectsFolder() {
         reportIssue("EffectPackageRepository.openEffectsFolder not implemented")
+    }
+
+    func check(packageAt path: String) async -> Result<EffectSource, AuthoringFailure> {
+        reportIssue("EffectPackageRepository.check not implemented")
+        return .failure(.packageNotFound(path: path))
+    }
+
+    func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem> {
+        reportIssue("EffectPackageRepository.scaffold not implemented")
+        return .failure(.unwritable(path: folder))
     }
 }

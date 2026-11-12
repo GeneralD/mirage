@@ -12,6 +12,8 @@ public final class FakeCameraSource: CameraSource, Sendable {
         var startError: CaptureSessionError?
         var startCount = 0
         var stopCount = 0
+        var captures: [CameraCapture] = []
+        var mirrorSettings: [Bool] = []
     }
 
     private let state = Locked(State())
@@ -22,6 +24,10 @@ public final class FakeCameraSource: CameraSource, Sendable {
     public var descriptor: SurfaceDescriptor? { state.current.descriptor }
     public var startCount: Int { state.current.startCount }
     public var stopCount: Int { state.current.stopCount }
+    /// Every capture passed to `configure`, in call order.
+    public var captures: [CameraCapture] { state.current.captures }
+    /// Every mirror setting passed to `setMirrored`, in call order.
+    public var mirrorSettings: [Bool] { state.current.mirrorSettings }
 
     public func failStart(with error: CaptureSessionError?) {
         state.withLock { $0.startError = error }
@@ -47,6 +53,14 @@ public final class FakeCameraSource: CameraSource, Sendable {
             state.onFrame = nil
             state.onEnd = nil
         }
+    }
+
+    public func configure(_ capture: CameraCapture) {
+        state.withLock { $0.captures.append(capture) }
+    }
+
+    public func setMirrored(_ mirrored: Bool) {
+        state.withLock { $0.mirrorSettings.append(mirrored) }
     }
 
     public func emit(_ surface: IncomingSurface) {

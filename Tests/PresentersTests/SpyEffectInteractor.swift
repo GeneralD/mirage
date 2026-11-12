@@ -24,10 +24,15 @@ final class SpyEffectInteractor: EffectInteractor, Sendable {
     func start() { inner.start() }
     func stop() { inner.stop() }
     func select(_ id: EffectID) { inner.select(id) }
+    func reenable(_ id: EffectID) { inner.reenable(id) }
+    func setParameter(_ id: String, to value: EffectParameterValue) { inner.setParameter(id, to: value) }
+    func resetParameters() { inner.resetParameters() }
     func openEffectsFolder() { inner.openEffectsFolder() }
 
     var starts: Collector<Void> { inner.starts }
     var stops: Collector<Void> { inner.stops }
     var selections: Collector<EffectID> { inner.selections }
+    var reenables: Collector<EffectID> { inner.reenables }
+    var parameterCalls: Collector<FakeEffectCatalogUseCase.ParameterCall> { inner.parameterCalls }
     var folderOpens: Collector<Void> { inner.folderOpens }
 }

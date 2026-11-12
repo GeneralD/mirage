@@ -9,7 +9,9 @@ import TestSupport
 /// port lists again after every change, and a shader edit changes no row); a fake that
 /// was given nothing yields nothing until the first publish. `source(of:)` answers what
 /// `script(_:for:)` set, and an id nobody scripted is a reported issue answering
-/// `.sourceMissing`.
+/// `.sourceMissing`. `check(packageAt:)` answers what `scriptCheck(_:for:)` set for its path, and
+/// `scaffold(named:in:)` what `scriptScaffold(_:)` set; each records its call, and a call nobody scripted is a
+/// reported issue answering `.packageNotFound(path:)` or `.unwritable(path:)`.
 ///
 /// `source(of:)` answers at once unless the test asked to hold the reads
 /// (`holdSources()`): then each one suspends, like a read of files that are still being
@@ -29,6 +31,17 @@ public final class FakeEffectPackageRepository: EffectPackageRepository, Sendabl
         fileprivate let origin: ObjectIdentifier
     }
 
+    /// One `scaffold(named:in:)` call: the name and the folder it was asked for.
+    public struct ScaffoldRequest: Sendable, Equatable {
+        public let name: String
+        public let folder: String
+
+        public init(name: String, folder: String) {
+            self.name = name
+            self.folder = folder
+        }
+    }
+
     private typealias SourceContinuation = CheckedContinuation<Result<EffectSource, EffectPackageProblem>, Never>
 
     private struct State {
@@ -39,6 +52,8 @@ public final class FakeEffectPackageRepository: EffectPackageRepository, Sendabl
         var holding = false
         var nextSource = 1
         var parked: [Int: SourceContinuation] = [:]
+        var checks: [String: Result<EffectSource, AuthoringFailure>] = [:]
+        var scaffoldResult: Result<String, ScaffoldProblem>? = nil
     }
 
     private let state: Locked<State>
@@ -53,6 +68,10 @@ public final class FakeEffectPackageRepository: EffectPackageRepository, Sendabl
     public let heldSources = Collector<SourceRequest>()
     /// One entry per `openEffectsFolder()` call.
     public let folderOpens = Collector<Void>()
+    /// The paths `check(packageAt:)` was asked for, in call order.
+    public let checkRequests = Collector<String>()
+    /// The name and folder each `scaffold(named:in:)` call was asked for, in call order.
+    public let scaffoldRequests = Collector<ScaffoldRequest>()
 
     public init(entries: [EffectCatalogEntry]? = nil) {
         state = Locked(State(latest: entries))
@@ -121,6 +140,34 @@ public final class FakeEffectPackageRepository: EffectPackageRepository, Sendabl
 
     public func openEffectsFolder() {
         folderOpens.append(())
+    }
+
+    /// Makes `check(packageAt: path)` answer `result`.
+    public func scriptCheck(_ result: Result<EffectSource, AuthoringFailure>, for path: String) {
+        state.withLock { $0.checks[path] = result }
+    }
+
+    /// Makes `scaffold(named:in:)` answer `result` from now on, until it is scripted again.
+    public func scriptScaffold(_ result: Result<String, ScaffoldProblem>) {
+        state.withLock { $0.scaffoldResult = result }
+    }
+
+    public func check(packageAt path: String) async -> Result<EffectSource, AuthoringFailure> {
+        checkRequests.append(path)
+        guard let result = state.withLock({ $0.checks[path] }) else {
+            reportIssue("FakeEffectPackageRepository: no check scripted for \(path)")
+            return .failure(.packageNotFound(path: path))
+        }
+        return result
+    }
+
+    public func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem> {
+        scaffoldRequests.append(ScaffoldRequest(name: name, folder: folder))
+        guard let result = state.withLock({ $0.scaffoldResult }) else {
+            reportIssue("FakeEffectPackageRepository: no scaffold result scripted")
+            return .failure(.unwritable(path: folder))
+        }
+        return result
     }
 
     private func scriptedSource(for id: EffectID) -> Result<EffectSource, EffectPackageProblem> {

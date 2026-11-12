@@ -89,12 +89,16 @@ struct HostSide {
     /// What the pipeline presents to: `preview`, or the real preview over the fake GPU layer.
     let previewSink: any PreviewSink
     let pipeline: FramePipelineUseCaseImpl
+    /// The runtime the pipeline applies its effect with: `effects` on a `.fake` host, the real one on a `.real` host.
+    /// The catalog drives the same one, and so would anything that reads how its passes ended (`outcomes()`).
+    let runtime: any EffectRuntimeRepository
     /// The effects menu's catalog on the same runtime as the pipeline (`LoopbackRig(catalog: .real)`), or `nil`.
     let catalog: CatalogSide?
 
     init(
         kernel: InMemoryFrameTransport, ioSurface: FakeIOSurfaceGateway, capacity: Int, preview choice: HostPreview,
-        effects effectsChoice: HostEffects, catalog catalogChoice: HostCatalog
+        effects effectsChoice: HostEffects, catalog catalogChoice: HostCatalog,
+        catalogStore: InMemoryKeyValueStore = InMemoryKeyValueStore()
     ) {
         effectsKind = effectsChoice
         let executor = executor
@@ -163,11 +167,12 @@ struct HostSide {
         }
         previewSink = hostSink
         pipeline = hostPipeline
+        runtime = hostRuntime
         // The catalog drives the very runtime the pipeline applies, so what it prepares is what the next frame is drawn with.
         catalog =
             switch catalogChoice {
             case .none: nil
-            case .real: CatalogSide(over: hostRuntime, errors: errors, developer: developer)
+            case .real: CatalogSide(over: hostRuntime, errors: errors, developer: developer, store: catalogStore)
             }
     }
 }
@@ -261,9 +266,11 @@ struct LoopbackRig {
 
     init(
         capacity: Int = 4, frameGap: Duration = .seconds(2), preview: HostPreview = .inMemory, effects: HostEffects = .fake,
-        catalog: HostCatalog = .none
+        catalog: HostCatalog = .none, catalogStore: InMemoryKeyValueStore = InMemoryKeyValueStore()
     ) {
-        host = HostSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview, effects: effects, catalog: catalog)
+        host = HostSide(
+            kernel: kernel, ioSurface: ioSurface, capacity: capacity, preview: preview, effects: effects, catalog: catalog,
+            catalogStore: catalogStore)
         ext = ExtensionSide(kernel: kernel, ioSurface: ioSurface, capacity: capacity, frameGap: frameGap)
     }
 }
@@ -297,6 +304,23 @@ extension LoopbackRig {
     func attachPreview(_ target: FakePreviewTargetHandle = FakePreviewTargetHandle()) async throws {
         let sink = host.previewSink
         try await MainActor.run { try sink.attach(target) }
+        host.executor.drain()
+    }
+
+    /// Detaches the view `attachPreview` attached, as the window does when it closes, then drains
+    /// the host's executor: the preview lets go of the attach there, and a draw in flight stays
+    /// pending until the test completes it.
+    func detachPreview(_ target: FakePreviewTargetHandle) async {
+        host.pipeline.detachPreview(target)
+        host.executor.drain()
+    }
+
+    /// Sets the mode the host's preview is handed frames in, as the preview's menu does
+    /// (`PreviewInteractor.setMode` reaches `FramePipelineUseCase.setPreviewMode`), then drains
+    /// the host's executor, where the mode takes effect: an answer queued before this call is
+    /// finished under the old mode, one queued after it under the new.
+    func setPreviewMode(_ mode: PreviewMode) async {
+        host.pipeline.setPreviewMode(mode)
         host.executor.drain()
     }
 

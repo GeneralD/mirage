@@ -260,4 +260,69 @@ struct FileSystemGatewayImplTests {
         #expect(aboveIt?.code == .fileWriteUnknown)
         #expect(!gateway.isDirectory(scratch.appending("file")))
     }
+
+    // MARK: writeString
+
+    @Test("text written reads back as UTF-8, multibyte characters and newlines intact")
+    func writesText() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        let text = "{\"name\": \"色 and 🌈\"}\n二行目\n"
+
+        try gateway.writeString(text, to: scratch.appending("manifest.json"))
+
+        #expect(try gateway.readString(scratch.appending("manifest.json")) == text)
+    }
+
+    @Test("writing over an existing file replaces its content")
+    func replacesFile() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        try gateway.writeString("first", to: scratch.appending("file"))
+
+        try gateway.writeString("second", to: scratch.appending("file"))
+
+        #expect(try gateway.readString(scratch.appending("file")) == "second")
+    }
+
+    @Test("writing into a missing directory throws a no-such-file error and makes no directory, grandparents included")
+    func missingParentThrows() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+
+        let parent = #expect(throws: CocoaError.self) { try gateway.writeString("x", to: scratch.appending("missing/file")) }
+        let grandparent = #expect(throws: CocoaError.self) { try gateway.writeString("x", to: scratch.appending("missing/deeper/file")) }
+
+        #expect(parent?.code == .fileNoSuchFile)
+        #expect(grandparent?.code == .fileNoSuchFile)
+        #expect(!gateway.isDirectory(scratch.appending("missing")))
+    }
+
+    @Test("writing below a file throws an unknown-write error, directly or through a missing directory, and leaves the file as it was")
+    func belowFileThrows() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        try gateway.writeString("kept", to: scratch.appending("file"))
+
+        let direct = #expect(throws: CocoaError.self) { try gateway.writeString("x", to: scratch.appending("file/child")) }
+        let throughMissing = #expect(throws: CocoaError.self) { try gateway.writeString("x", to: scratch.appending("file/missing/child")) }
+
+        #expect(direct?.code == .fileWriteUnknown)
+        #expect(throughMissing?.code == .fileWriteUnknown)
+        #expect(try gateway.readString(scratch.appending("file")) == "kept")
+    }
+
+    @Test("writing over a directory throws an unknown-write error and leaves the directory and its contents")
+    func overDirectoryThrows() throws {
+        let scratch = try ScratchDirectory()
+        defer { scratch.remove() }
+        try gateway.createDirectory(scratch.appending("dir"))
+        try gateway.writeString("kept", to: scratch.appending("dir/file"))
+
+        let error = #expect(throws: CocoaError.self) { try gateway.writeString("x", to: scratch.appending("dir")) }
+
+        #expect(error?.code == .fileWriteUnknown)
+        #expect(gateway.isDirectory(scratch.appending("dir")))
+        #expect(try gateway.readString(scratch.appending("dir/file")) == "kept")
+    }
 }

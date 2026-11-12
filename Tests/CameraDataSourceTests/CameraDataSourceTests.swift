@@ -49,6 +49,13 @@ struct CameraDataSourceTests {
         #expect(rig.gateway.startCount == 1)
     }
 
+    @Test("start forwards the standard capture to the gateway")
+    func startForwardsCapture() throws {
+        let rig = Rig()
+        try rig.start()
+        #expect(rig.gateway.capture == .standard)
+    }
+
     @Test("frames reach the caller only after the executor drains")
     func framesWaitForExecutor() throws {
         let rig = Rig()

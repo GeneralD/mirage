@@ -16,7 +16,18 @@ public protocol PreviewRenderer: Sendable {
     /// kernel compiles. That failure reaches only `ErrorLog` (`.preview`).
     @MainActor
     func attach(_ target: any PreviewTargetHandle) throws
-    func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void)
+    /// Lets go of `target` when it is the one attached, so no frame is drawn
+    /// into it after this call: the frame waiting for a draw completes undrawn,
+    /// a draw already in flight finishes on its own, and every later `present`
+    /// completes undrawn until the next attach. Any other target, or nothing
+    /// attached, is a no-op. Not on the main thread: it hands the release to the
+    /// `FrameExecutor`, the same place the frames are ordered.
+    func detach(_ target: any PreviewTargetHandle)
+    /// Presents `frame`, with `original` (the frame as its source delivered it,
+    /// when there is one) alongside it. A non-nil `original` is borrowed until
+    /// `completion`, as `frame` is: `completion` ends both leases and runs
+    /// exactly once, drawn or not.
+    func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void)
 }
 
 public enum PreviewRendererKey: TestDependencyKey {
@@ -36,7 +47,11 @@ private struct UnimplementedPreviewRenderer: PreviewRenderer {
         throw PreviewError.foreignTarget
     }
 
-    func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
+    func detach(_ target: any PreviewTargetHandle) {
+        reportIssue("PreviewRenderer.detach not implemented")
+    }
+
+    func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
         reportIssue("PreviewRenderer.present not implemented")
         completion()
     }

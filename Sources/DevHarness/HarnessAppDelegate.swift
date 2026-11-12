@@ -14,9 +14,10 @@ import Views
 /// live values, as `App` does.
 ///
 /// What remains here needs a running application: the window, the activation, and
-/// the menu set on `NSApplication`. The Router is built outside the session's
-/// substitution on purpose (`HarnessMenu.live()`): the effects menu resolves nothing
-/// the discarding sink touches.
+/// the menu set on `NSApplication`. The Router is built inside the same substitution as
+/// the session (`HarnessMenu.live()`): the menu's controls resolve the frame pipeline, and
+/// the pipeline keeps the sink of the scope that builds it, so a Router built outside would
+/// give it the real sink.
 @MainActor
 final class HarnessAppDelegate: NSObject, NSApplicationDelegate {
     private let session = HarnessSession.live()

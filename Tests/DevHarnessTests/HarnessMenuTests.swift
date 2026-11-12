@@ -125,6 +125,7 @@ private struct MenuRig {
         let router = AppRouter(makeMenuBarPresenter: {
             withDependencies {
                 $0.effectInteractor = interactor
+                $0.controlsInteractor = FakeControlsInteractor()
             } operation: {
                 MenuBarPresenter()
             }

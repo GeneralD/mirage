@@ -15,10 +15,12 @@ struct StateFixture {
     /// One element per time `admit` asked for the effect to compile while nothing was prepared.
     let fallbackReads = Collector<Void>()
 
-    init() {
+    /// `randomSource` is what the state draws each session's seed from; the default draws 0.
+    init(randomSource: any RandomSource = ZeroRandomSource()) {
         let executor = executor
         subject = withDependencies {
             $0.frameExecutor = executor
+            $0.randomSource = randomSource
         } operation: {
             EffectRuntimeStateDataSourceImpl()
         }
@@ -27,9 +29,15 @@ struct StateFixture {
     // MARK: - The port's calls, started on their own task
 
     /// Starts `begin` on its own task. Nothing reaches the state until the executor is drained.
-    func begin(_ effect: EffectSource) -> Pending<EffectBegin> {
+    func begin(_ effect: EffectSource, parameters: EffectParameterBlock = .none) -> Pending<EffectBegin> {
         let subject = subject
-        return Pending { await subject.begin(effect) }
+        return Pending { await subject.begin(effect, parameters: parameters) }
+    }
+
+    /// Calls `setParameters` here and now: the port returns at once, so there is no task to start,
+    /// and what it queued on the executor runs at the next drain.
+    func setParameters(_ block: EffectParameterBlock, of effect: EffectSource) {
+        subject.setParameters(block, of: effect)
     }
 
     func settle(
@@ -63,9 +71,42 @@ struct StateFixture {
         return call
     }
 
-    func selected() -> Pending<Result<any LibraryHandle, EffectFailure>> {
+    func selected() -> Pending<EffectSelection> {
         let subject = subject
         return Pending { await subject.selected() }
+    }
+
+    /// Starts `compilerMessage(of:)` for `effect` on its own task; it answers on the executor, as `selected()` does.
+    func compilerMessage(of effect: EffectSource) -> Pending<String?> {
+        let subject = subject
+        return Pending { await subject.compilerMessage(of: effect) }
+    }
+
+    // MARK: - Outcomes
+
+    /// Tells the state that a pass ended. The report is queued on the executor and runs at the next drain.
+    func report(_ outcome: EffectPassOutcome) {
+        subject.report(outcome)
+    }
+
+    /// Opens a stream of outcomes and reads it on a task of its own into `OutcomeWatch.delivered`.
+    /// The stream is registered through the executor, so it is not open until the next drain.
+    func watchOutcomes() -> OutcomeWatch {
+        OutcomeWatch(subject.outcomes())
+    }
+
+    /// Drains the executor until `watch` has been delivered `count` outcomes, and returns what it has.
+    /// `nil` when they never came.
+    @MainActor
+    func delivered(_ count: Int, to watch: OutcomeWatch) async -> [EffectPassOutcome]? {
+        let arrived = await tickUntil(tick: { executor.drain() }, until: { watch.delivered.count >= count })
+        return arrived ? watch.delivered.values : nil
+    }
+
+    /// The first `count` outcomes `stream` delivers, waiting for them. Off the main actor, because the
+    /// closure `reduce` takes is not `Sendable`.
+    func read(_ count: Int, from stream: AsyncStream<EffectPassOutcome>) async -> [EffectPassOutcome] {
+        await stream.prefix(count).reduce(into: [EffectPassOutcome]()) { $0.append($1) }
     }
 
     // MARK: - Running them
@@ -91,8 +132,8 @@ struct StateFixture {
 
     /// `begin` for an effect that is not cached: the ticket its compile settles under.
     @MainActor
-    func startCompile(_ effect: EffectSource) async throws -> Compile {
-        let ticket = try #require(try await answer(begin(effect)).ticket, "\(effect.name) was expected to need a compile")
+    func startCompile(_ effect: EffectSource, parameters: EffectParameterBlock = .none) async throws -> Compile {
+        let ticket = try #require(try await answer(begin(effect, parameters: parameters)).ticket, "\(effect.name) was expected to need a compile")
         return Compile(effect: effect, ticket: ticket)
     }
 
@@ -103,17 +144,18 @@ struct StateFixture {
         return Compiled(library: library, settlement: try await answer(settle(compile.effect, compile.ticket, outcome: .success(library))))
     }
 
-    /// Settles `compile` with diagnostics of `cause`.
+    /// Settles `compile` with diagnostics of `message` and `cause`.
     @MainActor
-    func fail(_ compile: Compile, cause: ShaderDiagnostics.Cause = .source) async throws -> EffectSettlement {
-        let diagnostics = ShaderDiagnostics(message: "effect:3:5: error: x", code: 3, cause: cause)
+    func fail(_ compile: Compile, message: String = "effect:3:5: error: x", cause: ShaderDiagnostics.Cause = .source) async throws -> EffectSettlement
+    {
+        let diagnostics = ShaderDiagnostics(message: message, code: 3, cause: cause)
         return try await answer(settle(compile.effect, compile.ticket, outcome: .failure(diagnostics)))
     }
 
     /// Prepares `effect` from scratch: begins it and settles a successful compile.
     @MainActor
-    func prepared(_ effect: EffectSource) async throws -> FakeLibraryHandle {
-        try await succeed(startCompile(effect)).library
+    func prepared(_ effect: EffectSource, parameters: EffectParameterBlock = .none) async throws -> FakeLibraryHandle {
+        try await succeed(startCompile(effect, parameters: parameters)).library
     }
 }
 
@@ -129,6 +171,24 @@ struct Pending<Value: Sendable>: Sendable {
             answered.append(value)
             return value
         }
+    }
+}
+
+/// An `outcomes()` stream and what its consumer, a task of its own, has read from it so far.
+struct OutcomeWatch: Sendable {
+    let delivered = Collector<EffectPassOutcome>()
+    private let consumer: Task<Void, Never>
+
+    init(_ stream: AsyncStream<EffectPassOutcome>) {
+        let delivered = delivered
+        consumer = Task {
+            for await outcome in stream { delivered.append(outcome) }
+        }
+    }
+
+    /// Lets go of the stream, which ends it.
+    func stop() {
+        consumer.cancel()
     }
 }
 
@@ -173,14 +233,26 @@ extension EffectAdmission {
 
     /// The library an `apply` would run, or `nil` when it is told a failure or has to compile.
     var library: (any LibraryHandle)? {
-        guard case .ready(.success(let library), _) = self else { return nil }
-        return library
+        guard case .ready(let selection, _) = self else { return nil }
+        return selection.library
     }
 
     /// The failure an `apply` would answer, or `nil` when it runs a library or has to compile.
     var failure: EffectFailure? {
-        guard case .ready(.failure(let failure), _) = self else { return nil }
-        return failure
+        guard case .ready(let selection, _) = self else { return nil }
+        return selection.failure
+    }
+
+    /// The block the pass runs with, or `nil` when the admission has to compile first.
+    var parameters: EffectParameterBlock? {
+        guard case .ready(let selection, _) = self else { return nil }
+        return selection.parameters
+    }
+
+    /// The stamp the pass runs with, or `nil` when the admission has to compile first.
+    var fingerprint: EffectFingerprint? {
+        guard case .ready(let selection, _) = self else { return nil }
+        return selection.fingerprint
     }
 
     /// The effect to compile and its ticket, or `nil` when the selection has settled.
@@ -188,6 +260,11 @@ extension EffectAdmission {
         guard case .compile(let effect, let ticket, _) = self else { return nil }
         return Compile(effect: effect, ticket: ticket)
     }
+}
+
+extension EffectSelection {
+    var library: (any LibraryHandle)? { result.library }
+    var failure: EffectFailure? { result.failure }
 }
 
 extension Result where Success == any LibraryHandle, Failure == EffectFailure {

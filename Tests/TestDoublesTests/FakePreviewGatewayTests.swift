@@ -13,15 +13,17 @@ struct FakePreviewGatewayTests {
         let context: any GPUContextHandle
         let layer: any PreviewLayerHandle
         let texture: any TextureHandle
+        let original: any TextureHandle
         let kernel: FakeLibraryHandle
     }
 
+    /// The texture and the original wrap two different surfaces, so a test can tell them apart.
     private func rig() throws -> Rig {
         let context = try gpu.makeContext()
         let layer = try gateway.prepare(FakePreviewTargetHandle(), on: context)
         return Rig(
             context: context, layer: layer, texture: try textures.bind(FakeSurfaceHandle(id: 1), on: context),
-            kernel: FakeLibraryHandle(source: "preview"))
+            original: try textures.bind(FakeSurfaceHandle(id: 2), on: context), kernel: FakeLibraryHandle(source: "preview"))
     }
 
     @Test("prepare mints a fresh layer per call that remembers its target and context")
@@ -55,11 +57,13 @@ struct FakePreviewGatewayTests {
         let rig = try rig()
         let completed = Collector<Int>()
         let received = Collector<GPUCompletion>()
-        try gateway.draw(rig.texture, with: rig.kernel, into: rig.layer, on: rig.context) {
+        try gateway.draw(rig.texture, original: rig.original, with: rig.kernel, into: rig.layer, on: rig.context) {
             completed.append(1)
             received.append($0)
         }
-        try gateway.draw(rig.texture, with: rig.kernel, into: rig.layer, on: rig.context) { _ in completed.append(2) }
+        try gateway.draw(rig.texture, original: rig.original, with: rig.kernel, into: rig.layer, on: rig.context) { _ in
+            completed.append(2)
+        }
         #expect(gateway.pending.map(\.id) == [1, 2])
 
         let fault = GPUCompletion(gpuStart: 1, gpuEnd: 2, error: RawGPUError(domain: "MTLCommandBufferErrorDomain", code: 5))
@@ -74,23 +78,42 @@ struct FakePreviewGatewayTests {
         #expect(gateway.draws.count == 2)
     }
 
-    @Test("a draw records the handles exactly as they were handed in")
+    @Test("a draw records the texture and the original beside it, exactly as they were handed in")
     func drawRecordsHandles() throws {
         let rig = try rig()
-        try gateway.draw(rig.texture, with: rig.kernel, into: rig.layer, on: rig.context) { _ in }
+        try gateway.draw(rig.texture, original: rig.original, with: rig.kernel, into: rig.layer, on: rig.context) { _ in }
         let draw = try #require(gateway.draws.values.first)
 
         #expect(ObjectIdentifier(draw.texture) == ObjectIdentifier(rig.texture))
+        #expect(ObjectIdentifier(draw.original) == ObjectIdentifier(rig.original))
+        #expect(ObjectIdentifier(draw.original) != ObjectIdentifier(draw.texture))
         #expect(ObjectIdentifier(draw.kernel) == ObjectIdentifier(rig.kernel))
         #expect(ObjectIdentifier(draw.layer) == ObjectIdentifier(rig.layer))
         #expect(ObjectIdentifier(draw.context) == ObjectIdentifier(rig.context))
+    }
+
+    @Test("a foreign original is refused before anything is recorded, and its completion never runs")
+    func foreignOriginalIsRefused() throws {
+        let rig = try rig()
+        let completed = Collector<Void>()
+
+        #expect(throws: GPUError.foreignHandle) {
+            try gateway.draw(rig.texture, original: ForeignTexture(), with: rig.kernel, into: rig.layer, on: rig.context) { _ in
+                completed.append(())
+            }
+        }
+        #expect(gateway.draws.count == 0)
+        #expect(gateway.pending.isEmpty)
+        #expect(completed.count == 0)
     }
 
     @Test("completing a draw twice is a reported issue and returns false")
     func doubleCompletionIsRefused() throws {
         let rig = try rig()
         let completed = Collector<Void>()
-        try gateway.draw(rig.texture, with: rig.kernel, into: rig.layer, on: rig.context) { _ in completed.append(()) }
+        try gateway.draw(rig.texture, original: rig.original, with: rig.kernel, into: rig.layer, on: rig.context) { _ in
+            completed.append(())
+        }
         let draw = try #require(gateway.pending.first)
         gateway.complete(draw)
 
@@ -104,10 +127,12 @@ struct FakePreviewGatewayTests {
     func strangersDrawIsRefused() throws {
         let rig = try rig()
         let completed = Collector<Void>()
-        try gateway.draw(rig.texture, with: rig.kernel, into: rig.layer, on: rig.context) { _ in completed.append(()) }
+        try gateway.draw(rig.texture, original: rig.original, with: rig.kernel, into: rig.layer, on: rig.context) { _ in
+            completed.append(())
+        }
         let other = FakePreviewGateway()
         let otherLayer = try other.prepare(FakePreviewTargetHandle(), on: rig.context)
-        try other.draw(rig.texture, with: rig.kernel, into: otherLayer, on: rig.context) { _ in }
+        try other.draw(rig.texture, original: rig.original, with: rig.kernel, into: otherLayer, on: rig.context) { _ in }
         let stranger = try #require(other.pending.first)
         let mine = try #require(gateway.pending.first)
         #expect(stranger.id == mine.id)
@@ -123,17 +148,22 @@ struct FakePreviewGatewayTests {
     @Test("foreign handles are refused in the live order, and a scripted error after them, before anything is recorded")
     func drawRefusals() throws {
         let rig = try rig()
-        let draw = { (texture: any TextureHandle, kernel: any LibraryHandle, layer: any PreviewLayerHandle, context: any GPUContextHandle) in
-            try gateway.draw(texture, with: kernel, into: layer, on: context) { _ in }
+        let draw = {
+            (
+                texture: any TextureHandle, original: any TextureHandle, kernel: any LibraryHandle,
+                layer: any PreviewLayerHandle, context: any GPUContextHandle
+            ) in
+            try gateway.draw(texture, original: original, with: kernel, into: layer, on: context) { _ in }
         }
 
-        #expect(throws: GPUError.foreignHandle) { try draw(ForeignTexture(), ForeignLibrary(), ForeignLayer(), ForeignContext()) }
-        #expect(throws: GPUError.foreignHandle) { try draw(ForeignTexture(), ForeignLibrary(), ForeignLayer(), rig.context) }
-        #expect(throws: GPUError.foreignHandle) { try draw(ForeignTexture(), rig.kernel, ForeignLayer(), rig.context) }
-        #expect(throws: PreviewError.foreignTarget) { try draw(rig.texture, rig.kernel, ForeignLayer(), rig.context) }
+        #expect(throws: GPUError.foreignHandle) { try draw(ForeignTexture(), ForeignTexture(), ForeignLibrary(), ForeignLayer(), ForeignContext()) }
+        #expect(throws: GPUError.foreignHandle) { try draw(ForeignTexture(), ForeignTexture(), ForeignLibrary(), ForeignLayer(), rig.context) }
+        #expect(throws: GPUError.foreignHandle) { try draw(ForeignTexture(), rig.original, rig.kernel, ForeignLayer(), rig.context) }
+        #expect(throws: GPUError.foreignHandle) { try draw(rig.texture, ForeignTexture(), rig.kernel, ForeignLayer(), rig.context) }
+        #expect(throws: PreviewError.foreignTarget) { try draw(rig.texture, rig.original, rig.kernel, ForeignLayer(), rig.context) }
 
         gateway.failDraw(with: GPUError.encoderUnavailable)
-        #expect(throws: GPUError.encoderUnavailable) { try draw(rig.texture, rig.kernel, rig.layer, rig.context) }
+        #expect(throws: GPUError.encoderUnavailable) { try draw(rig.texture, rig.original, rig.kernel, rig.layer, rig.context) }
         #expect(gateway.draws.count == 0)
     }
 }

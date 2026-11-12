@@ -178,4 +178,33 @@ struct FakeEffectInteractorTests {
         #expect(interactor.selections.values == [.package("glitch")])
         #expect(interactor.folderOpens.count == 1)
     }
+
+    @Test("reenable records its ids in call order, and leaves state and the other records alone")
+    func reenableIsRecorded() {
+        let initial = EffectCatalogState.fixture([chromatic])
+        let interactor = FakeEffectInteractor(state: initial)
+        let seen = Collector<EffectCatalogState>()
+        let subscription = interactor.state.sink { seen.append($0) }
+
+        interactor.reenable(.package("glitch"))
+        interactor.reenable(.package("broken"))
+
+        #expect(interactor.reenables.values == [.package("glitch"), .package("broken")])
+        #expect(interactor.selections.count == 0, "a re-enable is not a select")
+        #expect(interactor.starts.count == 0)
+        #expect(interactor.stops.count == 0)
+        #expect(interactor.folderOpens.count == 0)
+        #expect(seen.values == [initial])
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test("setParameter and resetParameters are recorded in the order they were called, with the id and the value")
+    func parameterCallsAreRecordedInOrder() {
+        let interactor = FakeEffectInteractor(state: .fixture([chromatic]))
+        interactor.setParameter("strength", to: .float(0.25))
+        interactor.resetParameters()
+        interactor.setParameter("rings", to: .int(9))
+
+        #expect(interactor.parameterCalls.values == [.set("strength", .float(0.25)), .reset, .set("rings", .int(9))])
+    }
 }

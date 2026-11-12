@@ -11,7 +11,7 @@ Everything that *decides* (pass-through, auto-disable, budget, in-flight cap,
 the compile cache and newest-wins, the preview's latest-wins and exactly-once
 completion) is tested against the fakes (`FakeGPUGateway`, `FakeShaderCompiler`,
 `FakeGPURenderer`, `FakePreviewGateway`) and never needs a GPU.
-Only four things touch a real `MTLDevice`:
+Only the suites of `Tests/GPUSmokeTests` touch a real `MTLDevice`:
 
 1. `MetalDeviceSmokeTests` — the issue #4 runner probe kept as a test: a
    device exists, it is in the `mac2` family, and a kernel compiled from
@@ -42,7 +42,11 @@ Only four things touch a real `MTLDevice`:
    and the red drift required to show; and `EffectRuntimeRepository` over the
    live `ShaderCompilationDataSource` and `GPURenderDataSource` compiles it on
    the first `apply`, renders two frames of one session (`time` 0, then 0.75)
-   that match the same reference, and logs one compile.
+   that match the same reference, and logs one compile. A pass binds its
+   parameter block at buffer 1 and every field is read back bit for bit from the
+   offset the layout gives it, and through the live stack `prepare` delivers the
+   block and `setParameters` changes it for the next frame, never for another
+   effect.
 3. `HashNoiseParityTests` (suite `hash-noise parity`) — the prelude's `hash` /
    `noise` on a 256 × 256 image against `HashNoiseReference` (Tests/TestSupport),
    for seed 0 and another seed: every pixel within the same single tolerance
@@ -54,7 +58,10 @@ Only four things touch a real `MTLDevice`:
    pillarbox, each scaled ×2 and ×½, against a Swift reference of the
    aspect-fit bilinear blit (within `GPUSmokeSupport.tolerance`; the inputs
    vary per texel, so a missing scale or a nearest filter is caught), and an exact same-size copy
-   that catches a flip, a swapped axis or a half-texel shift; `MetalKitPreviewGateway.prepare` readying an
+   that catches a flip, a swapped axis or a half-texel shift; the split kernel
+   puts the original left of a two-pixel white rule at the centre and the frame
+   right of it, and a frame shorter than its drawable is letterboxed in opaque
+   black without the rule being drawn into the bars; `MetalKitPreviewGateway.prepare` readying an
    off-screen `MTKView` and `draw` completing once into its layer's drawable.
    The view is created at a non-zero size and every draw asserts the layer's
    drawable size afterwards: a zero-sized view gets no drawable, and its empty
@@ -64,6 +71,35 @@ Only four things touch a real `MTLDevice`:
    a paused view resized between two draws getting a drawable of its new size;
    `PreviewDataSource` over the live gateways end to end; foreign handles
    refused.
+5. `EffectSmokeRigTests` (suite `Effect smoke rig`) — `EffectSmokeRig` runs one
+   compute pass of a small effect over a fixed input (`EffectSmokeRig.testImage`):
+   the compile, the parameter block bound at buffer 1, the pass; the pixels are
+   compared with the Swift expectation within `GPUSmokeSupport.tolerance`, and the
+   block is read back where the kernel reads it. The rig's input helpers
+   (`EffectSmokeRigImageTests`) need no device.
+6. `VignetteSmokeTests`, `PixelateSmokeTests` and `DuotoneSmokeTests` — each
+   bundled effect besides Chromatic Grain (item 2 covers it) through the rig,
+   compared pixel by pixel with `VignetteReference`, `PixelateReference` and
+   `DuotoneReference`. Pixelate is integer-only, so its comparison is exact; the
+   other two use the one tolerance, and Duotone also pins a few pixels to values
+   measured on a device. `PixelateReferenceTests` need no device.
+7. `ParametersStructSmokeTests` — the generated `Parameters` struct on the real
+   compiler: every field type is accepted, each field sits where
+   `EffectParameterLayout` says (the kernel asserts it with `__builtin_offsetof`),
+   the `static_assert` trips on a struct that drifts, and the author's lines stay
+   the author's. Compile only.
+8. `ExampleEffectsSmokeTests` — every `Examples/` package compiles on the real
+   compiler and renders opaque at its defaults, the two with knobs are held to
+   fixed pixels, and the scaffold's template and the authoring page's kernel
+   render as the page says (read from disk, `.claude/rules/testing.md`).
+9. `GPUTimingSmokeTests` — the GPU's own timing of one pass at both seams that
+   carry it, the completion the gateway hands back and the outcome the runtime
+   reports: on a real device the end is after the start and the start after zero,
+   on a Paravirtual device only the order; never an absolute value.
+10. `LensToolRenderSmokeTests` (suite `Lens tool over the real stack`) — the
+    `LensTool` command over the host's live registrations, no camera; the console
+    and the random source are the only fakes, and every pixel is compared with the
+    Swift reference within the tolerance.
 
 `CommandBufferErrorCodeTests` sits in the same target without touching a
 device: it pins `GPUCompletionMapping`'s domain string and code numbers to the
@@ -82,7 +118,12 @@ is a raw code the main suite writes down.
 
 - These suites live in `Tests/GPUSmokeTests`, are `.serialized`, and are gated
   with `.enabled(if: MetalDeviceProbe.isAvailable)` so a machine without a
-  device skips instead of failing.
+  device skips instead of failing. Three suites of the same target need no
+  device and carry neither trait (`Effect smoke rig image`, `Pixelate
+  reference`, `Example effects smoke rule`); they run only under `make
+  test-gpu` too, because `make test` skips the whole target.
+  `Command-buffer error codes` touches no device either but keeps both traits,
+  as `Library error codes` does.
 - They run only through `make test-gpu`, which executes
   `swift test --filter GPUSmokeTests` in its **own process** after the main
   run (`--skip GPUSmokeTests`), the way lyra isolates its CoreAudio HAL suite.
@@ -93,7 +134,7 @@ is a raw code the main suite writes down.
   Those scenarios are a manual VM lane (`.claude/rules/dev-verification.md`).
 - The compile cache is `EffectRuntimeStateDataSource`'s (behind
   `EffectRuntimeRepository`), in-process only: it is keyed by
-  `(source, compile options)`, and a cache on disk (which would need a device id
+  `(source, compile options, parameter layout)`, and a cache on disk (which would need a device id
   and an OS version) is deferred to Later, epic #42 D12. A GPU test builds its own
   runtime and state, so it never shares cache state with another test.
 - **GitHub-hosted macOS runners do expose a Metal device** (measured

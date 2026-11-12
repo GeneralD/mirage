@@ -5,18 +5,21 @@ import AVFoundation
 import Domain
 
 final class CaptureRig: @unchecked Sendable {
-    private let session = AVCaptureSession()
-    private let output = AVCaptureVideoDataOutput()
+    let session = AVCaptureSession()
+    let output = AVCaptureVideoDataOutput()
     private let delegate: CaptureFrameDelegate
     private let queue = DispatchQueue(label: "capture.frames")
     private let observers: CaptureEndObservers
+    // Gives back the device lock that `configure` keeps for the whole run; called once, by `stop()`.
+    private let release: () -> Void
 
     init(
         descriptor: SurfaceDescriptor,
+        capture: CameraCapture,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws {
-        let device = try AVCaptureDevice.default(for: .video).orThrow(CaptureSessionError.deviceUnavailable)
+        let device = try CaptureRig.device(for: capture)
         let input = try Result { try AVCaptureDeviceInput(device: device) }
             .mapError { CaptureSessionError.configurationFailed("\($0)") }.get()
         delegate = CaptureFrameDelegate(onFrame: onFrame)
@@ -26,8 +29,7 @@ final class CaptureRig: @unchecked Sendable {
         session.addInput(input)
         session.addOutput(output)
         // Checked after the input is attached: the answer depends on the device the session holds.
-        try session.canSetSessionPreset(.hd1280x720).orThrow(CaptureSessionError.configurationFailed("no 1280x720 preset"))
-        session.sessionPreset = .hd1280x720
+        release = try CaptureRig.configure(device, for: capture.format, session: session)
         output.alwaysDiscardsLateVideoFrames = true
         output.videoSettings = CaptureRig.videoSettings(for: descriptor)
         output.setSampleBufferDelegate(delegate, queue: queue)
@@ -41,5 +43,6 @@ extension CaptureRig: CaptureSessionHandle {
         // Detach first so samples already queued never reach `onFrame` after stop.
         output.setSampleBufferDelegate(nil, queue: nil)
         session.stopRunning()
+        release()
     }
 }

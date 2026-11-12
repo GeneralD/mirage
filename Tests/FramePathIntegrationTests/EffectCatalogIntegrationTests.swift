@@ -33,7 +33,7 @@ struct EffectCatalogIntegrationTests {
         let session = try await Session.start()
         let side = session.side
         let first = try #require(side.states.values.first)
-        #expect(first.entries.map(\.id) == [Self.bundledID], "the folder was empty: the bundled effect alone")
+        #expect(first.entries.map(\.id) == Self.bundledIDs, "the folder was empty: the bundled effects alone")
         #expect(first.selection == Self.bundledID)
         #expect(first.outcome == .prepared, "the first state is published after the runtime has answered")
         #expect(side.fileSystem.createdDirectories.values == [CatalogSide.folder], "the first listing made the folder")
@@ -53,7 +53,7 @@ struct EffectCatalogIntegrationTests {
         #expect(await session.rig.pumpHost(until: { side.states.count > published }))
         let state = try #require(side.states.last)
         let entry = try #require(state.entries.last)
-        #expect(state.entries.map(\.id) == [Self.bundledID, Neon.id], "the bundled effect first, then the package")
+        #expect(state.entries.map(\.id) == Self.bundledIDs + [Neon.id], "the bundled effects first, then the package")
         #expect(entry.displayName == "Neon")
         #expect(entry.author == "Example Author")
         #expect(entry.description == "Tubes that hum", "the manifest's description travels with the entry for the picker's hover")
@@ -198,7 +198,7 @@ struct EffectCatalogIntegrationTests {
 
         session.side.fileSystem.remove(Neon.directory)
         await rig.editFolder(firing: CatalogSide.folder)
-        let fellBack = await rig.pumpHost(until: { session.side.states.last?.entries.map(\.id) == [Self.bundledID] })
+        let fellBack = await rig.pumpHost(until: { session.side.states.last?.entries.map(\.id) == Self.bundledIDs })
         #expect(fellBack, "the package is gone from the catalog")
         let state = try #require(session.side.states.last)
         #expect(state.selection == Self.bundledID)
@@ -275,12 +275,38 @@ struct EffectCatalogIntegrationTests {
         try await session.finish()
         #expect(rig.host.errors.entries.count == 1)
     }
+
+    // MARK: 8. With a view attached, the preview shows the chosen effect's output
+
+    @Test("with a view attached, choosing the package draws the next frame's preview with that package's pass output")
+    func choosingThePackageDrawsThePreviewWithItsOutput() async throws {
+        let session = try await Session.start(preview: .rendered)
+        let rig = session.rig
+        try await rig.attachPreview()
+        #expect(await session.install(source: Neon.first))
+        #expect(await rig.choose(Neon.id) == .prepared)
+
+        _ = await session.capture()
+        let drawn = try session.lastPass()
+        let draw = try #require(rig.host.previewGateway.pending.last, "the preview draws the next frame")
+        #expect(ObjectIdentifier(draw.texture.surface) == ObjectIdentifier(drawn.output), "the preview draws the package's pass output")
+        #expect(rig.host.previewGateway.complete(draw))
+        rig.host.executor.drain()
+
+        try await session.finish()
+        #expect(rig.host.errors.entries.count == 0)
+        #expect(rig.host.pool.liveCount == 0)
+        #expect(rig.ext.pool.liveCount == 0)
+    }
 }
 
 // MARK: - Fixtures and helpers
 
 extension EffectCatalogIntegrationTests {
     private static let bundledID = EffectID.bundled(ChromaticGrainEffect.name)
+
+    /// Every bundled effect the app ships, in the menu's order: the tests say what the catalog lists, not how many there are.
+    private static let bundledIDs: [EffectID] = BundledEffectDataSourceImpl().effects.map { EffectID.bundled($0.name) }
 
     /// What the compiler is handed for an author's `source`: the prelude, the line directive and the source.
     /// The fake gateway does not read it: it mints a library per source and remembers it, so the text is the
@@ -348,8 +374,8 @@ extension EffectCatalogIntegrationTests {
         }
 
         @MainActor
-        static func start() async throws -> Session {
-            let rig = LoopbackRig(effects: .real, catalog: .real)
+        static func start(preview: HostPreview = .inMemory) async throws -> Session {
+            let rig = LoopbackRig(preview: preview, effects: .real, catalog: .real)
             let side = try #require(rig.host.catalog)
             let relay = await rig.startExtension()
             try await rig.startHost()

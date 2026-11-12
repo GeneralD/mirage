@@ -7,6 +7,7 @@ struct FakeTextureCacheGatewayTests {
     private let gateway = FakeTextureCacheGateway()
     private let context = FakeGPUContextHandle()
     private let surface = FakeSurfaceHandle(id: 1)
+    private let other = FakeSurfaceHandle(id: 2)
 
     @Test("a bind given back once is balanced")
     func balanced() throws {
@@ -65,6 +66,72 @@ struct FakeTextureCacheGatewayTests {
         #expect(throws: GPUError.textureBindingFailed) { try gateway.bind(surface, on: context) }
         #expect(gateway.bindCount == 0)
         #expect(gateway.liveCount == 0)
+    }
+
+    @Test("a failure scripted for one surface refuses only that surface's bind, and the refused bind is not counted")
+    func surfaceFailureIsScoped() throws {
+        gateway.failBind(ofSurface: surface, with: .textureBindingFailed)
+
+        #expect(throws: GPUError.textureBindingFailed) { try gateway.bind(surface, on: context) }
+        #expect(gateway.bindCount == 0)
+        #expect(gateway.liveCount == 0)
+        #expect(gateway.isBalanced)
+
+        let texture = try gateway.bind(other, on: context)
+        #expect((texture as? FakeTextureHandle)?.surface === other)
+        #expect(gateway.bindCount == 1)
+        #expect(gateway.liveCount == 1)
+        try gateway.unbind(texture)
+        #expect(gateway.isBalanced)
+    }
+
+    @Test("clearing a surface's scripted failure with nil lets its bind through again")
+    func surfaceFailureIsCleared() throws {
+        gateway.failBind(ofSurface: surface, with: .textureBindingFailed)
+        gateway.failBind(ofSurface: surface, with: nil)
+
+        let texture = try gateway.bind(surface, on: context)
+        #expect((texture as? FakeTextureHandle)?.surface === surface)
+        try gateway.unbind(texture)
+        #expect(gateway.bindCount == 1)
+        #expect(gateway.isBalanced)
+    }
+
+    @Test("failures scripted for two surfaces are independent, and each throws its own error")
+    func surfaceFailuresAreIndependent() throws {
+        gateway.failBind(ofSurface: surface, with: .textureBindingFailed)
+        gateway.failBind(ofSurface: other, with: .foreignHandle)
+
+        #expect(throws: GPUError.textureBindingFailed) { try gateway.bind(surface, on: context) }
+        #expect(throws: GPUError.foreignHandle) { try gateway.bind(other, on: context) }
+
+        gateway.failBind(ofSurface: surface, with: nil)
+        #expect(throws: GPUError.foreignHandle) { try gateway.bind(other, on: context) }
+        let texture = try gateway.bind(surface, on: context)
+        try gateway.unbind(texture)
+        #expect(gateway.isBalanced)
+    }
+
+    @Test("a global bind failure is thrown before a surface's, and clearing it leaves the surface's in place")
+    func globalFailureComesFirst() throws {
+        gateway.failBind(ofSurface: surface, with: .textureBindingFailed)
+        gateway.failBind(with: .noDevice)
+
+        #expect(throws: GPUError.noDevice) { try gateway.bind(surface, on: context) }
+
+        gateway.failBind(with: nil)
+        #expect(throws: GPUError.textureBindingFailed) { try gateway.bind(surface, on: context) }
+        #expect(gateway.bindCount == 0)
+        #expect(gateway.liveCount == 0)
+    }
+
+    @Test("a bind on a foreign context is refused with foreignHandle even when the surface has a scripted failure")
+    func foreignContextBeforeSurfaceFailure() {
+        gateway.failBind(ofSurface: surface, with: .textureBindingFailed)
+
+        #expect(throws: GPUError.foreignHandle) { try gateway.bind(surface, on: ForeignContextHandle()) }
+        #expect(gateway.bindCount == 0)
+        #expect(gateway.doubleUnbindCount == 0)
     }
 }
 

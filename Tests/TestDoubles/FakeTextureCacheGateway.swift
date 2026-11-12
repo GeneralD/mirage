@@ -25,6 +25,7 @@ public final class FakeTextureCacheGateway: TextureCacheGateway, Sendable {
         var unbindCount = 0
         var doubleUnbindCount = 0
         var bindError: GPUError?
+        var surfaceBindErrors: [ObjectIdentifier: GPUError] = [:]
     }
 
     private let state = Locked(State())
@@ -46,12 +47,19 @@ public final class FakeTextureCacheGateway: TextureCacheGateway, Sendable {
         state.withLock { $0.bindError = error }
     }
 
+    /// Only the bind of `surface` throws `error`; `nil` clears it. Checked after
+    /// the failure set by `failBind(with:)`, so that one wins while both are set.
+    public func failBind(ofSurface surface: FakeSurfaceHandle, with error: GPUError?) {
+        state.withLock { $0.surfaceBindErrors[ObjectIdentifier(surface)] = error }
+    }
+
     public func bind(_ surface: any SurfaceHandle, on context: any GPUContextHandle) throws -> any TextureHandle {
         // Same order as the live gateway: the surface first, then the context.
         let fake = try (surface as? FakeSurfaceHandle).orThrow(SurfaceError.foreignHandle)
         _ = try (context as? FakeGPUContextHandle).orThrow(GPUError.foreignHandle)
         return try state.withLock { state in
             if let error = state.bindError { throw error }
+            if let error = state.surfaceBindErrors[ObjectIdentifier(fake)] { throw error }
             let texture = FakeTextureHandle(surface: fake)
             state.bound.insert(ObjectIdentifier(texture))
             state.bindCount += 1

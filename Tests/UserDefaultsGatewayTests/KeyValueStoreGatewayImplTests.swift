@@ -86,4 +86,35 @@ struct KeyValueStoreGatewayImplTests {
             #expect(gateway.string(forKey: "empty") == "")
         }
     }
+
+    @Test("after removeAll, every key that was set reads as nil")
+    func removeAllClearsEverySetKey() throws {
+        try withSuite { gateway, _ in
+            gateway.set("one", forKey: "a")
+            gateway.set("two", forKey: "b")
+            gateway.set("", forKey: "empty")
+            gateway.removeAll()
+            #expect(gateway.string(forKey: "a") == nil)
+            #expect(gateway.string(forKey: "b") == nil)
+            #expect(gateway.string(forKey: "empty") == nil)
+        }
+    }
+
+    @Test("a value set after removeAll reads back")
+    func setAfterRemoveAll() throws {
+        try withSuite { gateway, _ in
+            gateway.set("before", forKey: "a")
+            gateway.removeAll()
+            gateway.set("after", forKey: "a")
+            #expect(gateway.string(forKey: "a") == "after")
+        }
+    }
+
+    @Test("removeAll on an empty suite does nothing")
+    func removeAllOnEmptySuite() throws {
+        try withSuite { gateway, _ in
+            gateway.removeAll()
+            #expect(gateway.string(forKey: "anything") == nil)
+        }
+    }
 }

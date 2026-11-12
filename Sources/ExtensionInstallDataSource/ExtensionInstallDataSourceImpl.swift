@@ -9,6 +9,8 @@ import Domain
 public actor ExtensionInstallDataSourceImpl {
     @Dependency(\.systemExtensionGateway) private var gateway
     @Dependency(\.developerLog) private var developerLog
+    @Dependency(\.workspaceGateway) private var workspace
+    @Dependency(\.errorLog) private var errorLog
 
     // Mutated on every transition; the actor is what makes that safe.
     private var current: InstallStatus = .notInstalled
@@ -17,6 +19,11 @@ public actor ExtensionInstallDataSourceImpl {
     private var subscribers: [Int: AsyncStream<InstallStatus>.Continuation] = [:]
     // Source of subscriber keys; bumped once per subscription.
     private var nextSubscriberID = 0
+    // Consumers of `updates()`: they see every transition, terminal ones included, and the
+    // source never finishes them, so they stay attached across retried requests.
+    private var watchers: [Int: AsyncStream<InstallStatus>.Continuation] = [:]
+    // Source of watcher keys; bumped once per `updates()` call.
+    private var nextWatcherID = 0
     // Identifies the newest activation request; bumped per submission so a superseded
     // request's late events cannot touch the one that replaced it.
     private var generation = 0
@@ -46,11 +53,32 @@ extension ExtensionInstallDataSourceImpl: CameraExtensionInstaller {
         Task { await drive(generation: mine) }
         return stream
     }
+
+    public func updates() async -> AsyncStream<InstallStatus> {
+        let (stream, continuation) = AsyncStream<InstallStatus>.makeStream()
+        // No suspension between the snapshot and the registration, so no transition lands in between.
+        continuation.yield(current)
+        watch(continuation)
+        return stream
+    }
+
+    public func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        let opened = workspace.openURL(Self.settingsURL(for: pane))
+        if opened {
+            developerLog.record(.install, "opened System Settings: \(pane)")
+        } else {
+            errorLog.record(.install, "System Settings did not open: \(pane)")
+        }
+        return opened
+    }
 }
 
 extension ExtensionInstallDataSourceImpl {
     /// Number of callers still attached to the pending request.
     var subscriberCount: Int { subscribers.count }
+
+    /// Number of consumers attached through `updates()`.
+    var watcherCount: Int { watchers.count }
 
     private var isPending: Bool { current == .installing || current == .needsApproval }
 
@@ -95,13 +123,37 @@ extension ExtensionInstallDataSourceImpl {
         subscribers[id] = nil
     }
 
+    /// A watcher is not finished by the source, so a terminal status does not end it; like a
+    /// subscriber, it is detached when its consumer terminates.
+    private func watch(_ continuation: AsyncStream<InstallStatus>.Continuation) {
+        let id = nextWatcherID
+        nextWatcherID += 1
+        watchers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.unwatch(id) }
+        }
+    }
+
+    private func unwatch(_ id: Int) {
+        watchers[id] = nil
+    }
+
     private func transition(to next: InstallStatus) {
         current = next
         developerLog.record(.install, "extension install status: \(next)")
         for subscriber in subscribers.values { subscriber.yield(next) }
+        for watcher in watchers.values { watcher.yield(next) }
         guard next.isTerminal else { return }
         for subscriber in subscribers.values { subscriber.finish() }
         subscribers = [:]
+    }
+
+    /// The System Settings deep links. Apple documents neither, so the strings are kept in this one place.
+    private static func settingsURL(for pane: SystemSettingsPane) -> String {
+        switch pane {
+        case .loginItemsAndExtensions: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
+        case .privacyAndSecurity: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+        }
     }
 
     static func status(for event: SystemExtensionEvent) -> InstallStatus {

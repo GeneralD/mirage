@@ -6,7 +6,8 @@ import Dependencies
 /// the one task that runs the catalog. The menu reads `state`; its items call
 /// `select` and `openEffectsFolder`.
 public protocol EffectInteractor: Sendable {
-    /// The catalog's state, the current one first once `start()` has run.
+    /// The catalog's state, the current one first once `start()` has run. The panel reads
+    /// `state.parameters`, the chosen effect's parameters with their current values.
     var state: AnyPublisher<EffectCatalogState, Never> { get }
 
     /// Starts the catalog and begins publishing `state`. Calling it again while started
@@ -23,6 +24,21 @@ public protocol EffectInteractor: Sendable {
     /// back; two calls made in the same instant may therefore reach the UseCase in either order.
     /// A caller that needs an order waits for the first outcome in `state`.
     func select(_ id: EffectID)
+
+    /// Forgets the record that switched `id` off and chooses it again. Like `select(_:)`, it is not queued
+    /// behind `start()`, `stop()` or another choice, it needs no `start()`, and the answer arrives in `state`
+    /// as the outcome.
+    func reenable(_ id: EffectID)
+
+    /// Sets the parameter `id` of the chosen effect to `value`. The UseCase clamps and snaps it, and the
+    /// result arrives in `state`. Calls are carried out one at a time, in the order they were made, by a
+    /// queue of their own: `start()`, `stop()` and `select(_:)` neither wait for it nor hold it back.
+    /// Returns at once.
+    func setParameter(_ id: String, to value: EffectParameterValue)
+
+    /// Puts every parameter of the chosen effect back to its default. It shares the order of
+    /// `setParameter(_:to:)`, so a reset lands after the sets made before it. Returns at once.
+    func resetParameters()
 
     func openEffectsFolder()
 }
@@ -54,6 +70,18 @@ private struct UnimplementedEffectInteractor: EffectInteractor {
 
     func select(_ id: EffectID) {
         reportIssue("EffectInteractor.select not implemented")
+    }
+
+    func reenable(_ id: EffectID) {
+        reportIssue("EffectInteractor.reenable not implemented")
+    }
+
+    func setParameter(_ id: String, to value: EffectParameterValue) {
+        reportIssue("EffectInteractor.setParameter not implemented")
+    }
+
+    func resetParameters() {
+        reportIssue("EffectInteractor.resetParameters not implemented")
     }
 
     func openEffectsFolder() {

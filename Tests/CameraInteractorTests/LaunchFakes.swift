@@ -23,4 +23,12 @@ final class FakeInstallUseCase: ExtensionInstallUseCase, Sendable {
         for status in script { onStatus(status) }
         return outcome
     }
+
+    func updates() async -> AsyncStream<InstallStatus> {
+        AsyncStream { $0.finish() }
+    }
+
+    func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        false
+    }
 }

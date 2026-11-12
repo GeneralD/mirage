@@ -25,6 +25,7 @@ final class LingeringCaptureGateway: CaptureSessionGateway, Sendable {
         let gateway: LingeringCaptureGateway
 
         func stop() { gateway.state.withLock { $0.stopCount += 1 } }
+        func setMirrored(_ mirrored: Bool) {}
     }
 
     private let state = Locked(State())
@@ -44,6 +45,7 @@ final class LingeringCaptureGateway: CaptureSessionGateway, Sendable {
 
     func start(
         descriptor: SurfaceDescriptor,
+        capture: CameraCapture,
         onFrame: @escaping @Sendable (CapturedSurface) -> Void,
         onEnd: @escaping @Sendable (CaptureEnd) -> Void
     ) throws -> any CaptureSessionHandle {

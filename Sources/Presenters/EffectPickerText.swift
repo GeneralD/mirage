@@ -12,7 +12,7 @@ func pickerCells(of state: EffectCatalogState, matching query: String) -> [Effec
     let term = searchTerm(of: query)
     return state.entries
         .filter { entry in term.isEmpty || matches(entry, term) }
-        .map { entry in pickerCell(of: entry, selection: state.selection) }
+        .map { entry in pickerCell(of: entry, in: state) }
 }
 
 /// What the grid says in place of cells: `nil` while there is a cell to show or nothing has been
@@ -63,23 +63,27 @@ func placeholderHue(of id: EffectID) -> Double {
     return Double(hash % 360) / 360
 }
 
-private func pickerCell(of entry: EffectCatalogEntry, selection: EffectID) -> EffectPickerCell {
+private func pickerCell(of entry: EffectCatalogEntry, in state: EffectCatalogState) -> EffectPickerCell {
     EffectPickerCell(
         id: entry.id,
         title: entry.displayName,
-        detail: MenuBarText.detail(of: entry),
-        isSelected: entry.id == selection,
-        isEnabled: entry.availability == .ready,
-        help: help(of: entry),
+        detail: MenuBarText.detail(of: entry, in: state),
+        isSelected: entry.id == state.selection,
+        isEnabled: entry.availability == .ready && state.disabled[entry.id] == nil,
+        help: help(of: entry, in: state),
         artwork: artwork(of: entry))
 }
 
 /// What the cell can only abbreviate: for an effect that can be chosen, its name and author, and
-/// the manifest's description on a line of its own after them; for a broken package, the name and
-/// why it cannot be chosen.
-private func help(of entry: EffectCatalogEntry) -> String {
+/// the manifest's description on a line of its own after them; for an effect that health has
+/// switched off, its name and the reason; for a broken package, the name and why it cannot be
+/// chosen.
+private func help(of entry: EffectCatalogEntry, in state: EffectCatalogState) -> String {
     switch entry.availability {
     case .ready:
+        if let disabled = state.disabled[entry.id] {
+            return "\(entry.displayName) is disabled: \(MenuBarText.reason(disabled))"
+        }
         let name = entry.author.map { "\(entry.displayName) by \($0)" } ?? entry.displayName
         return [name, helpDescription(of: entry)].compactMap(\.self).joined(separator: "\n")
     case .broken(let problem):

@@ -251,4 +251,77 @@ struct InMemoryFileSystemGatewayTests {
         #expect(try fileSystem.readString("/a/file") == "x")
         #expect(try fileSystem.contentsOfDirectory("/a") == ["dir", "file"])
     }
+
+    // MARK: writeString
+
+    @Test("writeString stores the text as UTF-8, readString and readData read it back, and a second write replaces it")
+    func writeStringStoresText() throws {
+        fileSystem.makeDirectory("/support/app/Effects")
+
+        try fileSystem.writeString("色\n", to: "/support/app/Effects/log.txt")
+        #expect(try fileSystem.readString("/support/app/Effects/log.txt") == "色\n")
+        #expect(try fileSystem.readData("/support/app/Effects/log.txt", upTo: 100) == Data("色\n".utf8))
+
+        try fileSystem.writeString("second", to: "/support/app/Effects/log.txt")
+        #expect(try fileSystem.readString("/support/app/Effects/log.txt") == "second")
+        #expect(try fileSystem.contentsOfDirectory("/support/app/Effects") == ["log.txt"])
+    }
+
+    @Test("writeString into a missing directory throws a no-such-file error and makes no directory, grandparents included")
+    func writeStringMissingParent() {
+        let parent = #expect(throws: CocoaError.self) { try fileSystem.writeString("x", to: "/support/app/file") }
+        let grandparent = #expect(throws: CocoaError.self) { try fileSystem.writeString("x", to: "/support/app/Effects/deeper/file") }
+
+        #expect(parent?.code == .fileNoSuchFile)
+        #expect(grandparent?.code == .fileNoSuchFile)
+        #expect(!fileSystem.isDirectory("/support"))
+    }
+
+    @Test(
+        "writeString below a file, directly or through a missing directory, or over a directory throws an unknown-write error and leaves the tree as it was"
+    )
+    func writeStringRefusesTheTree() throws {
+        fileSystem.write("/a/file", "x")
+        fileSystem.makeDirectory("/a/dir")
+
+        let below = #expect(throws: CocoaError.self) { try fileSystem.writeString("y", to: "/a/file/child") }
+        let throughMissing = #expect(throws: CocoaError.self) { try fileSystem.writeString("y", to: "/a/file/sub/child") }
+        let overDirectory = #expect(throws: CocoaError.self) { try fileSystem.writeString("y", to: "/a/dir") }
+
+        #expect(below?.code == .fileWriteUnknown)
+        #expect(throughMissing?.code == .fileWriteUnknown)
+        #expect(overDirectory?.code == .fileWriteUnknown)
+        #expect(try fileSystem.readString("/a/file") == "x")
+        #expect(fileSystem.isDirectory("/a/dir"))
+        #expect(!fileSystem.isDirectory("/a/file/sub"))
+        #expect(try fileSystem.contentsOfDirectory("/a") == ["dir", "file"])
+    }
+
+    @Test("failWriteString throws its error for that path before any other check, and nil clears it")
+    func failWriteStringScriptsTheError() throws {
+        fileSystem.makeDirectory("/a/dir")
+        fileSystem.failWriteString(of: "/a/dir", with: Denied())
+        fileSystem.failWriteString(of: "/a/file", with: Denied())
+
+        #expect(throws: Denied.self) { try fileSystem.writeString("x", to: "/a/dir") }
+        #expect(throws: Denied.self) { try fileSystem.writeString("x", to: "/a/file") }
+        let missing = #expect(throws: CocoaError.self) { try fileSystem.readString("/a/file") }
+        #expect(missing?.code == .fileReadNoSuchFile, "the refused write left nothing behind")
+
+        fileSystem.failWriteString(of: "/a/file", with: nil)
+        try fileSystem.writeString("x", to: "/a/file")
+        #expect(try fileSystem.readString("/a/file") == "x")
+    }
+
+    @Test("writtenPaths records every writeString in call order, failing ones included")
+    func writtenPathsRecorded() {
+        fileSystem.makeDirectory("/a")
+        fileSystem.failWriteString(of: "/a/denied", with: Denied())
+
+        _ = try? fileSystem.writeString("x", to: "/a/first/")
+        _ = try? fileSystem.writeString("y", to: "/a/denied")
+        _ = try? fileSystem.writeString("z", to: "/nowhere/file")
+
+        #expect(fileSystem.writtenPaths.values == ["/a/first", "/a/denied", "/nowhere/file"], "a trailing slash is the same path")
+    }
 }

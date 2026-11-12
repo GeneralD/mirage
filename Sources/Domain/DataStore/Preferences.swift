@@ -10,6 +10,27 @@ public protocol Preferences: Sendable {
     func selectedEffect() async -> EffectID?
 
     func setSelectedEffect(_ id: EffectID) async
+
+    /// The records of disabled effects kept across launches, `[]` when none was stored or what was
+    /// stored does not decode as a whole (a value written by another build is not an error).
+    func disabledEffects() async -> [DisabledEffectRecord]
+
+    /// Replaces every stored record with `records`; an empty array is stored as an empty array.
+    func setDisabledEffects(_ records: [DisabledEffectRecord]) async
+
+    /// Whether the global hotkeys are on, `true` when nothing was stored or what was stored does
+    /// not decode (a value written by another build is not an error).
+    func hotkeysEnabled() async -> Bool
+
+    func setHotkeysEnabled(_ on: Bool) async
+
+    /// The parameter values kept for `id` across launches, `[:]` when none were stored or what was
+    /// stored does not decode as a whole (a value written by another build is not an error).
+    func parameterValues(of id: EffectID) async -> [String: EffectParameterValue]
+
+    /// Replaces the stored parameter values of `id` with `values`; an empty dictionary is stored as
+    /// `{}`, and values that do not encode are not stored, so the ones already stored stay.
+    func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async
 }
 
 public enum PreferencesKey: TestDependencyKey {
@@ -31,5 +52,32 @@ private struct UnimplementedPreferences: Preferences {
 
     func setSelectedEffect(_ id: EffectID) async {
         reportIssue("Preferences.setSelectedEffect not implemented")
+    }
+
+    func disabledEffects() async -> [DisabledEffectRecord] {
+        reportIssue("Preferences.disabledEffects not implemented")
+        return []
+    }
+
+    func setDisabledEffects(_ records: [DisabledEffectRecord]) async {
+        reportIssue("Preferences.setDisabledEffects not implemented")
+    }
+
+    func hotkeysEnabled() async -> Bool {
+        reportIssue("Preferences.hotkeysEnabled not implemented")
+        return true
+    }
+
+    func setHotkeysEnabled(_ on: Bool) async {
+        reportIssue("Preferences.setHotkeysEnabled not implemented")
+    }
+
+    func parameterValues(of id: EffectID) async -> [String: EffectParameterValue] {
+        reportIssue("Preferences.parameterValues not implemented")
+        return [:]
+    }
+
+    func setParameterValues(_ values: [String: EffectParameterValue], of id: EffectID) async {
+        reportIssue("Preferences.setParameterValues not implemented")
     }
 }

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# One command for a picture of one screen of the view gallery, so a worker can look at the window it built
+# without a camera (docs/hackathon/mvp-cd/PRODUCT.md → UI check). The gallery opens the app's own windows
+# over fixture data; it never touches the capture path or prompts for the camera.
+#
+#   scripts/gallery <screen> <out.png>   # build view-gallery, open the screen, capture its window, quit it
+#   scripts/gallery --list               # the screen names, each with its one-line summary
+#
+# Exit 0 with the image written; exit 1 when the gallery ends before a window shows, or none shows within
+# 30 tries; exit 2 for a wrong command line. The gallery it started is always quit, and the one screenshot
+# slot (a screenshot is one at a time: PRODUCT.md → Machine budget) is always given back.
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+if [ "${1:-}" = "--list" ] && [ $# -eq 1 ]; then
+    swift build --product view-gallery >&2
+    exec "$(swift build --show-bin-path)/view-gallery" --list
+fi
+if [ $# -ne 2 ] || [ "${1#-}" != "$1" ]; then
+    printf 'usage: scripts/gallery <screen> <out.png> | scripts/gallery --list\n' >&2
+    exit 2
+fi
+screen="$1"
+out="$2"
+
+pid=""
+
+cleanup() {
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    return 0
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Take the slot: flock(2) on fd 9, a file under the repository's common git directory. macOS ships no
+# flock(1), so python3 (from the command line tools swift needs) takes the lock on the descriptor this
+# shell opened. The lock belongs to that open file, and the kernel drops it when the last process holding
+# the file is gone: a gallery that dies, even by SIGKILL, never strands the slot, and there is no holder
+# to reclaim. Nothing this starts inherits fd 9, so a view-gallery left behind does not hold the slot.
+exec 9>>"$(git rev-parse --git-common-dir)/hk-shot.lock"
+waited=0
+while :; do
+    status=0
+    /usr/bin/python3 -c '
+import fcntl, sys
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.exit(75)
+' || status=$?
+    [ "$status" -eq 0 ] && break
+    if [ "$status" -ne 75 ]; then
+        printf 'gallery: cannot take the screenshot slot (python3 exited %d)\n' "$status" >&2
+        exit 1
+    fi
+    printf 'gallery: the screenshot slot is busy, waiting (%ds)\n' "$waited" >&2
+    sleep 5
+    waited=$((waited + 5))
+done
+
+swift build --product view-gallery >&2 9>&-
+"$(swift build --show-bin-path)/view-gallery" "$screen" 9>&- &
+pid=$!
+
+tries=0
+last=""
+until last="$(scripts/shot "$out" --pid "$pid" 9>&- 2>&1)"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+        printf 'gallery: view-gallery ended before a window of screen "%s" showed\n' "$screen" >&2
+        exit 1
+    fi
+    tries=$((tries + 1))
+    if [ "$tries" -ge 30 ]; then
+        printf 'gallery: no window of screen "%s" after %d tries; last: %s\n' "$screen" "$tries" "$last" >&2
+        exit 1
+    fi
+    sleep 1
+done
+printf '%s\n' "$last"

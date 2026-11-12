@@ -26,46 +26,75 @@ import Domain
 actor EffectCatalogSession {
     /// What the runtime was last handed: kept to tell a hot reload (same effect, new
     /// source) from a choice, to hand the runtime nothing it already has, and to say how
-    /// the runtime took it (`answer`, `nil` while that is still out).
-    private struct Prepared {
+    /// the runtime took it (`answer`, `nil` while that is still out). `model` holds the
+    /// parameter values handed with `source`, which the panel shows and edits.
+    struct Prepared {
         var id: EffectID
         let source: EffectSource
         var answer: EffectSelectionOutcome?
+        var model: ParameterModel
+        /// The block the runtime was last handed for `source`: the one `prepare` carried, or the last resend. A write made
+        /// while the prepare is out goes to the runtime at once but does not update this, so the answer can tell it moved.
+        var sent: EffectParameterBlock
+        /// The compiler's diagnostic for a source the runtime refused, asked for once with `answer`; `nil` for a source that compiled.
+        var compilerMessage: String? = nil
     }
 
-    @Dependency(\.effectPackageRepository) private var packages
-    @Dependency(\.effectRuntimeRepository) private var runtime
-    @Dependency(\.settingsRepository) private var settings
-    @Dependency(\.developerLog) private var developerLog
-    @Dependency(\.errorLog) private var errorLog
+    /// How long the parameter writes of the chosen effect must be quiet before they are persisted
+    /// (`docs/hackathon/mvp-cd/specs/parameters.md`, Persistence).
+    static let persistQuietPeriod: Duration = .milliseconds(500)
 
-    private let broadcast: EffectCatalogBroadcast
-    private var entries: [EffectCatalogEntry] = []
+    @Dependency(\.effectPackageRepository) var packages
+    @Dependency(\.effectRuntimeRepository) var runtime
+    @Dependency(\.settingsRepository) var settings
+    @Dependency(\.developerLog) var developerLog
+    @Dependency(\.errorLog) var errorLog
+    @Dependency(\.continuousClock) var clock
+
+    let broadcast: EffectCatalogBroadcast
+    var entries: [EffectCatalogEntry] = []
     /// The chosen effect: restored at the start of a run, set by `select`, replaced by the
     /// bundled one when the chosen one is gone. `nil` until the run has restored it and
     /// listed a catalog to settle it against.
-    private var selection: EffectID?
-    private var prepared: Prepared?
+    var selection: EffectID?
+    var prepared: Prepared?
     /// Why the chosen effect's source could not be read at the last look; `nil` once a look
     /// succeeds (or a `prepare` is issued). It is shown over the runtime's answer, never
     /// instead of it: the runtime keeps running what it has.
-    private var unreadableSource: EffectPackageProblem?
-    private var generation = 0
+    var unreadableSource: EffectPackageProblem?
+    var generation = 0
     /// One per run, taken in the turn `run()` begins. A flow that was suspended across a run
     /// boundary (a choice waiting for its source, a cancelled run waiting for the runtime) finds
     /// the number changed when it resumes, and leaves what is now the new run's alone.
-    private var epoch = 0
+    var epoch = 0
     /// One per look at an effect's source, taken in the turn that issues the read. Of two reads
     /// of the same effect (a choice and a listing, say) only the newer may act on its answer:
     /// the older one may hold files that have been edited since.
-    private var readToken = 0
+    var readToken = 0
+    /// The effect health counts the outcomes of: the one the runtime was last prepared with, and the policy counting its
+    /// passes. Every `prepare` replaces it; a run clears it.
+    var armed: ArmedHealth?
+    /// The effects health has switched off, each with the record its reason comes from. A run starts it from the records the settings hold.
+    var disabled: [EffectID: DisabledEntry] = [:]
+    /// Set when the bundled effect itself is switched off by health: no effect can move frames, so the menu says the GPU is
+    /// unavailable. A passing pass of any effect lowers it again; a run clears it.
+    var isGPUUnavailable = false
+    /// The one wait for a switched-off effect's cool-down that is pending, if any: `cancelTrial()` cancels it.
+    var trial: Task<Void, Never>?
+    /// Taken anew whenever a wait is cancelled or replaced, so a wait that was overtaken does nothing when it wakes.
+    var trialToken = 0
+    /// The parameter writes waiting for the quiet period, one entry per effect, and the one timer that persists them.
+    /// A run does not clear them: the run that ends persists what still waits, at once, and cancels the timer (`run()`).
+    /// A run that a newer one took over leaves both to that run.
+    private var pending = PendingParameterWrites()
+    private var persistTimer: Task<Void, Never>?
 
     /// How the chosen effect's last attempt went: the problem if its source could not be read
     /// at the last look, otherwise how the runtime took what it was last handed, if that was
     /// the chosen effect. `nil` while that attempt is still running, or has not begun: a choice
     /// is made before its `prepare` is issued, and an answer for the effect chosen before can
     /// arrive in between, which is not this choice's.
-    private var outcome: EffectSelectionOutcome? {
+    var outcome: EffectSelectionOutcome? {
         unreadableSource.map { .unavailable($0) } ?? (prepared?.id == selection ? prepared?.answer : nil)
     }
 
@@ -78,36 +107,139 @@ actor EffectCatalogSession {
     /// package and an edited shader all arrive (the Repository lists again after every
     /// change). The Interactor owns the task, and starts the next run only after the one before
     /// has returned, but a run that is started while the one before it still waits for the
-    /// runtime takes over at once: the old one leaves without touching what is the new one's.
+    /// runtime takes over at once: the old one leaves without touching what is the new one's. A run that ends while it is
+    /// still the newest persists the parameter values waiting for their quiet period before it closes the streams.
     func run() async {
         epoch += 1
         let mine = epoch
         clear()
         broadcast.forget()
-        let restored = await settings.selectedEffect()
-        guard epoch == mine else { return }
-        selection = restored
-        for await listing in packages.catalog() {
-            await reconcile(listing, in: mine)
+        // Subscribed before the first suspension: the runtime replays nothing to a subscriber that comes later.
+        let outcomes = runtime.outcomes()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { [self] in await follow(outcomes, in: mine) }
+            await listen(in: mine)
+            group.cancelAll()
         }
+        guard epoch == mine else { return }
+        // Taken in the turn of the guard, with no suspension before the timer is cancelled, so that a write made from here on
+        // starts a timer of its own.
+        let waiting = pending.drainedAll()
+        persistTimer?.cancel()
+        persistTimer = nil
+        for write in waiting {
+            await settings.setParameterValues(write.values, of: write.id)
+        }
+        // The writes above suspend: a newer run may have begun meanwhile, and then the streams are its own to close.
         guard epoch == mine else { return }
         end()
     }
 
+    /// Restores the persisted choice and the switched-off effects, then reconciles every listing of the catalog for `run`.
+    private func listen(in run: Int) async {
+        let restored = await settings.selectedEffect()
+        let stored = await settings.disabledEffects()
+        guard epoch == run else { return }
+        selection = restored
+        // The records of the bundled effect come from another build: they are read away, and never written back.
+        disabled = Dictionary(
+            stored.filter { $0.id.origin == .package }.map { ($0.id, DisabledEntry(record: $0)) },
+            uniquingKeysWith: { _, last in last })
+        // A restored choice that retries on its own waits the base cool-down from the launch,
+        // as one switched off in this run does (`receive`).
+        if let restored, disabled[restored]?.record.retriesAutomatically == true {
+            scheduleTrial(of: restored, after: EffectHealthPolicy.Configuration().coolDown, in: run)
+        }
+        for await listing in packages.catalog() {
+            await reconcile(listing, in: run)
+        }
+    }
+
+    /// Chooses the effect `id` and prepares it. A switched-off effect is refused at the door, as a broken package is.
     func select(_ id: EffectID) async -> EffectSelectionOutcome {
         guard let entry = entries.first(where: { $0.id == id }) else { return .unavailable(nil) }
         if case .broken(let problem) = entry.availability { return .unavailable(problem) }
+        guard disabled[id] == nil else { return .unavailable(nil) }
         let mine = epoch
+        // A trial waits for the effect it was scheduled for: choosing another effect ends it. Choosing the same one again does not.
+        if selection != id { cancelTrial() }
         selection = id
         await settings.setSelectedEffect(id)
         // Another choice (or a fallback, or a new run) came in while the choice was being remembered: it owns the effect now.
         guard epoch == mine, selection == id else { return .unavailable(nil) }
         let source = await read(source: id)
-        // Another choice, a newer read of this effect, a fallback or a new run came in while this one waited: it owns the effect now.
-        guard epoch == mine, isNewest(source), selection == id else { return .unavailable(nil) }
+        // Another choice, a newer read, a fallback, a new run or a switch-off came in while this one waited: it owns the effect now.
+        guard epoch == mine, isNewest(source), selection == id, disabled[id] == nil else { return .unavailable(nil) }
         switch source.answer {
-        case .success(let source): return await prepare(source, for: id, announcing: "selected")
+        case .success(let effect):
+            let restoring = await startingValues(for: id, source: effect)
+            // The stored values were read in an await of their own: the same check again before anything is prepared.
+            guard epoch == mine, isNewest(source), selection == id, disabled[id] == nil else { return .unavailable(nil) }
+            return await prepare(effect, for: id, announcing: "selected", restoring: restoring)
         case .failure(let problem): return unreadable(id, problem)
+        }
+    }
+
+    /// Chooses the ready neighbour of the chosen effect, as `select` chooses it. The neighbour is found in the same
+    /// actor turn that `select` starts from, so no other message can move the choice in between.
+    func selectAdjacent(_ step: EffectStep) async -> EffectSelectionOutcome? {
+        guard let id = effectNeighbor(of: selection, in: entries, step: step, skipping: Set(disabled.keys)) else { return nil }
+        return await select(id)
+    }
+
+    /// Sets one parameter of the chosen effect (`docs/hackathon/mvp-cd/specs/parameters.md`). It prepares nothing, and it
+    /// is not `async`: the turn has no suspension, so the model update, the publish and the runtime write cannot be
+    /// interleaved with another message.
+    func setParameter(_ id: String, to value: EffectParameterValue) {
+        guard let current = prepared, current.id == selection else {
+            developerLog.record(.effect, "parameter '\(id)' ignored: no effect is chosen")
+            return
+        }
+        guard let setting = current.model.setting(id, to: value) else {
+            developerLog.record(.effect, "parameter '\(id)' of '\(current.source.name)' rejected")
+            return
+        }
+        adopt(setting)
+    }
+
+    /// Puts every parameter of the chosen effect back to its default, under the rules of `setParameter`.
+    func resetParameters() {
+        guard let current = prepared, current.id == selection else {
+            developerLog.record(.effect, "parameter reset ignored: no effect is chosen")
+            return
+        }
+        adopt(current.model.resetting())
+    }
+
+    /// Takes the model an edit produced. A model equal to the one held changes nothing; any other is published and
+    /// handed to the runtime with the source it runs, in this same turn, and its values wait to be persisted.
+    private func adopt(_ model: ParameterModel) {
+        guard let current = prepared, model != current.model else { return }
+        prepared?.model = model
+        publish()
+        runtime.setParameters(model.block, of: current.source)
+        schedulePersist(of: current.id, values: model.values)
+    }
+
+    /// Records the values of `id` as waiting and makes the one timer that persists them sleep from now. The newest write
+    /// replaces the sleeping timer, so one is pending at a time, and it persists every effect written since the last one
+    /// that was not superseded. Synchronous: the turn of the edit has no suspension in it.
+    private func schedulePersist(of id: EffectID, values: [String: EffectParameterValue]) {
+        let generation = pending.record(values, of: id)
+        persistTimer?.cancel()
+        let clock = clock
+        // Detached, so the timer does not queue a job on the actor during this turn: the inherited form made the ordering
+        // test of `EffectCatalogParameterSetTests` race in the full catalog run. The timer holds the session weakly.
+        persistTimer = Task.detached { [weak self] in
+            guard (try? await clock.sleep(for: Self.persistQuietPeriod)) != nil, !Task.isCancelled else { return }
+            await self?.persistPending(ifGeneration: generation)
+        }
+    }
+
+    /// Writes every waiting value, when no write came after the timer that asks for it.
+    private func persistPending(ifGeneration generation: Int) async {
+        for write in pending.drained(ifGeneration: generation) {
+            await settings.setParameterValues(write.values, of: write.id)
         }
     }
 
@@ -116,22 +248,34 @@ actor EffectCatalogSession {
     private func reconcile(_ listing: [EffectCatalogEntry], in run: Int) async {
         guard epoch == run else { return }
         entries = listing
+        await releaseEdited(in: run)
+        guard epoch == run else { return }
         guard let settled = settleSelection() else { return }
+        // A switched-off effect is not prepared again while it waits: the bundled effect stands in for it, as it did at the
+        // switch-off. A trial in flight is not held off, so a listing that still has it ready leaves it chosen.
+        guard !isHeldOff(settled.id) else {
+            await holdBundled(instead: settled.id, in: run)
+            return
+        }
         let source = await read(source: settled.id)
         guard epoch == run, isNewest(source), selection == settled.id else { return }
         switch source.answer {
         case .failure(let problem):
             unreadable(settled.id, problem)
-        case .success(let source) where source == prepared?.source:
+        case .success(let source) where source == prepared?.source && (prepared?.id == settled.id || source.parameters.isEmpty):
             // The runtime has this very source already. If the last look could not read it, the menu
-            // goes back to how the runtime took it (which may still be out).
+            // goes back to how the runtime took it (which may still be out). A source that declares
+            // parameters, now chosen under another id, is prepared afresh: its model is the other effect's.
             unreadableSource = nil
             prepared?.id = settled.id
             publish()
-        case .success(let source):
+        case .success(let effect):
+            let restoring = await startingValues(for: settled.id, source: effect)
+            // The stored values were read in an await of their own: the listing's check again before anything is prepared.
+            guard epoch == run, isNewest(source), selection == settled.id else { return }
             // A fallback says what happened itself; a first choice and a hot reload are announced here.
             let announcement = settled.fellBack ? nil : (prepared?.id == settled.id ? "reloaded" : "selected")
-            await prepare(source, for: settled.id, announcing: announcement)
+            await prepare(effect, for: settled.id, announcing: announcement, restoring: restoring)
         }
     }
 
@@ -140,12 +284,13 @@ actor EffectCatalogSession {
     /// whose files can no longer be used). A fallback is not remembered: the persisted choice
     /// stays the user's last explicit one, and comes back at the next launch if its package has.
     /// `nil` when the listing offers nothing to choose.
-    private func settleSelection() -> (id: EffectID, fellBack: Bool)? {
+    func settleSelection() -> (id: EffectID, fellBack: Bool)? {
         if let chosen = selection, entries.contains(where: { $0.id == chosen && $0.availability == .ready }) {
             return (chosen, false)
         }
-        guard let bundled = entries.first(where: { $0.origin == .bundled && $0.availability == .ready }) else { return nil }
+        guard let bundled = readyBundled else { return nil }
         let lost = selection.map(displayName(of:))
+        if selection != bundled.id { cancelTrial() }
         selection = bundled.id
         if let lost {
             developerLog.record(.effect, "effect '\(lost)' is gone; back to '\(bundled.displayName)'")
@@ -155,52 +300,76 @@ actor EffectCatalogSession {
 
     /// What the user knows `id` as: its row's name, or (the row is gone) the name of the source
     /// the runtime was last handed for it, or its key.
-    private func displayName(of id: EffectID) -> String {
+    func displayName(of id: EffectID) -> String {
         entries.first { $0.id == id }?.displayName ?? (prepared?.id == id ? prepared?.source.name : nil) ?? id.key
     }
 
-    // MARK: - Reading a source
-
-    /// What a look at an effect's source found, and the number the look was issued under.
-    private struct SourceRead {
-        let token: Int
-        let answer: Result<EffectSource, EffectPackageProblem>
-    }
-
-    /// Reads the source of `id`. The number is taken before the read is issued, with no
-    /// suspension in between, so a later read always holds a later number.
-    private func read(source id: EffectID) async -> SourceRead {
-        readToken += 1
-        let token = readToken
-        return SourceRead(token: token, answer: await packages.source(of: id))
-    }
-
-    /// Whether no read was issued after `read`. A read that is not the newest may hold files that
-    /// have been edited since, whichever effect it was for, and must not act on its answer.
-    private func isNewest(_ read: SourceRead) -> Bool {
-        read.token == readToken
-    }
-
     // MARK: - Handing the runtime an effect
+
+    /// The stored values a choice of `id` starts from: the writes of `id` still waiting for their timer, which are newer than
+    /// the settings, else what the settings hold for it, read once, when `source` declares parameters and `id` is not the
+    /// effect already prepared. A hot reload or a re-choice of that one keeps the values in memory, which are the newest, so
+    /// it reads nothing; a source that declares none reads nothing either.
+    private func startingValues(for id: EffectID, source: EffectSource) async -> [String: EffectParameterValue] {
+        guard !source.parameters.isEmpty, prepared?.id != id else { return [:] }
+        if let waiting = pending.values(of: id) { return waiting }
+        return await settings.parameterValues(of: id)
+    }
 
     /// Prepares `source` as the effect `id` and publishes how that went, unless a newer
     /// request was issued while the runtime was busy: that one publishes its own, and this
     /// answer only reaches its caller.
     @discardableResult
-    private func prepare(_ source: EffectSource, for id: EffectID, announcing verb: String?) async -> EffectSelectionOutcome {
+    func prepare(
+        _ source: EffectSource, for id: EffectID, announcing verb: String?, restoring stored: [String: EffectParameterValue] = [:],
+        policy: EffectHealthPolicy = EffectHealthPolicy()
+    ) async -> EffectSelectionOutcome {
         generation += 1
         let mine = generation
-        prepared = Prepared(id: id, source: source, answer: nil)
+        // A hot reload or a re-choice of the same effect keeps its values; any other choice starts from the stored ones
+        // (the defaults, when it holds none).
+        let model =
+            if let previous = prepared, previous.id == id {
+                previous.model.respecified(source.parameters)
+            } else {
+                ParameterModel(specs: source.parameters, restoring: stored)
+            }
+        let block = model.block
+        prepared = Prepared(id: id, source: source, answer: nil, model: model, sent: block)
+        armed = ArmedHealth(id: id, fingerprint: .of(source), policy: policy)
         unreadableSource = nil
         if let verb {
             developerLog.record(.effect, "effect '\(source.name)' \(verb)")
         }
 
-        let answer = await runtime.prepare(source).selectionOutcome
+        let answer = await runtime.prepare(source, parameters: block).selectionOutcome
+        guard generation == mine else { return answer }
+        let message = await diagnostic(of: source, answered: answer)
+        // The diagnostic is an await of its own: a newer request may have been issued while it was asked for.
         guard generation == mine else { return answer }
         prepared?.answer = answer
+        prepared?.compilerMessage = message
         publish()
+        resendIfMoved(for: id)
         return answer
+    }
+
+    /// Hands the runtime the model's block again when a write made while the prepare of `id` was out left it different from
+    /// the block that prepare carried. That write reached the runtime at once, but the runtime may have dropped it: it can
+    /// land before the `begin` of the prepare (`EffectRuntimeStateDataSourceImpl.setParameters`). Synchronous, so the answer
+    /// adds no suspension, and the outcome the prepare returns is left as it is.
+    private func resendIfMoved(for id: EffectID) {
+        guard let current = prepared, current.id == id else { return }
+        let block = current.model.block
+        guard block != current.sent else { return }
+        prepared?.sent = block
+        runtime.setParameters(block, of: current.source)
+    }
+
+    /// What the runtime says about a source it has just refused. Asked only for a refusal: a source that compiled has none to say.
+    private func diagnostic(of source: EffectSource, answered answer: EffectSelectionOutcome) async -> String? {
+        guard case .failed = answer else { return nil }
+        return await runtime.compilerMessage(of: source)
     }
 
     /// The chosen effect is listed as usable but its source could not be read just now (the
@@ -208,18 +377,30 @@ actor EffectCatalogSession {
     /// a `prepare` still out goes on: its answer is kept (`Prepared.answer`) but the menu
     /// shows the problem until a listing reads the source again, which brings the answer back.
     @discardableResult
-    private func unreadable(_ id: EffectID, _ problem: EffectPackageProblem) -> EffectSelectionOutcome {
+    func unreadable(_ id: EffectID, _ problem: EffectPackageProblem) -> EffectSelectionOutcome {
         errorLog.record(.effect, "effect '\(displayName(of: id))' cannot be read: \(problem)")
         unreadableSource = problem
         publish()
         return .unavailable(problem)
     }
 
-    private func publish() {
+    func publish() {
         guard let selection else { return }
-        let state = EffectCatalogState(entries: entries, selection: selection, outcome: outcome)
+        // The parameters belong to the effect the runtime was handed: while a choice is still out, the panel lists none.
+        let parameters = prepared?.id == selection ? (prepared?.model.states ?? []) : []
+        let state = EffectCatalogState(
+            entries: entries, selection: selection, outcome: outcome, parameters: parameters,
+            disabled: disabled.mapValues(\.record.reason), isGPUUnavailable: isGPUUnavailable,
+            compilerMessage: shownDiagnostic)
         guard state != broadcast.current else { return }
         broadcast.publish(state)
+    }
+
+    /// The diagnostic the menu shows: the chosen effect's, and only while its last attempt is `.failed`. An unreadable
+    /// source's problem replaces that outcome, so the diagnostic goes with it.
+    private var shownDiagnostic: String? {
+        guard case .failed? = outcome else { return nil }
+        return prepared?.compilerMessage
     }
 
     /// The run is over: close the streams, and forget everything so that the next run starts
@@ -233,12 +414,16 @@ actor EffectCatalogSession {
     /// Forgets everything a run decided, so that the next run starts from the persisted choice.
     /// `generation` only grows, so an answer still pending from the run before (the runtime
     /// ignores cancellation) publishes nothing into the next one.
-    private func clear() {
+    func clear() {
         generation += 1
+        cancelTrial()
         entries = []
         selection = nil
         prepared = nil
         unreadableSource = nil
+        armed = nil
+        disabled = [:]
+        isGPUUnavailable = false
     }
 }
 

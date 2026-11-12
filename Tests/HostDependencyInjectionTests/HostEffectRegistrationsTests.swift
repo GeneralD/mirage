@@ -6,6 +6,7 @@ import EffectPackageRepository
 import EffectWatchDataSource
 import HostDependencyInjection
 import PreferencesDataStore
+import RandomSource
 import SettingsRepository
 import TestDoubles
 import TestSupport
@@ -33,7 +34,7 @@ import Testing
 /// concurrently). The catalog's values come in two kinds:
 ///
 /// - **Stateless** (`effectPackageRepository`, `settingsRepository`, `effectPackages`, `effectWatch`,
-///   `preferences`): structs that hold nothing between calls. A caller's own overrides win over the
+///   `preferences`, `randomSource`): structs that hold nothing between calls. A caller's own overrides win over the
 ///   scope such a value captured, so these are resolved here, inside `live(_:)`, with every Gateway
 ///   they reach overridden by a fake of this suite, whichever suite built the singleton first.
 /// - **Stateful** (`effectInteractor`, `effectCatalogUseCase`): `EffectInteractorImpl` resolves the
@@ -58,12 +59,14 @@ struct HostEffectRegistrationsTests {
             @Dependency(\.effectPackages) var effectPackages
             @Dependency(\.effectWatch) var effectWatch
             @Dependency(\.preferences) var preferences
+            @Dependency(\.randomSource) var randomSource
 
             #expect(effectPackageRepository is EffectPackageRepositoryImpl)
             #expect(settingsRepository is SettingsRepositoryImpl)
             #expect(effectPackages is EffectPackageDataSourceImpl)
             #expect(effectWatch is EffectWatchDataSourceImpl)
             #expect(preferences is PreferencesDataStoreImpl)
+            #expect(randomSource is RandomSourceImpl)
         }
     }
 
@@ -77,7 +80,8 @@ struct HostEffectRegistrationsTests {
         let state = try #require(states.first)
         let entry = try #require(state.entries.first)
         #expect(states.count == 1)
-        #expect(state.entries.count == 1)
+        let allBundledAndReady = state.entries.allSatisfy { $0.origin == .bundled && $0.availability == .ready }
+        #expect(!state.entries.isEmpty && allBundledAndReady, "every listed effect is bundled and ready")
         #expect(entry.origin == .bundled)
         #expect(entry.availability == .ready)
         #expect(state.selection == entry.id)
@@ -112,7 +116,8 @@ struct HostEffectRegistrationsTests {
         let bundled = try #require(state.entries.first)
         #expect(states.count == 1)
         #expect(bundled.origin == .bundled)
-        #expect(state.entries.map(\.id) == [bundled.id, .package("glitch")], "the bundled effect, then the package the folder holds")
+        let bundledIDs = state.entries.filter { $0.origin == .bundled }.map(\.id)
+        #expect(state.entries.map(\.id) == bundledIDs + [.package("glitch")], "the bundled effects, then the package the folder holds")
         #expect(state.selection == .package("glitch"), "the choice the in-memory store held is the one restored")
         #expect(state.outcome == .prepared)
         #expect(request.effect.name == "Glitch", "what the runtime was handed is the restored package")

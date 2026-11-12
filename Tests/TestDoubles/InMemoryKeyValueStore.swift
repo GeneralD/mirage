@@ -4,11 +4,13 @@ import TestSupport
 /// `KeyValueStoreGateway` over a dictionary: strings by key, as the user's defaults hold
 /// them. `values` is the whole content for an assertion, and `writes` records the keys
 /// that were set or removed, in order, so a subject that must not write is asserted to
-/// have written nothing.
+/// have written nothing. `removeAll` is recorded in `resets` instead, not in `writes`.
 public final class InMemoryKeyValueStore: KeyValueStoreGateway, Sendable {
     private let stored: Locked<[String: String]>
     /// The keys `set` and `removeValue` were called with, in call order.
     public let writes = Collector<String>()
+    /// One entry per `removeAll` call, in call order.
+    public let resets = Collector<Void>()
 
     public init(_ initial: [String: String] = [:]) {
         stored = Locked(initial)
@@ -28,5 +30,10 @@ public final class InMemoryKeyValueStore: KeyValueStoreGateway, Sendable {
     public func removeValue(forKey key: String) {
         stored.withLock { $0[key] = nil }
         writes.append(key)
+    }
+
+    public func removeAll() {
+        stored.withLock { $0.removeAll() }
+        resets.append(())
     }
 }

@@ -444,6 +444,169 @@ struct EffectCatalogUseCaseTests {
         await rig.stop(run)
     }
 
+    // MARK: - The compiler's diagnostic
+
+    @Test("choosing an effect the compiler refuses publishes the compiler's diagnostic with the failed outcome")
+    func diagnosticOfAFailedChoice() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.runtime.answerCompilerMessage("glitch:1:1: error: unknown type")
+        let selection = Task { await rig.subject.select(glitch.id) }
+        await rig.answer(2, with: .failure(.compileFailed))
+        #expect(await selection.value == .failed(.compileFailed))
+        await watcher.states.waitForCount(2)
+
+        #expect(
+            watcher.states.values.last
+                == Rig.state(selection: glitch, outcome: .failed(.compileFailed), compilerMessage: "glitch:1:1: error: unknown type"))
+        #expect(rig.runtime.compilerMessageRequests.count == 1, "the diagnostic was asked for once, for the refused source")
+        await rig.stop(run)
+    }
+
+    @Test("an effect that compiled is published with no compilerMessage, and the compiler is not asked about it")
+    func preparedEffectHasNoDiagnostic() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        rig.runtime.answerCompilerMessage("stale:1:1: error: never asked")
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        #expect(watcher.states.values == [Rig.state(selection: bundled)])
+        #expect(rig.runtime.compilerMessageRequests.count == 0, "a source that compiled has no diagnostic to ask for")
+        await rig.stop(run)
+    }
+
+    @Test("a refusal with no diagnostic from the compiler publishes a nil compilerMessage")
+    func refusalWithoutADiagnostic() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.runtime.answerCompilerMessage(nil)
+        let selection = Task { await rig.subject.select(glitch.id) }
+        await rig.answer(2, with: .failure(.compileFailed))
+        await selection.value
+        await watcher.states.waitForCount(2)
+
+        #expect(watcher.states.values.last == Rig.state(selection: glitch, outcome: .failed(.compileFailed)))
+        #expect(rig.runtime.compilerMessageRequests.count == 1)
+        await rig.stop(run)
+    }
+
+    @Test("choosing another effect drops the diagnostic of the one before, and a choice that compiles has none")
+    func choosingAnotherDropsTheDiagnostic() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.runtime.answerCompilerMessage("glitch:1:1: error: unknown type")
+        let refused = Task { await rig.subject.select(glitch.id) }
+        await rig.answer(2, with: .failure(.compileFailed))
+        await refused.value
+        await watcher.states.waitForCount(2)
+
+        let chosen = Task { await rig.subject.select(other.id) }
+        await rig.answer(3)
+        await chosen.value
+        await watcher.states.waitForCount(3)
+
+        #expect(watcher.states.values.map(\.compilerMessage) == [nil, "glitch:1:1: error: unknown type", nil])
+        #expect(watcher.states.values.last == Rig.state(selection: other))
+        #expect(rig.runtime.compilerMessageRequests.count == 1, "the compiled choice asked the compiler nothing")
+        await rig.stop(run)
+    }
+
+    @Test(
+        "a diagnostic still awaited when a newer choice is made publishes nothing for the older choice, and only the newer choice's state comes out"
+    )
+    func diagnosticOvertakenByANewerChoice() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.runtime.holdCompilerMessages()
+        let older = Task { await rig.subject.select(glitch.id) }
+        await rig.answer(2, with: .failure(.compileFailed))
+        await rig.runtime.compilerMessageRequests.waitForCount(1)
+        let held = rig.runtime.compilerMessageRequests.values[0]
+
+        let newer = Task { await rig.subject.select(other.id) }
+        await rig.answer(3)
+        #expect(await newer.value == .prepared)
+        await watcher.states.waitForCount(2)
+
+        #expect(rig.runtime.completeCompilerMessage(held, with: "glitch:1:1: error: arrived late"))
+        #expect(await older.value == .failed(.compileFailed), "an overtaken choice still hears its own answer")
+        // A sentinel through the same pipeline: the next state is the next one in line.
+        rig.packages.publish([bundled, glitch, other, EffectCatalogEntry.fixture(.package("later"))])
+        await watcher.states.waitForCount(3)
+
+        #expect(watcher.states.values.map(\.selection) == [bundled.id, other.id, other.id])
+        #expect(watcher.states.values.map(\.outcome) == [.prepared, .prepared, .prepared], "the older refusal never became the outcome")
+        #expect(watcher.states.values.map(\.compilerMessage) == [nil, nil, nil], "the older diagnostic was never published")
+        await rig.stop(run)
+    }
+
+    @Test("a state that differs from the one before only in its compilerMessage is published as a state of its own")
+    func differingOnlyInTheDiagnosticIsPublished() async {
+        let rig = Rig()
+        let watcher = rig.watch()
+        let run = rig.start()
+        await rig.answer(1)
+        await watcher.states.waitForCount(1)
+
+        rig.runtime.answerCompilerMessage("glitch:1:1: error: first")
+        let first = Task { await rig.subject.select(glitch.id) }
+        await rig.answer(2, with: .failure(.compileFailed))
+        await first.value
+        await watcher.states.waitForCount(2)
+
+        rig.runtime.answerCompilerMessage("glitch:2:2: error: second")
+        let second = Task { await rig.subject.select(glitch.id) }
+        await rig.answer(3, with: .failure(.compileFailed))
+        await second.value
+        await watcher.states.waitForCount(3)
+
+        #expect(watcher.states.values.map(\.compilerMessage) == [nil, "glitch:1:1: error: first", "glitch:2:2: error: second"])
+        #expect(watcher.states.values.map(\.outcome) == [.prepared, .failed(.compileFailed), .failed(.compileFailed)])
+        await rig.stop(run)
+    }
+
+    @Test("an unreadable source shows its problem in place of the diagnostic, and the diagnostic comes back with the runtime's answer")
+    func diagnosticHiddenByAnUnreadableSource() async {
+        let rig = Rig(persisted: glitch.id)
+        let problem = EffectPackageProblem.unreadable(message: "mid-save")
+        let watcher = rig.watch()
+        rig.runtime.answerCompilerMessage("glitch:1:1: error: unknown type")
+        let run = rig.start()
+        await rig.answer(1, with: .failure(.compileFailed))
+        await watcher.states.waitForCount(1)
+
+        rig.packages.script(.failure(problem), for: glitch.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(2)
+        rig.packages.script(.success(Rig.glitchSource), for: glitch.id)
+        rig.packages.publish([bundled, glitch, other])
+        await watcher.states.waitForCount(3)
+
+        #expect(watcher.states.values.map(\.outcome) == [.failed(.compileFailed), .unavailable(problem), .failed(.compileFailed)])
+        #expect(
+            watcher.states.values.map(\.compilerMessage) == ["glitch:1:1: error: unknown type", nil, "glitch:1:1: error: unknown type"])
+        #expect(rig.runtime.prepareRequests.count == 1, "the runtime never lost the effect, so it is not handed it again")
+        await rig.stop(run)
+    }
+
     // MARK: - Small things
 
     @Test("opening the effects folder is the Repository's")

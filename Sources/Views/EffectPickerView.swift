@@ -9,31 +9,44 @@ import SwiftUI
 /// `EffectPickerGeometry`'s for the width the window gives it. `decode` turns a thumbnail's bytes
 /// into a picture, or `nil` when they are not one, and the cell then draws its tile.
 ///
-/// The live camera preview #12 places above the grid is not here: the host app has no preview
-/// path to draw it from (`docs/ARCHITECTURE.md` → *Effect picker*, issue #68).
+/// When the window gives a `PreviewPresenter`, the live preview pane (#68) sits above the grid, below
+/// the status line; without one the picker is the grid alone. `PreviewPaneView` maps the preview's
+/// values to pixels, and the frames are drawn into its `MTKView` by the pipeline's sink, not here
+/// (`docs/ARCHITECTURE.md` → *Effect picker*).
 public struct EffectPickerView: View {
     @ObservedObject private var presenter: EffectPickerPresenter
+    private let preview: PreviewPresenter?
     private let decode: (EffectThumbnail) -> CGImage?
 
-    public init(presenter: EffectPickerPresenter, decode: @escaping (EffectThumbnail) -> CGImage?) {
+    public init(
+        presenter: EffectPickerPresenter, preview: PreviewPresenter? = nil,
+        decode: @escaping (EffectThumbnail) -> CGImage?
+    ) {
         self.presenter = presenter
+        self.preview = preview
         self.decode = decode
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TextField("Search Effects", text: $presenter.query)
-                .textFieldStyle(.roundedBorder)
-                .padding(EffectPickerGeometry.inset)
-            if let status = presenter.status {
-                Label(status, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-                    .padding([.horizontal, .bottom], EffectPickerGeometry.inset)
+        GeometryReader { proxy in
+            VStack(alignment: .leading, spacing: 0) {
+                TextField("Search Effects", text: $presenter.query)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(EffectPickerGeometry.inset)
+                if let status = presenter.status {
+                    Label(status, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                        .padding([.horizontal, .bottom], EffectPickerGeometry.inset)
+                }
+                if let preview {
+                    PreviewPaneView(preview: preview, geometry: PreviewGeometry(containerWidth: proxy.size.width))
+                }
+                Divider()
+                GeometryReader { gridProxy in
+                    grid(EffectPickerGeometry(width: gridProxy.size.width))
+                }
             }
-            Divider()
-            GeometryReader { proxy in
-                grid(EffectPickerGeometry(width: proxy.size.width))
-            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .frame(minWidth: 320, minHeight: 280)
     }

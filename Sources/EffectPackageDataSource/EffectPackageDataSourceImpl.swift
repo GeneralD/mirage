@@ -4,20 +4,21 @@ import Foundation
 
 /// The effects folder as `.lens` packages (epic #42, D1 / D2 / D3): a folder named `<id>.lens`
 /// holding a `manifest.json` and an `effect.metal`. It lists the folder, reads each package and
-/// answers `.ready` with the shader as an `EffectSource` (default compile options), or `.broken`
-/// with the reason; a package it cannot use is never left out. Everything it touches comes
-/// through `FileSystemGateway`, `WorkspaceGateway` and `AppDirectoriesProvider`, and the
-/// effects folder's path is asked of the provider on each call, never kept.
+/// answers `.ready` with the shader as an `EffectSource` (default compile options, and the
+/// parameters its manifest declares), or `.broken` with the reason; a package it cannot use is
+/// never left out. Everything it touches comes through `FileSystemGateway`, `WorkspaceGateway` and
+/// `AppDirectoriesProvider`, and the effects folder's path is asked of the provider on each call,
+/// never kept.
 ///
 /// - **Which entries are packages.** Only a directory whose name ends in `.lens`, under a
 ///   non-empty id; any other file or directory in the folder is ignored. The listing is in id
 ///   order whatever order the gateway lists in (the live one promises none).
 /// - **What is broken.** Both files of a package are read every time. The first problem in
-///   this order is the one reported: `manifest.json` missing, unreadable, then undecodable
-///   (`EffectManifestDecoding`), then `effect.metal` missing, then unreadable. A file that
-///   cannot be found is *missing*, told by the `CocoaError` code and never by a message;
-///   any other failure to read it (permissions, text that is not UTF-8, a path that is a
-///   directory) is *unreadable*.
+///   this order is the one reported: `manifest.json` missing, unreadable, then undecodable or
+///   breaking a rule of its `parameters` (`EffectManifestDecoding`), then `effect.metal`
+///   missing, then unreadable. A file that cannot be found is *missing*, told by the
+///   `CocoaError` code and never by a message; any other failure to read it (permissions, text
+///   that is not UTF-8, a path that is a directory) is *unreadable*.
 /// - **The thumbnail** (#12) is read by `packages()` only, for a package that is ready and whose
 ///   manifest names one. `EffectThumbnailReading` decides from the path's text whether it can be
 ///   read at all. A directory on its way that is not there, or is a file, makes the file missing,
@@ -71,15 +72,46 @@ extension EffectPackageDataSourceImpl: EffectPackages {
         guard let names = listFolder(folder) else { return Self.inventory(of: [], in: folder) }
         let reads = names.compactMap(Self.key(ofDirectoryNamed:)).sorted()
             .filter { fileSystem.isDirectory(Self.directory(of: $0, in: folder)) }
-            .map { read($0, in: folder, includingThumbnail: true) }
+            .map { read($0, directory: Self.directory(of: $0, in: folder), includingThumbnail: true) }
         return Self.inventory(of: reads, in: folder)
     }
 
     public func package(_ id: EffectID) async -> EffectPackageListing? {
         guard id.origin == .package, Self.isPackageKey(id.key) else { return nil }
         let folder = appDirectories.effectsDirectory
-        guard fileSystem.isDirectory(Self.directory(of: id.key, in: folder)) else { return nil }
-        return read(id.key, in: folder, includingThumbnail: false).listing
+        let directory = Self.directory(of: id.key, in: folder)
+        guard fileSystem.isDirectory(directory) else { return nil }
+        return read(id.key, directory: directory, includingThumbnail: false).listing
+    }
+
+    public func package(atPath path: String) async -> EffectPackageListing? {
+        let directory = Self.withoutTrailingSlashes(path)
+        guard let key = Self.key(ofPath: directory), fileSystem.isDirectory(directory) else { return nil }
+        return read(key, directory: directory, includingThumbnail: false).listing
+    }
+
+    public func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem> {
+        guard EffectScaffoldTemplate.isValid(name: name) else { return .failure(.invalidName(name)) }
+        let directory = Self.scaffoldDirectory(named: name, in: folder)
+        guard !fileSystem.isDirectory(directory) else { return .failure(.alreadyExists(path: directory)) }
+        do {
+            try fileSystem.createDirectory(directory)
+        } catch {
+            return .failure(.unwritable(path: directory))
+        }
+        let sourcePath = Self.join(directory, Self.sourceFileName)
+        let manifestPath = Self.join(directory, Self.manifestFileName)
+        do {
+            try fileSystem.writeData(Data(EffectScaffoldTemplate.effectSource.utf8), to: sourcePath)
+        } catch {
+            return .failure(.unwritable(path: sourcePath))
+        }
+        do {
+            try fileSystem.writeData(Data(EffectScaffoldTemplate.manifest(named: name).utf8), to: manifestPath)
+        } catch {
+            return .failure(.unwritable(path: manifestPath))
+        }
+        return .success(directory)
     }
 
     public func openFolder() {
@@ -151,9 +183,8 @@ extension EffectPackageDataSourceImpl {
         }
     }
 
-    /// The package `key`, with its thumbnail read as well when `includingThumbnail`.
-    private func read(_ key: String, in folder: String, includingThumbnail: Bool) -> PackageRead {
-        let directory = Self.directory(of: key, in: folder)
+    /// The package `key` in `directory`, with its thumbnail read as well when `includingThumbnail`.
+    private func read(_ key: String, directory: String, includingThumbnail: Bool) -> PackageRead {
         let manifestPath = Self.join(directory, Self.manifestFileName)
         let sourcePath = Self.join(directory, Self.sourceFileName)
         let manifestRead = readFile(manifestPath, named: Self.manifestFileName)
@@ -187,7 +218,8 @@ extension EffectPackageDataSourceImpl {
                 switch source {
                 case .missing: return .failure(.sourceMissing)
                 case .unreadable(let problem): return .failure(problem)
-                case .text(let sourceText): return .success((decoded, EffectSource(name: decoded.name, source: sourceText)))
+                case .text(let sourceText):
+                    return .success((decoded, EffectSource(name: decoded.name, source: sourceText, parameters: decoded.parameters)))
                 }
             }
         }
@@ -284,6 +316,19 @@ extension EffectPackageDataSourceImpl {
         return isPackageKey(key) ? key : nil
     }
 
+    /// The id of the package at `path`: its last component without the `.lens`, whatever the name
+    /// is otherwise (`plain` is `plain`), or `nil` when the component is empty or names no package.
+    private static func key(ofPath path: String) -> String? {
+        guard let name = path.split(separator: "/").last.map(String.init) else { return nil }
+        let key = name.hasSuffix(packageSuffix) ? String(name.dropLast(packageSuffix.count)) : name
+        return isPackageKey(key) ? key : nil
+    }
+
+    /// The path without the `/` at its end, however many there are.
+    private static func withoutTrailingSlashes(_ path: String) -> String {
+        String(path.reversed().drop(while: { $0 == "/" }).reversed())
+    }
+
     /// An id is a directory name without its suffix: one path component, never empty.
     private static func isPackageKey(_ key: String) -> Bool {
         !key.isEmpty && !key.contains("/")
@@ -291,6 +336,14 @@ extension EffectPackageDataSourceImpl {
 
     private static func directory(of key: String, in folder: String) -> String {
         join(folder, key + packageSuffix)
+    }
+
+    /// The directory a scaffold makes for `name` in `folder`: one trailing `/` of the folder is taken off
+    /// (the root keeps its own), and the name is joined on without a doubled `/`.
+    private static func scaffoldDirectory(named name: String, in folder: String) -> String {
+        let parent = folder.count > 1 && folder.hasSuffix("/") ? String(folder.dropLast()) : folder
+        let packageName = name + packageSuffix
+        return parent.hasSuffix("/") ? parent + packageName : join(parent, packageName)
     }
 
     private static func join(_ directory: String, _ name: String) -> String {

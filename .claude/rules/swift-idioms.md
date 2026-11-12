@@ -31,9 +31,10 @@ enums; adding a case is the only way to add a value.
 
 A resource with a lifetime (surface, Mach port right, compiled library,
 capture session, CMIO stream) is handed out as an opaque handle (`SurfaceToken`,
-`MachPortToken`, `LibraryHandle`, `CaptureSessionHandle`, `StreamOutputHandle`) that its owner gives
+`MachPortToken`, `LibraryHandle`, `CaptureSessionHandle`, `StreamOutputHandle`,
+`FileWatchHandle`, `HotkeyHandle`) that its owner gives
 back exactly once — through the port that issued it, or through the handle's
-own `stop()`. Never expose `retain`/`release` pairs to callers. Where a handle
+own `stop()` or `release()`. Never expose `retain`/`release` pairs to callers. Where a handle
 can be given back twice, make that detectable: the generation tag on
 `SurfaceToken` turns a double release into a `false`, not a corrupted slot.
 
@@ -41,13 +42,15 @@ can be given back twice, make that detectable: the generation tag on
 
 Frame-path types are `final class` state machines run on the `FrameExecutor`
 port, or value types. `actor` is acceptable only for off-path, low-rate state
-(settings, catalog) and never holds an `IOSurface`.
+(the effect catalog's session, the extension's install state) and never holds
+an `IOSurface`.
 
 ## View File Organization — `XxxView.swift` Holds Only the Struct
 
 As in lyra: the SwiftUI `View` struct alone. Geometry goes to
 `XxxGeometry.swift` (pure, tested; in `Presenters`, since `Views` is
-coverage-ignored: `EffectPickerGeometry`); irreducible drawing goes to
+coverage-ignored: `EffectPickerGeometry`, `PreviewGeometry`,
+`ParameterPanelGeometry`, `OnboardingGeometry`); irreducible drawing goes to
 `XxxRenderer.swift` (`@MainActor`, thin, untested by design). The Presenter
 decides values; the View maps values to pixels.
 

@@ -7,26 +7,36 @@ import Domain
 /// one-element slot where the newest wins; the frame it replaces completes at
 /// once, undrawn. A frame is drawn by resolving its token through the pool,
 /// binding the surface to a texture on the attach's GPU context and running
-/// `PreviewKernel` into the view's next drawable; when the GPU is done the
-/// texture is unbound and the frame completed, then the waiting frame (if any)
-/// is drawn. Every `present` completes exactly once — undrawn when nothing is
+/// `PreviewKernel` into the view's next drawable: the split, with the original
+/// bound beside the frame, when the request carries one; otherwise the blit.
+/// When the GPU is done the textures are unbound and the frame completed, then
+/// the waiting frame (if any) is drawn. Every `present` completes exactly once — undrawn when nothing is
 /// attached, its token is stale, or binding or encoding fails.
 ///
 /// Executor-confined: every state change runs on `FrameExecutor`, so there is
 /// no lock and no actor on the frame path. Only `attach` starts on the main
 /// thread (the view's), and it hands what it readied to the executor.
 public final class PreviewDataSourceImpl: @unchecked Sendable {
-    /// What one attach produced: the GPU context, the layer the view is drawn
-    /// through and the preview kernel compiled for that context.
+    /// What one attach produced: the target's identity, the GPU context, the
+    /// layer the view is drawn through and the preview kernel compiled for that
+    /// context. The split kernel is compiled alongside it, nil when it did not
+    /// compile; a draw without it is the blit. The identity is kept, not the target:
+    /// the layer already holds it, and `detach` only needs to tell whether it is
+    /// the same one.
     private struct Attachment: Sendable {
+        let target: ObjectIdentifier
         let context: any GPUContextHandle
         let layer: any PreviewLayerHandle
         let kernel: any LibraryHandle
+        let splitKernel: (any LibraryHandle)?
     }
 
-    /// A presented frame and the completion that ends its borrow of the surface.
+    /// A presented frame, its original when there is one, and the completion
+    /// that ends the borrow of both surfaces. The split binds and reads the
+    /// original when the attach has a split kernel; otherwise it is not drawn.
     private struct Request: Sendable {
         let frame: FrameRef
+        let original: FrameRef?
         let completion: @Sendable () -> Void
     }
 
@@ -56,11 +66,19 @@ extension PreviewDataSourceImpl: PreviewRenderer {
     public func attach(_ target: any PreviewTargetHandle) throws {
         let context = try gpuGateway.makeContext()
         let layer = try previewGateway.prepare(target, on: context)
-        frameExecutor.run { [self] in adopt(layer, on: context) }
+        let identity = ObjectIdentifier(target)
+        frameExecutor.run { [self] in adopt(layer, on: context, target: identity) }
     }
 
-    public func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
-        let request = Request(frame: frame, completion: completion)
+    /// Only the identity crosses to the executor, so the target is not kept alive
+    /// by a pending release.
+    public func detach(_ target: any PreviewTargetHandle) {
+        let identity = ObjectIdentifier(target)
+        frameExecutor.run { [self] in release(identity) }
+    }
+
+    public func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
+        let request = Request(frame: frame, original: original, completion: completion)
         frameExecutor.run { [self] in submit(request) }
     }
 }
@@ -69,14 +87,38 @@ extension PreviewDataSourceImpl {
     /// A kernel that does not compile leaves nothing attached: the new view is
     /// already readied, so drawing on the previous one would draw on a view
     /// that has been replaced.
-    private func adopt(_ layer: any PreviewLayerHandle, on context: any GPUContextHandle) {
+    private func adopt(_ layer: any PreviewLayerHandle, on context: any GPUContextHandle, target: ObjectIdentifier) {
         switch shaderLibrary.compile(source: PreviewKernel.source, options: PreviewKernel.options, on: context) {
         case .success(let kernel):
-            attachment = Attachment(context: context, layer: layer, kernel: kernel)
+            attachment = Attachment(target: target, context: context, layer: layer, kernel: kernel, splitKernel: compileSplit(on: context))
         case .failure(let diagnostics):
             attachment = nil
             errorLog.record(.preview, "preview detached, its kernel did not compile (\(diagnostics.code)): \(diagnostics.message)")
         }
+    }
+
+    /// Compiled only once the blit kernel has compiled, on the same context and
+    /// executor. A failure keeps the attach and is logged: nothing draws with the
+    /// split yet, so the view goes on showing the blit.
+    private func compileSplit(on context: any GPUContextHandle) -> (any LibraryHandle)? {
+        switch shaderLibrary.compile(source: PreviewKernel.splitSource, options: PreviewKernel.splitOptions, on: context) {
+        case .success(let kernel):
+            return kernel
+        case .failure(let diagnostics):
+            errorLog.record(.preview, "preview split unavailable, its kernel did not compile (\(diagnostics.code)): \(diagnostics.message)")
+            return nil
+        }
+    }
+
+    /// Lets go of the attach only when it is the one `detach` names. The waiting
+    /// frame completes undrawn now, so it does not wait for a draw that will not
+    /// come; a draw in flight is left to `finish`, which unbinds its texture.
+    private func release(_ target: ObjectIdentifier) {
+        guard attachment?.target == target else { return }
+        attachment = nil
+        let replaced = waiting
+        waiting = nil
+        replaced?.completion()
     }
 
     private func submit(_ request: Request) {
@@ -105,25 +147,53 @@ extension PreviewDataSourceImpl {
             errorLog.record(.preview, "frame not shown, binding its surface failed: \(error)")
             return request.completion()
         }
+        // The split reads the original at index 2; the blit reads the frame there, as its own original.
+        let split = splitPass(for: request, with: attachment)
+        let kernel = split?.kernel ?? attachment.kernel
+        let original = split?.original ?? texture
+        let textures = split.map { [texture, $0.original] } ?? [texture]
         drawing = true
         do {
-            try previewGateway.draw(texture, with: attachment.kernel, into: attachment.layer, on: attachment.context) { [self] outcome in
-                frameExecutor.run { [self] in finish(request, texture: texture, outcome: outcome) }
+            try previewGateway.draw(
+                texture, original: original, with: kernel, into: attachment.layer, on: attachment.context
+            ) { [self] outcome in
+                frameExecutor.run { [self] in finish(request, textures: textures, outcome: outcome) }
             }
         } catch {
             drawing = false
             errorLog.record(.preview, "frame not shown, encoding the draw failed: \(error)")
-            unbind(texture)
+            textures.forEach(unbind)
             request.completion()
         }
     }
 
-    /// The texture goes back before the frame completes: the completion ends the
-    /// caller's lease on the surface the texture wraps.
-    private func finish(_ request: Request, texture: any TextureHandle, outcome: GPUCompletion) {
+    /// The split's pass when the request carries an original the split can draw:
+    /// the split kernel and the original's bound texture. Nil when there is no
+    /// original or no split kernel, which binds nothing. A stale original token or
+    /// a failed bind is logged and nil too, so the frame goes to the blit and the
+    /// attachment is left as it is.
+    private func splitPass(for request: Request, with attachment: Attachment) -> (kernel: any LibraryHandle, original: any TextureHandle)? {
+        guard let original = request.original, let splitKernel = attachment.splitKernel else { return nil }
+        let token = original.token
+        guard let surface = pool.handle(for: token) else {
+            errorLog.record(.preview, "split not shown, original token \(token.index)/\(token.generation) is stale")
+            return nil
+        }
+        do {
+            let texture = try textureCache.bind(surface, on: attachment.context)
+            return (kernel: splitKernel, original: texture)
+        } catch {
+            errorLog.record(.preview, "split not shown, binding the original failed: \(error)")
+            return nil
+        }
+    }
+
+    /// The textures go back before the frame completes: the completion ends the
+    /// caller's lease on the surfaces the textures wrap.
+    private func finish(_ request: Request, textures: [any TextureHandle], outcome: GPUCompletion) {
         drawing = false
         outcome.error.map { errorLog.record(.preview, "preview draw failed: \($0.domain) \($0.code)") }
-        unbind(texture)
+        textures.forEach(unbind)
         request.completion()
         let next = waiting
         waiting = nil

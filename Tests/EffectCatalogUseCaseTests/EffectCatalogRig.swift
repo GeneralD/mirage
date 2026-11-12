@@ -26,30 +26,38 @@ struct EffectCatalogRig {
     let runtime: FakeEffectRuntimeRepository
     let settings: FakeSettingsRepository
     let log: RecordingLog
+    /// The clock every wait of the catalog sleeps on (a cool-down before a trial): stepped by hand, never the wall clock.
+    let clock: GatedClock
     let subject: EffectCatalogUseCaseImpl
 
     /// - Parameters:
     ///   - entries: the catalog the Repository starts with; `nil` lists nothing until the test publishes.
     ///   - persisted: the effect the settings remember from the last launch.
+    ///   - disabled: the switched-off effects the settings remember from the last launch.
+    ///   - parameters: the parameter values the settings remember from the last launch, per effect.
     init(
         entries: [EffectCatalogEntry]? = [Self.bundled, Self.glitch, Self.other], persisted: EffectID? = nil,
-        sources: [EffectID: EffectSource] = Self.sources
+        sources: [EffectID: EffectSource] = Self.sources, disabled: [DisabledEffectRecord] = [],
+        parameters: [EffectID: [String: EffectParameterValue]] = [:]
     ) {
         let packages = FakeEffectPackageRepository(entries: entries)
         for (id, source) in sources { packages.script(.success(source), for: id) }
         let runtime = FakeEffectRuntimeRepository()
-        let settings = FakeSettingsRepository(selected: persisted)
+        let settings = FakeSettingsRepository(selected: persisted, disabled: disabled, parameters: parameters)
         let log = RecordingLog()
+        let clock = GatedClock()
         self.packages = packages
         self.runtime = runtime
         self.settings = settings
         self.log = log
+        self.clock = clock
         subject = withDependencies {
             $0.effectPackageRepository = packages
             $0.effectRuntimeRepository = runtime
             $0.settingsRepository = settings
             $0.developerLog = log
             $0.errorLog = log
+            $0.continuousClock = clock
         } operation: {
             EffectCatalogUseCaseImpl()
         }
@@ -99,8 +107,8 @@ struct EffectCatalogRig {
     /// The state of a menu that lists `entries` and has chosen `selection`.
     static func state(
         _ entries: [EffectCatalogEntry] = [bundled, glitch, other], selection: EffectCatalogEntry = bundled,
-        outcome: EffectSelectionOutcome? = .prepared
+        outcome: EffectSelectionOutcome? = .prepared, compilerMessage: String? = nil
     ) -> EffectCatalogState {
-        EffectCatalogState(entries: entries, selection: selection.id, outcome: outcome)
+        EffectCatalogState(entries: entries, selection: selection.id, outcome: outcome, compilerMessage: compilerMessage)
     }
 }

@@ -9,6 +9,8 @@ import Testing
 struct PreviewRepositoryTests {
     private let renderer = SpyPreviewRenderer()
     private let frame = FrameRef(token: SurfaceToken(index: 2, generation: 7), descriptor: .hd720, presentationTime: HostTimestamp(nanoseconds: 42))
+    private let original = FrameRef(
+        token: SurfaceToken(index: 5, generation: 3), descriptor: .hd720, presentationTime: HostTimestamp(nanoseconds: 41))
 
     private func makeSubject() -> PreviewRepositoryImpl {
         withDependencies {
@@ -34,15 +36,35 @@ struct PreviewRepositoryTests {
         await #expect(throws: GPUError.noDevice) { try await MainActor.run { try subject.attach(FakePreviewTargetHandle()) } }
     }
 
-    @Test("present forwards the frame, and the renderer's completion reaches the caller exactly once")
+    @Test("present passes the frame and its original to the renderer unchanged, and the renderer's completion reaches the caller exactly once")
     func presentForwards() throws {
         let completions = Collector<Void>()
-        makeSubject().present(frame) { completions.append(()) }
+        makeSubject().present(frame, original: original) { completions.append(()) }
 
+        let presentation = try #require(renderer.presented.values.first)
         #expect(renderer.presented.values.map(\.frame) == [frame])
+        #expect(presentation.original == original, "the repository hands the original on, not the frame again or nil")
         #expect(completions.count == 0, "the repository adds no completion of its own")
-        try #require(renderer.presented.values.first).completion()
+        presentation.completion()
         #expect(completions.count == 1)
+    }
+
+    @Test("present with no original passes nil to the renderer")
+    func presentForwardsNoOriginal() throws {
+        makeSubject().present(frame, original: nil) {}
+
+        let presentation = try #require(renderer.presented.values.first)
+        #expect(presentation.frame == frame)
+        #expect(presentation.original == nil)
+    }
+
+    @Test("detach hands the target to the renderer unchanged, exactly once")
+    func detachForwards() {
+        let subject = makeSubject()
+        let target = FakePreviewTargetHandle()
+        subject.detach(target)
+
+        #expect(renderer.detached.values == [ObjectIdentifier(target)])
     }
 }
 
@@ -51,10 +73,12 @@ struct PreviewRepositoryTests {
 private final class SpyPreviewRenderer: PreviewRenderer, Sendable {
     struct Presentation: Sendable {
         let frame: FrameRef
+        let original: FrameRef?
         let completion: @Sendable () -> Void
     }
 
     let attached = Collector<FakePreviewTargetHandle>()
+    let detached = Collector<ObjectIdentifier>()
     let presented = Collector<Presentation>()
     let attachError = Locked<(any Error)?>(nil)
 
@@ -63,7 +87,11 @@ private final class SpyPreviewRenderer: PreviewRenderer, Sendable {
         attached.append(try (target as? FakePreviewTargetHandle).orThrow(PreviewError.foreignTarget))
     }
 
-    func present(_ frame: FrameRef, completion: @escaping @Sendable () -> Void) {
-        presented.append(Presentation(frame: frame, completion: completion))
+    func detach(_ target: any PreviewTargetHandle) {
+        detached.append(ObjectIdentifier(target))
+    }
+
+    func present(_ frame: FrameRef, original: FrameRef?, completion: @escaping @Sendable () -> Void) {
+        presented.append(Presentation(frame: frame, original: original, completion: completion))
     }
 }

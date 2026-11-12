@@ -97,7 +97,7 @@ kind_of_key() {
 # Domain, the Gateway and Support lives, and the DI targets have no ports to pull.
 lane_of() {
     case "$1" in
-        App | DevHarness | ExtensionApp) echo "Entry" ;;
+        App | DevHarness | ExtensionApp | LensTool) echo "Entry" ;;
         Views | AppRouter)               echo "View" ;;
         Presenters | *Presenter)         echo "Presenter" ;;
         *Interactor)                     echo "Interactor" ;;

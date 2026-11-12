@@ -7,11 +7,22 @@ import TestSupport
 public final class FakeCameraExtensionInstaller: CameraExtensionInstaller, ExtensionInstallRepository, Sendable {
     private let current: Locked<InstallStatus>
     private let script: Locked<[InstallStatus]>
+    // Consumers of `updates()`, fed by every status `install()` yields; this double never finishes them.
+    private let watchers: Locked<[AsyncStream<InstallStatus>.Continuation]>
+    private let opensSettings: Bool
     public let installs = Collector<Void>()
+    /// The System Settings panes `openApprovalSettings(_:)` was asked to open, in order.
+    public let openedPanes = Collector<SystemSettingsPane>()
 
-    public init(status: InstallStatus = .notInstalled, script: [InstallStatus] = [.installing, .installed]) {
+    public init(
+        status: InstallStatus = .notInstalled,
+        script: [InstallStatus] = [.installing, .installed],
+        opensSettings: Bool = true
+    ) {
         current = Locked(status)
         self.script = Locked(script)
+        watchers = Locked([])
+        self.opensSettings = opensSettings
     }
 
     public var status: InstallStatus { current.current }
@@ -27,9 +38,32 @@ public final class FakeCameraExtensionInstaller: CameraExtensionInstaller, Exten
             for status in statuses {
                 current.set(status)
                 continuation.yield(status)
+                for watcher in watchers.current { watcher.yield(status) }
             }
             continuation.finish()
         }
+    }
+
+    /// The current status first, then every status `install()` yields, until `finishUpdates()`.
+    public func updates() async -> AsyncStream<InstallStatus> {
+        let (stream, continuation) = AsyncStream<InstallStatus>.makeStream()
+        watchers.withLock { list in
+            continuation.yield(current.current)
+            list.append(continuation)
+        }
+        return stream
+    }
+
+    public func finishUpdates() {
+        watchers.withLock { list in
+            for watcher in list { watcher.finish() }
+            list = []
+        }
+    }
+
+    public func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        openedPanes.append(pane)
+        return opensSettings
     }
 }
 
@@ -50,6 +84,14 @@ public final class FakeSurfaceRepository: SurfaceRepository, Sendable {
 
     public func allocate(_ descriptor: SurfaceDescriptor, filledWith byte: UInt8) throws -> SurfaceToken? {
         try pool.allocate(descriptor, filledWith: byte)
+    }
+
+    public func upload(_ image: StillImage, to token: SurfaceToken) -> Bool {
+        pool.upload(image, to: token)
+    }
+
+    public func download(from token: SurfaceToken) -> StillImage? {
+        pool.download(from: token)
     }
 
     @discardableResult

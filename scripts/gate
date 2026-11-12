@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# The one command a hackathon worker runs before a push: the repository's own
+# gate (`make lint`, `make check`, `make build`, `make build-dev-harness`,
+# `make test`, `make test-gpu`), behind a machine-wide semaphore so that several
+# worktrees building at once do not thrash the laptop
+# (docs/hackathon/mvp-cd/PRODUCT.md → Machine budget).
+#
+#   scripts/gate                                   # the full gate
+#   scripts/gate -- swift test --filter FooTests   # the issue's own check first, then the gate
+#   HK_GATE_SLOTS=3 scripts/gate                   # fewer parallel gates
+#   HK_GATE_SKIP_GPU=1 scripts/gate                # no Metal device here; CI's test-gpu job still runs
+#   scripts/gate --dry-run                         # take a slot, print the steps, run nothing
+#
+# macOS ships no flock(1), so the semaphore is a directory of slots under the
+# repository's common git directory (shared by every worktree, never committed):
+# a slot is taken with mkdir, holds the holder's pid, and is reclaimed when that
+# pid is gone. The gate stops at the first failing step and names it.
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+slots="${HK_GATE_SLOTS:-5}"
+dry_run=0
+issue_check=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run) dry_run=1; shift ;;
+        --) shift; issue_check=("$@"); break ;;
+        *) printf 'gate: unknown argument %s\n' "$1" >&2; exit 2 ;;
+    esac
+done
+
+lock_root="$(git rev-parse --git-common-dir)/hk-gate"
+mkdir -p "$lock_root"
+slot=""
+
+release() {
+    [ -n "$slot" ] && rm -rf "$slot"
+    return 0
+}
+trap release EXIT
+
+# acquire — block until one of the $slots slot directories is ours.
+acquire() {
+    local waited=0 i candidate holder
+    while :; do
+        for ((i = 1; i <= slots; i++)); do
+            candidate="$lock_root/slot-$i"
+            if mkdir "$candidate" 2>/dev/null; then
+                printf '%s\n' "$$" > "$candidate/pid"
+                slot="$candidate"
+                return 0
+            fi
+            holder="$(cat "$candidate/pid" 2>/dev/null || true)"
+            if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+                rm -rf "$candidate"
+            fi
+        done
+        if [ $((waited % 30)) -eq 0 ]; then
+            printf 'gate: all %d slots busy, waiting (%ds)\n' "$slots" "$waited"
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
+}
+
+# step <name> <command...> — run one gate step, timed; exit 1 naming it on failure.
+step() {
+    local name="$1"; shift
+    local started
+    started=$(date +%s)
+    printf '\n==> gate: %s\n' "$name"
+    if [ "$dry_run" -eq 1 ]; then
+        printf '    (dry run) %s\n' "$*"
+        return 0
+    fi
+    if "$@"; then
+        printf '<== gate: %s OK (%ds)\n' "$name" "$(( $(date +%s) - started ))"
+    else
+        printf '<== gate: %s FAILED (%ds)\n' "$name" "$(( $(date +%s) - started ))" >&2
+        printf 'GATE RED at %s\n' "$name" >&2
+        exit 1
+    fi
+}
+
+acquire
+printf 'gate: slot %s of %d, worktree %s\n' "${slot##*/slot-}" "$slots" "$(pwd)"
+
+if [ ${#issue_check[@]} -gt 0 ]; then
+    step "issue check" "${issue_check[@]}"
+fi
+step "lint" make lint
+step "check" make check
+step "build" make build
+step "build-dev-harness" make build-dev-harness
+step "test" make test
+if [ "${HK_GATE_SKIP_GPU:-0}" = "1" ]; then
+    printf '\n==> gate: test-gpu skipped (HK_GATE_SKIP_GPU=1); CI runs it\n'
+else
+    step "test-gpu" make test-gpu
+fi
+
+printf '\nGATE ALL GREEN\n'

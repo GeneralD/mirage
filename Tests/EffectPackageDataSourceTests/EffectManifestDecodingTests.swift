@@ -67,13 +67,6 @@ struct EffectManifestDecodingTests {
             name: "a thumbnail that is null is no thumbnail",
             text: #"{"formatVersion": 1, "name": "Glitch", "thumbnail": null}"#, expected: manifest("Glitch")),
         Row(
-            name: "`parameters` is read past and not interpreted",
-            text: #"{"formatVersion": 1, "name": "Glitch", "parameters": [{"id": "amount", "type": "float", "default": 0.5}]}"#,
-            expected: manifest("Glitch")),
-        Row(
-            name: "`parameters` is ignored even when it is not an array",
-            text: #"{"formatVersion": 1, "name": "Glitch", "parameters": 7}"#, expected: manifest("Glitch")),
-        Row(
             name: "the order of the keys does not matter",
             text: #"{"description": "d", "name": "Glitch", "formatVersion": 1}"#, expected: manifest("Glitch", description: "d")),
 
@@ -160,15 +153,6 @@ struct EffectManifestDecodingTests {
     @Test("a manifest decodes to its value, or to the reason it cannot", arguments: rows)
     func decodes(_ row: Row) {
         #expect(EffectManifestDecoding.decode(row.text) == row.expected)
-    }
-
-    @Test("a manifest with `parameters` decodes to exactly what the same manifest without it does")
-    func parametersChangeNothing() {
-        let without = EffectManifestDecoding.decode(#"{"formatVersion": 1, "name": "Glitch", "author": "Ada"}"#)
-        let with = EffectManifestDecoding.decode(
-            #"{"formatVersion": 1, "name": "Glitch", "author": "Ada", "parameters": [{"id": "a"}, {"id": "b", "range": [0, 1]}]}"#)
-
-        #expect(with == without)
     }
 
     @Test("only format version 1 is read")

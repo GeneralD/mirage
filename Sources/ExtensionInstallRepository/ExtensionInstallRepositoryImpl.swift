@@ -18,4 +18,12 @@ extension ExtensionInstallRepositoryImpl: ExtensionInstallRepository {
     public func install() async -> AsyncStream<InstallStatus> {
         await installer.install()
     }
+
+    public func updates() async -> AsyncStream<InstallStatus> {
+        await installer.updates()
+    }
+
+    public func openApprovalSettings(_ pane: SystemSettingsPane) async -> Bool {
+        await installer.openApprovalSettings(pane)
+    }
 }

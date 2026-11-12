@@ -2,7 +2,7 @@ import Dependencies
 import Domain
 import Foundation
 
-/// The effect catalog: the bundled effect and the `.lens` packages in the effects
+/// The effect catalog: the bundled effects and the `.lens` packages in the effects
 /// folder, assembled into one list that lists itself again after every change (epic
 /// #42, D3 / D4). It holds no state of its own: a listing is made from what `EffectPackages`
 /// answers now, shown, and watched until something changes, and then made again. The one
@@ -26,10 +26,11 @@ import Foundation
 /// on whichever side the end came from: the consumer, or the watch.
 ///
 /// **The order** is decided here, not by the DataSource, which promises none: the
-/// bundled effect first, then the packages by display name — case-insensitive, numeric
-/// runs compared as numbers ("Effect 2" before "Effect 10"), and the folder name as the
-/// tie-break, so two packages with one manifest name keep a fixed order. The comparison
-/// does not consult the locale, so the menu reads the same on every machine. A broken
+/// bundled effects first, in the order `BundledEffects.effects` gives them, then the
+/// packages by display name — case-insensitive, numeric runs compared as numbers ("Effect 2"
+/// before "Effect 10"), and the folder name as the tie-break, so two packages with one
+/// manifest name keep a fixed order. The comparison does not consult the locale, so the menu
+/// reads the same on every machine. A broken
 /// package is listed under its folder name, as `.broken`, among the others.
 ///
 /// **The log** says a broken package when it changes, not on every listing that shows it. Each
@@ -46,15 +47,22 @@ import Foundation
 /// for a broken package.
 ///
 /// **`source(of:)`** reads afresh on every call and caches nothing: a hot reload is the
-/// UseCase comparing what this answers now with what it answered last. The bundled
-/// effect's id answers `BundledEffects.defaultEffect`; another bundled id is
-/// `.sourceMissing`; a package is read through `EffectPackages.package(_:)`, which
+/// UseCase comparing what this answers now with what it answered last. A bundled id
+/// answers the first of `BundledEffects.effects` that has that id, and one none of them has
+/// is `.sourceMissing`; a package is read through `EffectPackages.package(_:)`, which
 /// answers `.ready` (its source), `.broken` (its problem) or nothing at all — a folder
 /// that is gone — which is `.manifestMissing`, the first thing a package lacks.
+///
+/// **`check(packageAt:)`** reads the package at a path the author gave and compiles its shader through
+/// `ShaderCompiler`, the port the runtime compiles through. A missing package is `.packageNotFound(path:)`
+/// here, where `source(of:)` answers `.manifestMissing`: the path is what the author asked for, so the path
+/// is what is missing. A successful compile is let go, and nothing is cached. **`scaffold(named:in:)`** is a
+/// pass-through to `EffectPackages.scaffold`.
 public struct EffectPackageRepositoryImpl: Sendable {
     @Dependency(\.effectPackages) private var effectPackages
     @Dependency(\.effectWatch) private var effectWatch
     @Dependency(\.bundledEffects) private var bundledEffects
+    @Dependency(\.shaderCompiler) private var shaderCompiler
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
@@ -77,8 +85,8 @@ extension EffectPackageRepositoryImpl: EffectPackageRepository {
     public func source(of id: EffectID) async -> Result<EffectSource, EffectPackageProblem> {
         switch id.origin {
         case .bundled:
-            let effect = bundledEffects.defaultEffect
-            return id == Self.id(of: effect) ? .success(effect) : .failure(.sourceMissing)
+            guard let effect = bundledEffects.effects.first(where: { Self.id(of: $0) == id }) else { return .failure(.sourceMissing) }
+            return .success(effect)
         case .package:
             switch await effectPackages.package(id) {
             case .ready(let package): return .success(package.source)
@@ -90,6 +98,22 @@ extension EffectPackageRepositoryImpl: EffectPackageRepository {
 
     public func openEffectsFolder() {
         effectPackages.openFolder()
+    }
+
+    public func check(packageAt path: String) async -> Result<EffectSource, AuthoringFailure> {
+        switch await effectPackages.package(atPath: path) {
+        case .ready(let package):
+            switch await shaderCompiler.compile(package.source) {
+            case .success: return .success(package.source)
+            case .failure(let diagnostics): return .failure(.compile(message: diagnostics.message))
+            }
+        case .broken(_, let problem): return .failure(.package(problem))
+        case nil: return .failure(.packageNotFound(path: path))
+        }
+    }
+
+    public func scaffold(named name: String, in folder: String) async -> Result<String, ScaffoldProblem> {
+        await effectPackages.scaffold(named: name, in: folder)
     }
 }
 
@@ -109,7 +133,7 @@ extension EffectPackageRepositoryImpl {
         let changes = effectWatch.changes(of: inventory.watchSet)
         let listed = logChanges(in: inventory.listings, since: broken)
         let packages = inventory.listings.map(Self.entry(of:)).sorted(by: Self.inMenuOrder)
-        let entries = [Self.entry(of: bundledEffects.defaultEffect)] + packages
+        let entries = bundledEffects.effects.map(Self.entry(of:)) + packages
         developerLog.record(.effect, "catalog listed: \(entries.count) entries, \(packages.filter { $0.availability != .ready }.count) broken")
         continuation.yield(entries)
         for await _ in changes { return listed }
