@@ -43,9 +43,17 @@ struct ReleaseNotesWiringTests {
         try #require(push.upperBound <= create.lowerBound)
         let between = text[push.upperBound..<create.lowerBound]
 
-        for phrase in ["for i in $(seq 1 20)", "gh api \"repos/${REPO}/git/refs/tags/${TAG}\"", "&& break", "sleep 3"] {
+        for phrase in ["for i in $(seq 1 20)", "gh api \"repos/${REPO}/git/ref/tags/${TAG}\"", "&& break", "sleep 3"] {
             #expect(between.contains(phrase), "the wait lacks: \(phrase)")
         }
+    }
+
+    @Test("the tag is looked up by its exact ref, never through the plural route, which also answers for a longer tag it prefixes")
+    func looksUpTheExactTag() throws {
+        let text = try repositoryText(Self.workflow)
+
+        #expect(text.contains("gh api \"repos/${REPO}/git/ref/tags/${TAG}\""))
+        #expect(!text.contains("git/refs/tags/"))
     }
 
     @Test("the step that creates the release has the token and the repository in its environment")

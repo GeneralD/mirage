@@ -40,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          if gh api "repos/${REPO}/git/refs/tags/${TAG}" >/dev/null 2>&1; then
+          if gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists on remote"
           else
             git tag "$TAG"
