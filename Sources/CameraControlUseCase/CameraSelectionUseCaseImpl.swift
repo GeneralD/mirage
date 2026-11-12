@@ -22,6 +22,8 @@ extension CameraSelectionUseCaseImpl: CameraSelectionUseCase {
             break
         case .missing(let name):
             developerLog.record(.camera, "camera not connected: \(name)")
+        case .suspended(let name):
+            developerLog.record(.camera, "camera suspended: \(name)")
         case .noCamera:
             developerLog.record(.camera, "no camera found")
         }

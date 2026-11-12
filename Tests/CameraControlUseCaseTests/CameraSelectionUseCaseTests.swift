@@ -17,8 +17,8 @@ struct CameraSelectionUseCaseTests {
         }
     }
 
-    private func device(_ id: String, name: String? = nil, isSystemDefault: Bool = false) -> CameraDevice {
-        CameraDevice(id: id, name: name ?? id, isSystemDefault: isSystemDefault)
+    private func device(_ id: String, name: String? = nil, isSystemDefault: Bool = false, isSuspended: Bool = false) -> CameraDevice {
+        CameraDevice(id: id, name: name ?? id, isSystemDefault: isSystemDefault, isSuspended: isSuspended)
     }
 
     private func format(_ index: Int, _ width: Int, _ height: Int, fps: ClosedRange<Int> = 1...60) -> CameraFormat {
@@ -117,6 +117,26 @@ struct CameraSelectionUseCaseTests {
             repository.applied.values
                 == [CameraCapture(deviceID: "front", format: CameraFormatChoice(index: 0, framesPerSecond: 30))])
         #expect(log.messages(in: .camera) == ["camera not connected: Capture Card"])
+    }
+
+    @Test("a remembered camera that is suspended is reported by name, a running camera is captured, and the choice is not saved over")
+    func suspendedCameraFallsBackWithoutForgettingTheChoice() {
+        let remembered = selection(deviceID: "built-in", deviceName: "FaceTime HD Camera")
+        let repository = FakeCameraSelectionRepository(
+            devices: [device("built-in", name: "FaceTime HD Camera", isSystemDefault: true, isSuspended: true), device("phone")],
+            formats: ["phone": [format(0, 1280, 720)]],
+            selection: remembered
+        )
+        let log = RecordingLog()
+        let state = makeSubject(repository, log: log).refresh()
+        #expect(state.availability == .suspended("FaceTime HD Camera"))
+        #expect(state.selectedDeviceID == "phone")
+        #expect(
+            repository.applied.values
+                == [CameraCapture(deviceID: "phone", format: CameraFormatChoice(index: 0, framesPerSecond: 30))])
+        #expect(log.messages(in: .camera) == ["camera suspended: FaceTime HD Camera"])
+        #expect(repository.saves.values.isEmpty)
+        #expect(repository.storedSelection() == remembered)
     }
 
     @Test("with no system default camera, an unplugged remembered camera falls back to the first camera")

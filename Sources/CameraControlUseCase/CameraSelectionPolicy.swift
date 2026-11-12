@@ -1,16 +1,17 @@
 import Domain
 
 /// Chooses the camera and the settings a capture uses, and what the settings screens show for them.
-/// A remembered camera wins while it is connected; otherwise the OS default camera is used, then the first camera.
+/// A running camera is used before a suspended one; among those, a remembered camera wins while it is connected, then a
+/// physical camera before a virtual one, then the OS default camera, then the first in the list.
 /// A remembered resolution or frame rate that the camera cannot give falls back to the M0 preset (1280x720 at 30 fps),
 /// and then to the smallest resolution or the highest frame rate the camera offers.
 struct CameraSelectionPolicy: Sendable {
-    /// The camera to use: the remembered one when it is connected, else the OS default camera, else the first camera,
-    /// or nil when there is none.
+    /// The camera to use, or nil when there is none. The ranking, most important first: running before suspended, so a
+    /// remembered camera whose laptop lid is closed gives way to one that gives frames; the remembered camera; physical
+    /// before virtual, so a virtual camera that is the OS default but whose app is not running is not picked on its own;
+    /// the OS default camera; the order of the list.
     func device(among devices: [CameraDevice], selection: CameraSelection) -> CameraDevice? {
-        devices.first { $0.id == selection.deviceID }
-            ?? devices.first { $0.isSystemDefault }
-            ?? devices.first
+        devices.enumerated().min { rank($0.element, at: $0.offset, selection) < rank($1.element, at: $1.offset, selection) }?.element
     }
 
     /// What the settings screens read: the cameras, the choices on offer, the current choice, and whether it can be used.
@@ -66,13 +67,30 @@ struct CameraSelectionPolicy: Sendable {
         )
     }
 
+    /// Where a camera stands in `device(among:selection:)`'s order: the lower, the sooner it is used.
+    private func rank(_ camera: CameraDevice, at offset: Int, _ selection: CameraSelection) -> (Int, Int, Int, Int, Int) {
+        (
+            camera.isSuspended ? 1 : 0,
+            camera.id == selection.deviceID ? 0 : 1,
+            camera.isVirtual ? 1 : 0,
+            camera.isSystemDefault ? 0 : 1,
+            offset
+        )
+    }
+
+    /// Whether the camera can be used: a remembered camera that is not connected is missing; otherwise the remembered
+    /// camera, or the one in use when none was remembered, is suspended or available.
     private func availability(devices: [CameraDevice], selection: CameraSelection) -> CameraAvailability {
-        guard !devices.isEmpty else { return .noCamera }
-        guard let remembered = selection.deviceID else { return .available }
-        guard devices.contains(where: { $0.id == remembered }) else {
+        guard let camera = device(among: devices, selection: selection) else { return .noCamera }
+        guard let remembered = selection.deviceID else { return availability(of: camera) }
+        guard let chosen = devices.first(where: { $0.id == remembered }) else {
             return .missing(selection.deviceName ?? remembered)
         }
-        return .available
+        return availability(of: chosen)
+    }
+
+    private func availability(of camera: CameraDevice) -> CameraAvailability {
+        camera.isSuspended ? .suspended(camera.name) : .available
     }
 }
 

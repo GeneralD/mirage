@@ -7,8 +7,14 @@ import Testing
 struct CameraSelectionPolicyTests {
     private let policy = CameraSelectionPolicy()
 
-    private func device(_ id: String, name: String? = nil, isSystemDefault: Bool = false) -> CameraDevice {
-        CameraDevice(id: id, name: name ?? id, isSystemDefault: isSystemDefault)
+    private func device(
+        _ id: String,
+        name: String? = nil,
+        isSystemDefault: Bool = false,
+        isSuspended: Bool = false,
+        isVirtual: Bool = false
+    ) -> CameraDevice {
+        CameraDevice(id: id, name: name ?? id, isSystemDefault: isSystemDefault, isSuspended: isSuspended, isVirtual: isVirtual)
     }
 
     private func format(_ index: Int, _ width: Int, _ height: Int, fps: ClosedRange<Int> = 1...60) -> CameraFormat {
@@ -71,6 +77,69 @@ struct CameraSelectionPolicyTests {
         #expect(policy.device(among: [], selection: selection(deviceID: "usb")) == nil)
     }
 
+    @Test("with nothing remembered, a physical camera is used before a virtual system default camera")
+    func physicalCameraIsUsedBeforeVirtualDefault() {
+        let devices = [device("virtual", isSystemDefault: true, isVirtual: true), device("usb")]
+        #expect(policy.device(among: devices, selection: selection())?.id == "usb")
+    }
+
+    @Test("with nothing remembered, a running camera is used before a suspended system default camera")
+    func runningCameraIsUsedBeforeSuspendedDefault() {
+        let devices = [device("built-in", isSystemDefault: true, isSuspended: true), device("usb")]
+        #expect(policy.device(among: devices, selection: selection())?.id == "usb")
+    }
+
+    @Test("with nothing remembered, a running virtual camera is used before a suspended physical camera")
+    func runningVirtualCameraIsUsedBeforeSuspendedPhysical() {
+        let devices = [device("built-in", isSuspended: true), device("virtual", isVirtual: true)]
+        #expect(policy.device(among: devices, selection: selection())?.id == "virtual")
+    }
+
+    @Test("with nothing remembered, the system default wins among running physical cameras, else the first in the list")
+    func systemDefaultBreaksTiesAmongRunningPhysicalCameras() {
+        let withDefault = [device("capture"), device("usb", isSystemDefault: true), device("virtual", isVirtual: true)]
+        let withoutDefault = [device("capture"), device("usb"), device("virtual", isSystemDefault: true, isVirtual: true)]
+        #expect(policy.device(among: withDefault, selection: selection())?.id == "usb")
+        #expect(policy.device(among: withoutDefault, selection: selection())?.id == "capture")
+    }
+
+    @Test("a suspended camera is still used when no camera is running, the system default first")
+    func suspendedCameraIsUsedWhenNoneIsRunning() {
+        let devices = [device("usb", isSuspended: true), device("built-in", isSystemDefault: true, isSuspended: true)]
+        #expect(policy.device(among: devices, selection: selection())?.id == "built-in")
+    }
+
+    @Test("a remembered camera that is suspended gives way to a running camera, even a virtual one")
+    func suspendedRememberedCameraGivesWayToRunningCamera() {
+        let devices = [device("built-in", isSystemDefault: true, isSuspended: true), device("virtual", isVirtual: true)]
+        #expect(policy.device(among: devices, selection: selection(deviceID: "built-in"))?.id == "virtual")
+    }
+
+    @Test("a remembered camera that is suspended is kept when no camera is running")
+    func suspendedRememberedCameraIsKeptWhenNoneIsRunning() {
+        let devices = [device("built-in", isSystemDefault: true, isSuspended: true), device("usb", isSuspended: true)]
+        #expect(policy.device(among: devices, selection: selection(deviceID: "usb"))?.id == "usb")
+    }
+
+    @Test("a remembered camera that is running is used before a physical system default, even when it is virtual")
+    func runningRememberedVirtualCameraWins() {
+        let devices = [device("built-in", isSystemDefault: true), device("virtual", isVirtual: true)]
+        #expect(policy.device(among: devices, selection: selection(deviceID: "virtual"))?.id == "virtual")
+    }
+
+    @Test(
+        "with a virtual system default that sends nothing, a suspended built-in camera and a Continuity Camera, the Continuity Camera is captured"
+    )
+    func continuityCameraIsCapturedOverVirtualDefaultAndClosedLid() {
+        let devices = [
+            device("face-time", name: "FaceTime HD Camera", isSuspended: true),
+            device("phone", name: "iPhone Camera"),
+            device("vcam", name: "VCam", isSystemDefault: true, isVirtual: true),
+        ]
+        let capture = policy.capture(devices: devices, formats: [format(0, 1280, 720)], selection: selection())
+        #expect(capture?.deviceID == "phone")
+    }
+
     // MARK: availability
 
     @Test("availability is noCamera when no camera is connected, even if a camera was remembered")
@@ -111,6 +180,45 @@ struct CameraSelectionPolicyTests {
     func availabilityIsMissingWithRememberedIDWithoutName() {
         let state = policy.state(devices: [device("front")], formats: [], selection: selection(deviceID: "usb"))
         #expect(state.availability == .missing("usb"))
+    }
+
+    @Test("availability is suspended with the camera's name when the remembered camera is suspended, and a running camera is chosen")
+    func availabilityIsSuspendedWhenRememberedCameraIsSuspended() {
+        let state = policy.state(
+            devices: [device("built-in", name: "FaceTime HD Camera", isSuspended: true), device("usb")],
+            formats: [],
+            selection: selection(deviceID: "built-in", deviceName: "Old Name"))
+        #expect(state.availability == .suspended("FaceTime HD Camera"))
+        #expect(state.selectedDeviceID == "usb")
+    }
+
+    @Test("availability is suspended with the chosen camera's name when nothing is remembered and every camera is suspended")
+    func availabilityIsSuspendedWhenEveryCameraIsSuspended() {
+        let state = policy.state(
+            devices: [device("built-in", name: "FaceTime HD Camera", isSystemDefault: true, isSuspended: true)],
+            formats: [],
+            selection: selection())
+        #expect(state.availability == .suspended("FaceTime HD Camera"))
+        #expect(state.selectedDeviceID == "built-in")
+    }
+
+    @Test("availability is available when nothing is remembered and a running camera is chosen over a suspended one")
+    func availabilityIsAvailableWhenRunningCameraIsChosen() {
+        let state = policy.state(
+            devices: [device("built-in", isSystemDefault: true, isSuspended: true), device("usb")],
+            formats: [],
+            selection: selection())
+        #expect(state.availability == .available)
+        #expect(state.selectedDeviceID == "usb")
+    }
+
+    @Test("availability is missing, not suspended, when the remembered camera is unplugged and the fallback is suspended")
+    func availabilityIsMissingBeforeSuspended() {
+        let state = policy.state(
+            devices: [device("built-in", isSuspended: true)],
+            formats: [],
+            selection: selection(deviceID: "usb", deviceName: "USB Camera"))
+        #expect(state.availability == .missing("USB Camera"))
     }
 
     // MARK: state

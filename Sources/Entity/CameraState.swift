@@ -15,6 +15,9 @@ public enum CameraAvailability: Sendable, Hashable {
     case available
     /// The user chose a camera that is not connected now. The payload is that camera's name.
     case missing(String)
+    /// The chosen camera, or the one in use when none was chosen, is connected but suspended, so it gives no frames
+    /// (a laptop's lid is closed, for one). The payload is that camera's name.
+    case suspended(String)
     /// No camera is connected at all.
     case noCamera
 }

@@ -82,6 +82,11 @@ struct CameraMenuTextTests {
         #expect(text.status(of: state(availability: .missing("Logitech C920"))) == "Logitech C920 is not connected")
     }
 
+    @Test("the status names the camera that is suspended")
+    func statusNamesSuspendedCamera() {
+        #expect(text.status(of: state(availability: .suspended("FaceTime HD Camera"))) == "FaceTime HD Camera is suspended")
+    }
+
     @Test("the status reads No camera found when no camera is connected")
     func statusReadsNoCameraFound() {
         #expect(text.status(of: state(availability: .noCamera)) == "No camera found")
