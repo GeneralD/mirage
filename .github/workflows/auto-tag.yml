@@ -40,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          if gh api "repos/${REPO}/git/refs/tags/${TAG}" >/dev/null 2>&1; then
+          if gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists on remote"
           else
             git tag "$TAG"
@@ -56,6 +56,14 @@ jobs:
             echo "Release ${TAG} already exists"
             exit 0
           fi
+          # git push returning does not mean the API can read the tag yet: v0.25.0's release failed
+          # 0.7 s after its push (#543). Poll the tag's ref, about a minute at most, and say how long
+          # it took; a tag still unreadable then fails --verify-tag below, as before.
+          for i in $(seq 1 20); do
+            gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1 && break
+            echo "Waiting for the API to read ${TAG} (${i}/20)"
+            sleep 3
+          done
           PREVIOUS=$(git tag --merged "$TAG" --sort=-v:refname | grep -vxF "$TAG" | head -n 1 || true)
           if [ -n "$PREVIOUS" ]; then
             gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" --generate-notes --notes-start-tag "$PREVIOUS"
