@@ -17,9 +17,7 @@ extension CameraDeviceGatewayImpl: CameraDeviceGateway {
             mediaType: .video,
             position: .unspecified
         )
-        return session.devices.map { device in
-            CameraDevice(id: device.uniqueID, name: device.localizedName, isSystemDefault: device.uniqueID == systemDefault)
-        }
+        return session.devices.map { CameraDevice(device: $0, systemDefaultID: systemDefault) }
     }
 
     public func formats(ofDevice id: String) -> [CameraFormat] {

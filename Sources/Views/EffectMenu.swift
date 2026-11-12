@@ -17,7 +17,7 @@ import SwiftUI
 /// instead and leave `state` off. *Browse Effects…* goes to the Presenter like every other item;
 /// the Presenter hands it to the Router, which opens the picker's window. *Adjust Effect…* takes
 /// its title from the Presenter and is disabled unless the Presenter says the chosen effect has parameters.
-/// A non-nil `camera` adds the Camera submenu after *Open Effects Folder…*; the dev harness passes none, so its menu has none.
+/// A non-nil `camera` adds the Camera submenu after *Open Effects Folder…*; the host and the dev harness both pass one.
 public struct EffectMenu: View {
     @ObservedObject private var presenter: MenuBarPresenter
     private let camera: CameraMenuPresenter?

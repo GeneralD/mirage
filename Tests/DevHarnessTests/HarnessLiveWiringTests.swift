@@ -27,7 +27,9 @@ import Testing
 /// `CameraRepositoryImpl`, `VirtualCameraRepositoryImpl`, …), and so is the effects menu's: the
 /// Presenter an `AppRouter` builds, over `EffectInteractorImpl`, `EffectCatalogUseCaseImpl`, the
 /// Repositories, DataSources and DataStore under it, and the effect runtime the pipeline applies.
-/// Only the OS boundary under them is a fake: the camera source and permission, IOSurface, the Mach
+/// So is the camera choice the menu's Camera submenu applies when it starts (`CameraSelectionInteractorImpl` over the
+/// selection's UseCase, Repository, DataSource and DataStore).
+/// Only the OS boundary under them is a fake: the camera source, permission and list, IOSurface, the Mach
 /// gateways, the executor, scheduler, work runner and clock, the logs, the GPU layer (`FakeGPUGateway`,
 /// `FakeShaderLibraryGateway`, `FakeTextureCacheGateway`), and for the effects folder the file system,
 /// the file events, the app directories, the key-value store and Finder, and the hotkey and login-item gateways.
@@ -99,12 +101,22 @@ struct HarnessLiveWiringTests {
         let workspace = FakeWorkspaceGateway()
         let hotkeyGateway = FakeHotkeyGateway()
         let loginItemGateway = FakeLoginItemGateway()
+        // This machine's cameras when the harness first showed nothing: the OS default is a virtual camera whose app is not
+        // running, the built-in camera is suspended with the lid closed, and only the Continuity Camera gives frames.
+        let cameraList = FakeCameraDeviceGateway(
+            devices: [
+                CameraDevice(id: "vcam", name: "Virtual Camera", isSystemDefault: true, isVirtual: true),
+                CameraDevice(id: "face-time", name: "FaceTime HD Camera", isSuspended: true),
+                CameraDevice(id: "phone", name: "iPhone Camera"),
+            ],
+            formats: ["phone": [CameraFormat(index: 0, width: 1280, height: 720, minFramesPerSecond: 1, maxFramesPerSecond: 30)]])
         let folder = "/effects"
         // One set of fakes, applied to every scope this test opens (the suite's note says why each call is wrapped).
         let wiring: (inout DependencyValues) -> Void = {
             $0.context = .live
             $0.cameraSource = camera
             $0.cameraPermission = FakeCameraPermission(status: .authorized)
+            $0.cameraDeviceGateway = cameraList
             $0.machBootstrapGateway = kernel.bootstrap(for: .host)
             $0.machMessageGateway = kernel.messaging(for: .host)
             $0.ioSurfaceGateway = ioSurface
@@ -186,6 +198,19 @@ struct HarnessLiveWiringTests {
         #expect(camera.descriptor == .hd720)
         #expect(scheduler.isRunning)
         #expect(developer.messages(in: .camera) == ["camera authorization: authorized"])
+
+        // The Camera submenu: starting the menu applied the camera choice to the camera source. Nothing is remembered, so the
+        // running physical camera is captured, not the virtual default nor the suspended built-in camera.
+        let cameraPresenter = menu.router.cameraMenuPresenter
+        let phoneCapture = CameraCapture(deviceID: "phone", format: CameraFormatChoice(index: 0, framesPerSecond: 30))
+        let cameraApplied = await tickUntil(
+            tick: { executor.drain() },
+            until: { camera.captures.contains(phoneCapture) && cameraPresenter?.devices.contains(where: \.isSelected) == true })
+        #expect(cameraPresenter != nil, "the harness's Router has the Camera submenu")
+        #expect(cameraApplied, "starting the menu never applied the camera choice, or the Camera submenu never showed it")
+        #expect(camera.captures == [phoneCapture])
+        #expect(cameraPresenter?.devices.filter(\.isSelected).map(\.title) == ["iPhone Camera"])
+        #expect(cameraPresenter?.status == nil)
 
         // The menu: the bundled effects, all enabled, the default one chosen and compiled once from its own source.
         let chromatic = EffectID.bundled("Chromatic Grain")

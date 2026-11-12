@@ -43,6 +43,8 @@ struct CameraMenuText: Sendable {
             return nil
         case .missing(let name):
             return "\(name) is not connected"
+        case .suspended(let name):
+            return "\(name) is suspended"
         case .noCamera:
             return "No camera found"
         }

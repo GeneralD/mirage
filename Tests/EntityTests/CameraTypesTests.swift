@@ -12,6 +12,14 @@ import Testing
         #expect(CameraDevice(id: "cam-1", name: "FaceTime HD", isSystemDefault: true).isSystemDefault)
     }
 
+    @Test func suspendedAndVirtualFlagsAreFalseUnlessSpecified() {
+        let plain = CameraDevice(id: "cam-1", name: "FaceTime HD")
+        #expect(!plain.isSuspended)
+        #expect(!plain.isVirtual)
+        #expect(CameraDevice(id: "cam-1", name: "FaceTime HD", isSuspended: true).isSuspended)
+        #expect(CameraDevice(id: "vcam", name: "Virtual", isVirtual: true).isVirtual)
+    }
+
     @Test func formatsThatDifferOnlyInIndexAreNotEqual() {
         let first = CameraFormat(index: 0, width: 1280, height: 720, minFramesPerSecond: 1, maxFramesPerSecond: 30)
         let second = CameraFormat(index: 1, width: 1280, height: 720, minFramesPerSecond: 1, maxFramesPerSecond: 30)
