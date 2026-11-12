@@ -43,7 +43,7 @@ struct ReleaseNotesWiringTests {
         try #require(push.upperBound <= create.lowerBound)
         let between = text[push.upperBound..<create.lowerBound]
 
-        for phrase in ["for i in $(seq 1 ", "gh api \"repos/${REPO}/git/refs/tags/${TAG}\"", "&& break", "sleep "] {
+        for phrase in ["for i in $(seq 1 20)", "gh api \"repos/${REPO}/git/refs/tags/${TAG}\"", "&& break", "sleep 3"] {
             #expect(between.contains(phrase), "the wait lacks: \(phrase)")
         }
     }
