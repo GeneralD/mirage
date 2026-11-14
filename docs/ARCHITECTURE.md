@@ -82,13 +82,14 @@ Implementation targets import `Domain` only, and the three DI targets are the on
 
 ### Implementation Modules
 
-Columns are layers. A dotted edge runs from a module to the module whose live value its `@Dependency(\.key)` resolves (the key's `liveValue` registration names the type, and the type names the module); a red one is a per-key exception from the overview. A node with a dashed border is drawn in another diagram and appears here only as a target. Every target also depends on `Domain`, and nearly every module resolves `UnifiedLog`; those edges, and swift-dependencies' `continuousClock`, are left out.
+In each diagram but *Dependency injection*, columns are layers, and a label leaves out the layer suffix its column already names: `FrameTransport` under DataSource is `FrameTransportDataSource` (a DataStore keeps its suffix, since that column holds both). A dotted edge runs from a module to the module whose live value its `@Dependency(\.key)` resolves (the key's `liveValue` registration names the type, and the type names the module); a red one is a per-key exception from the overview. A node with a dashed border is drawn in another diagram and appears only as a target. Every target also depends on `Domain`, and many modules resolve `UnifiedLog`; those edges, and swift-dependencies' `continuousClock`, are left out.
 
 #### Entry points and the view lane
 
-Solid edges are the entry points' compile-time dependencies on the view lane; which DI target each links is in the next diagram.
+Solid edges are compile-time dependencies: the entry points' on the view lane, and the view lane's own. Which DI target each entry point links is in the next diagram.
 
 ```mermaid
+%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph Entry_entry["Entry"]
     App:::entry
@@ -105,16 +106,16 @@ graph LR
     Presenters:::pres
   end
   subgraph Entry_int["Interactor"]
-    CameraInteractor:::intx
-    ControlsInteractor:::intx
-    EffectAuthoringInteractor:::intx
-    EffectInteractor:::intx
-    HarnessInteractor:::intx
-    OnboardingInteractor:::intx
-    SettingsInteractor:::intx
+    CameraInteractor["Camera"]:::intx
+    ControlsInteractor["Controls"]:::intx
+    EffectAuthoringInteractor["EffectAuthoring"]:::intx
+    EffectInteractor["Effect"]:::intx
+    HarnessInteractor["Harness"]:::intx
+    OnboardingInteractor["Onboarding"]:::intx
+    SettingsInteractor["Settings"]:::intx
   end
   subgraph Entry_uc["UseCase"]
-    ExtensionRelayUseCase:::ucx
+    ExtensionRelayUseCase["ExtensionRelay"]:::ucx
   end
   subgraph Entry_sup["Support"]
     StandardStreams:::sup
@@ -154,15 +155,16 @@ graph LR
 
 #### Dependency injection
 
-The host's entry points link `HostDependencyInjection`, the extension links `ExtensionDependencyInjection`, and both link `CommonDependencyInjection`; `ViewGallery` links none, so no live value reaches it. Every implementation module is registered by exactly one of the three.
+This one is grouped by registration rather than by layer, and every module in it also appears in a layered diagram. The host's entry points link `HostDependencyInjection`, the extension links `ExtensionDependencyInjection`, and both link `CommonDependencyInjection`; `ViewGallery` links none, so no live value reaches it. Every implementation module is registered by exactly one of the three.
 
 ```mermaid
+%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph DI_entry["Entry"]
-    App:::entryx
-    DevHarness:::entryx
-    LensTool:::entryx
-    ExtensionApp:::entryx
+    App:::entry
+    DevHarness:::entry
+    LensTool:::entry
+    ExtensionApp:::entry
   end
   subgraph DI_di["Dependency injection"]
     HostDependencyInjection:::di
@@ -198,57 +200,51 @@ graph LR
   HostDependencyInjection --> HostRegistered
   classDef di fill:#fff3e0,stroke:#ef6c00,color:#111
   classDef ds fill:#fffde7,stroke:#f9a825,color:#111
-  classDef entryx fill:#e8eaf6,stroke:#3f51b5,color:#111,stroke-dasharray:5 3
+  classDef entry fill:#e8eaf6,stroke:#3f51b5,color:#111
   classDef gw fill:#eceff1,stroke:#455a64,color:#111
   classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
   classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
   classDef uc fill:#f3e5f5,stroke:#7b1fa2,color:#111
 ```
 
-#### Frame path (host)
+#### Frame path: capture, preview and transport
 
-The camera's frames through the effect to the preview and to the transport that feeds the virtual camera.
+The host's frame path around the effect: the camera's frames into the pipeline, out to the preview and to the transport that feeds the virtual camera.
 
 ```mermaid
+%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
-  subgraph Frame_int["Interactor"]
-    CameraInteractor:::int
-    HarnessInteractor:::int
+  subgraph Area0_int["Interactor"]
+    CameraInteractor["Camera"]:::int
+    HarnessInteractor["Harness"]:::int
   end
-  subgraph Frame_uc["UseCase"]
-    CameraControlUseCase:::uc
-    FramePipelineUseCase:::uc
-    ExtensionInstallUseCase:::ucx
+  subgraph Area0_uc["UseCase"]
+    CameraControlUseCase["CameraControl"]:::uc
+    FramePipelineUseCase["FramePipeline"]:::uc
+    ExtensionInstallUseCase["ExtensionInstall"]:::ucx
   end
-  subgraph Frame_repo["Repository"]
-    CameraRepository:::repo
-    EffectRuntimeRepository:::repo
-    PreviewRepository:::repo
-    VirtualCameraRepository:::repo
-    SurfaceRepository:::repo
+  subgraph Area0_repo["Repository"]
+    CameraRepository["Camera"]:::repo
+    PreviewRepository["Preview"]:::repo
+    VirtualCameraRepository["VirtualCamera"]:::repo
+    SurfaceRepository["Surface"]:::repo
+    EffectRuntimeRepository["EffectRuntime"]:::repox
   end
-  subgraph Frame_ds["DataSource / DataStore"]
-    CameraDataSource:::ds
-    CameraPermissionDataSource:::ds
-    GPURenderDataSource:::ds
-    ShaderCompilationDataSource:::ds
-    BundledEffectDataSource:::ds
-    EffectRuntimeStateDataSource:::ds
-    PreviewDataSource:::ds
-    FrameTransportDataSource:::ds
-    SurfacePoolDataSource:::ds
+  subgraph Area0_ds["DataSource / DataStore"]
+    CameraDataSource["Camera"]:::ds
+    CameraPermissionDataSource["CameraPermission"]:::ds
+    PreviewDataSource["Preview"]:::ds
+    FrameTransportDataSource["FrameTransport"]:::ds
+    SurfacePoolDataSource["SurfacePool"]:::ds
     PreferencesDataStore:::dsx
   end
-  subgraph Frame_gw["Gateway (OS boundary)"]
-    AVFoundationGateway:::gw
-    MetalGateway:::gw
-    MetalKitPreviewGateway:::gw
-    IOSurfaceGateway:::gw
-    MachGateway:::gw
-    DispatchExecutorGateway:::gw
-  end
-  subgraph Frame_sup["Support"]
-    RandomSource:::sup
+  subgraph Area0_gw["Gateway (OS boundary)"]
+    AVFoundationGateway["AVFoundation"]:::gw
+    MetalKitPreviewGateway["MetalKitPreview"]:::gw
+    IOSurfaceGateway["IOSurface"]:::gw
+    MachGateway["Mach"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gwx
+    MetalGateway["Metal"]:::gwx
   end
   CameraInteractor -.-> CameraControlUseCase
   CameraInteractor -.-> ExtensionInstallUseCase
@@ -266,11 +262,6 @@ graph LR
   CameraRepository -.-> CameraPermissionDataSource
   CameraRepository -.-> PreferencesDataStore
   CameraRepository -.-> SurfacePoolDataSource
-  EffectRuntimeRepository -.-> BundledEffectDataSource
-  EffectRuntimeRepository -.-> DispatchExecutorGateway
-  EffectRuntimeRepository -.-> EffectRuntimeStateDataSource
-  EffectRuntimeRepository -.-> GPURenderDataSource
-  EffectRuntimeRepository -.-> ShaderCompilationDataSource
   PreviewRepository -.-> PreviewDataSource
   VirtualCameraRepository -.-> FrameTransportDataSource
   VirtualCameraRepository -.-> SurfacePoolDataSource
@@ -278,13 +269,6 @@ graph LR
   CameraDataSource -.-> AVFoundationGateway
   CameraDataSource -.-> DispatchExecutorGateway
   CameraPermissionDataSource -.-> AVFoundationGateway
-  GPURenderDataSource -.-> DispatchExecutorGateway
-  GPURenderDataSource -.-> MetalGateway
-  GPURenderDataSource -.-> SurfacePoolDataSource
-  ShaderCompilationDataSource -.-> DispatchExecutorGateway
-  ShaderCompilationDataSource -.-> MetalGateway
-  EffectRuntimeStateDataSource -.-> DispatchExecutorGateway
-  EffectRuntimeStateDataSource -.-> RandomSource
   PreviewDataSource -.-> DispatchExecutorGateway
   PreviewDataSource -.-> MetalGateway
   PreviewDataSource -.-> MetalKitPreviewGateway
@@ -296,15 +280,59 @@ graph LR
   classDef ds fill:#fffde7,stroke:#f9a825,color:#111
   classDef dsx fill:#fffde7,stroke:#f9a825,color:#111,stroke-dasharray:5 3
   classDef gw fill:#eceff1,stroke:#455a64,color:#111
+  classDef gwx fill:#eceff1,stroke:#455a64,color:#111,stroke-dasharray:5 3
   classDef int fill:#e8f5e9,stroke:#2e7d32,color:#111
   classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
-  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
+  classDef repox fill:#fce4ec,stroke:#c2185b,color:#111,stroke-dasharray:5 3
   classDef uc fill:#f3e5f5,stroke:#7b1fa2,color:#111
   classDef ucx fill:#f3e5f5,stroke:#7b1fa2,color:#111,stroke-dasharray:5 3
   linkStyle 7 stroke:#d32f2f,stroke-width:2px
-  linkStyle 17 stroke:#d32f2f,stroke-width:2px
-  linkStyle 30 stroke:#d32f2f,stroke-width:2px
-  linkStyle 38 stroke:#d32f2f,stroke-width:2px
+  linkStyle 26 stroke:#d32f2f,stroke-width:2px
+```
+
+#### Frame path: effect runtime
+
+The effect the pipeline runs on each frame: compiled shaders, per-effect state, and one command buffer per effect.
+
+```mermaid
+%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
+graph LR
+  subgraph Area1_repo["Repository"]
+    EffectRuntimeRepository["EffectRuntime"]:::repo
+  end
+  subgraph Area1_ds["DataSource / DataStore"]
+    GPURenderDataSource["GPURender"]:::ds
+    ShaderCompilationDataSource["ShaderCompilation"]:::ds
+    BundledEffectDataSource["BundledEffect"]:::ds
+    EffectRuntimeStateDataSource["EffectRuntimeState"]:::ds
+    SurfacePoolDataSource["SurfacePool"]:::dsx
+  end
+  subgraph Area1_gw["Gateway (OS boundary)"]
+    MetalGateway["Metal"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gw
+  end
+  subgraph Area1_sup["Support"]
+    RandomSource:::sup
+  end
+  EffectRuntimeRepository -.-> BundledEffectDataSource
+  EffectRuntimeRepository -.-> DispatchExecutorGateway
+  EffectRuntimeRepository -.-> EffectRuntimeStateDataSource
+  EffectRuntimeRepository -.-> GPURenderDataSource
+  EffectRuntimeRepository -.-> ShaderCompilationDataSource
+  GPURenderDataSource -.-> DispatchExecutorGateway
+  GPURenderDataSource -.-> MetalGateway
+  GPURenderDataSource -.-> SurfacePoolDataSource
+  ShaderCompilationDataSource -.-> DispatchExecutorGateway
+  ShaderCompilationDataSource -.-> MetalGateway
+  EffectRuntimeStateDataSource -.-> DispatchExecutorGateway
+  EffectRuntimeStateDataSource -.-> RandomSource
+  classDef ds fill:#fffde7,stroke:#f9a825,color:#111
+  classDef dsx fill:#fffde7,stroke:#f9a825,color:#111,stroke-dasharray:5 3
+  classDef gw fill:#eceff1,stroke:#455a64,color:#111
+  classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
+  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
+  linkStyle 1 stroke:#d32f2f,stroke-width:2px
+  linkStyle 7 stroke:#d32f2f,stroke-width:2px
 ```
 
 #### Effects: catalog and authoring
@@ -312,37 +340,38 @@ graph LR
 The effect catalog behind the Effects menu, `.lens` packages on disk, and the still-image render of the authoring tool.
 
 ```mermaid
+%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
-  subgraph Effects_int["Interactor"]
-    EffectInteractor:::int
-    EffectAuthoringInteractor:::int
+  subgraph Area2_int["Interactor"]
+    EffectInteractor["Effect"]:::int
+    EffectAuthoringInteractor["EffectAuthoring"]:::int
   end
-  subgraph Effects_uc["UseCase"]
-    EffectCatalogUseCase:::uc
-    EffectAuthoringUseCase:::uc
+  subgraph Area2_uc["UseCase"]
+    EffectCatalogUseCase["EffectCatalog"]:::uc
+    EffectAuthoringUseCase["EffectAuthoring"]:::uc
   end
-  subgraph Effects_repo["Repository"]
-    EffectPackageRepository:::repo
-    StillImageRepository:::repo
-    EffectRuntimeRepository:::repox
-    SettingsRepository:::repox
-    SurfaceRepository:::repox
+  subgraph Area2_repo["Repository"]
+    EffectPackageRepository["EffectPackage"]:::repo
+    StillImageRepository["StillImage"]:::repo
+    EffectRuntimeRepository["EffectRuntime"]:::repox
+    SettingsRepository["Settings"]:::repox
+    SurfaceRepository["Surface"]:::repox
   end
-  subgraph Effects_ds["DataSource / DataStore"]
-    EffectPackageDataSource:::ds
-    EffectWatchDataSource:::ds
-    StillImageDataSource:::ds
-    BundledEffectDataSource:::dsx
-    ShaderCompilationDataSource:::dsx
+  subgraph Area2_ds["DataSource / DataStore"]
+    EffectPackageDataSource["EffectPackage"]:::ds
+    EffectWatchDataSource["EffectWatch"]:::ds
+    StillImageDataSource["StillImage"]:::ds
+    BundledEffectDataSource["BundledEffect"]:::dsx
+    ShaderCompilationDataSource["ShaderCompilation"]:::dsx
   end
-  subgraph Effects_gw["Gateway (OS boundary)"]
-    FileSystemGateway:::gw
-    FileWatchGateway:::gw
-    WorkspaceGateway:::gw
-    ImageIOGateway:::gw
-    DispatchExecutorGateway:::gwx
+  subgraph Area2_gw["Gateway (OS boundary)"]
+    FileSystemGateway["FileSystem"]:::gw
+    FileWatchGateway["FileWatch"]:::gw
+    WorkspaceGateway["Workspace"]:::gw
+    ImageIOGateway["ImageIO"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gwx
   end
-  subgraph Effects_sup["Support"]
+  subgraph Area2_sup["Support"]
     AppDirectories:::sup
   end
   EffectInteractor -.-> EffectCatalogUseCase
@@ -383,42 +412,43 @@ graph LR
 The controls, the settings, the onboarding flow with the extension install, and the support log.
 
 ```mermaid
+%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
-  subgraph App_int["Interactor"]
-    ControlsInteractor:::int
-    SettingsInteractor:::int
-    OnboardingInteractor:::int
+  subgraph Area3_int["Interactor"]
+    ControlsInteractor["Controls"]:::int
+    SettingsInteractor["Settings"]:::int
+    OnboardingInteractor["Onboarding"]:::int
   end
-  subgraph App_uc["UseCase"]
-    SettingsUseCase:::uc
-    ExtensionInstallUseCase:::uc
-    SupportLogUseCase:::uc
-    EffectCatalogUseCase:::ucx
-    FramePipelineUseCase:::ucx
+  subgraph Area3_uc["UseCase"]
+    SettingsUseCase["Settings"]:::uc
+    ExtensionInstallUseCase["ExtensionInstall"]:::uc
+    SupportLogUseCase["SupportLog"]:::uc
+    EffectCatalogUseCase["EffectCatalog"]:::ucx
+    FramePipelineUseCase["FramePipeline"]:::ucx
   end
-  subgraph App_repo["Repository"]
-    SettingsRepository:::repo
-    ExtensionInstallRepository:::repo
-    SupportLogRepository:::repo
+  subgraph Area3_repo["Repository"]
+    SettingsRepository["Settings"]:::repo
+    ExtensionInstallRepository["ExtensionInstall"]:::repo
+    SupportLogRepository["SupportLog"]:::repo
   end
-  subgraph App_ds["DataSource / DataStore"]
-    HotkeyDataSource:::ds
-    LoginItemDataSource:::ds
+  subgraph Area3_ds["DataSource / DataStore"]
+    HotkeyDataSource["Hotkey"]:::ds
+    LoginItemDataSource["LoginItem"]:::ds
     PreferencesDataStore:::ds
     StoreMaintenanceDataStore:::ds
-    ExtensionInstallDataSource:::ds
-    SupportLogDataSource:::ds
+    ExtensionInstallDataSource["ExtensionInstall"]:::ds
+    SupportLogDataSource["SupportLog"]:::ds
   end
-  subgraph App_gw["Gateway (OS boundary)"]
-    HotkeyGateway:::gw
-    LoginItemGateway:::gw
-    UserDefaultsGateway:::gw
-    SystemExtensionGateway:::gw
-    LogStoreGateway:::gw
-    FileSystemGateway:::gwx
-    WorkspaceGateway:::gwx
+  subgraph Area3_gw["Gateway (OS boundary)"]
+    HotkeyGateway["Hotkey"]:::gw
+    LoginItemGateway["LoginItem"]:::gw
+    UserDefaultsGateway["UserDefaults"]:::gw
+    SystemExtensionGateway["SystemExtension"]:::gw
+    LogStoreGateway["LogStore"]:::gw
+    FileSystemGateway["FileSystem"]:::gwx
+    WorkspaceGateway["Workspace"]:::gwx
   end
-  subgraph App_sup["Support"]
+  subgraph Area3_sup["Support"]
     HostEnvironment:::sup
     AppDirectories:::supx
   end
@@ -464,30 +494,31 @@ graph LR
 The Camera Extension: frames received over Mach and served as the CMIO stream.
 
 ```mermaid
+%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
-  subgraph Extension_entry["Entry"]
+  subgraph Area4_entry["Entry"]
     ExtensionApp:::entry
   end
-  subgraph Extension_uc["UseCase"]
-    ExtensionRelayUseCase:::uc
+  subgraph Area4_uc["UseCase"]
+    ExtensionRelayUseCase["ExtensionRelay"]:::uc
   end
-  subgraph Extension_repo["Repository"]
-    FrameReceiverRepository:::repo
-    StreamOutputRepository:::repo
-    SurfaceRepository:::repox
+  subgraph Area4_repo["Repository"]
+    FrameReceiverRepository["FrameReceiver"]:::repo
+    StreamOutputRepository["StreamOutput"]:::repo
+    SurfaceRepository["Surface"]:::repox
   end
-  subgraph Extension_ds["DataSource / DataStore"]
-    FrameReceiverDataSource:::ds
-    StreamOutputDataSource:::ds
-    SurfacePoolDataSource:::dsx
+  subgraph Area4_ds["DataSource / DataStore"]
+    FrameReceiverDataSource["FrameReceiver"]:::ds
+    StreamOutputDataSource["StreamOutput"]:::ds
+    SurfacePoolDataSource["SurfacePool"]:::dsx
   end
-  subgraph Extension_gw["Gateway (OS boundary)"]
-    CMIOExtensionGateway:::gw
-    DispatchExecutorGateway:::gwx
-    IOSurfaceGateway:::gwx
-    MachGateway:::gwx
+  subgraph Area4_gw["Gateway (OS boundary)"]
+    CMIOExtensionGateway["CMIOExtension"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gwx
+    IOSurfaceGateway["IOSurface"]:::gwx
+    MachGateway["Mach"]:::gwx
   end
-  subgraph Extension_sup["Support"]
+  subgraph Area4_sup["Support"]
     HostTime:::sup
   end
   ExtensionApp -.-> ExtensionRelayUseCase
@@ -560,7 +591,7 @@ The host also keeps a presence port alive toward the extension and reconnects on
 | Entity | `Entity` | Pure data: `FrameRef`, `FrameContext`, `SurfaceToken`, `SurfaceDescriptor`, `EffectSource`, `EffectFailure` (closed), `EffectUniforms`, `DispatchGrid`, `ShaderCompileOptions`, `ShaderDiagnostics`, `GPUCompletion`, `RawGPUError`, `GPUTiming`, `GPUError`, `PreviewError`, `InstallStatus`, `CameraAuthorizationStatus`, `LaunchReport`, `PixelFormat`, `EffectTicket`, `EffectBegin`, `EffectSettlement`, `ProductIdentity` (M0 / MVP-A); `EffectID` (`EffectOrigin` × key), `EffectManifest` (`formatVersion`, `name`, optional `author` / `description` / `thumbnail`, and `parameters`, the typed `EffectParameterSpec` list, empty by default; unknown keys ignored; decoded by `EffectManifestDecoding`), `EffectPackage` (with the `EffectThumbnail` it was read with, if any), `EffectThumbnail` (`data`, `EffectThumbnailFormat` `png` / `jpeg`; #12), `EffectPackageProblem` (closed), `EffectPackageListing` (`ready` / `broken`), `EffectWatchSet`, `EffectPackageInventory`, `EffectCatalogEntry` (`displayName`, stored `origin`, `EffectAvailability`, optional `author`, optional `thumbnail`, optional `description`), `EffectSelectionOutcome`, `EffectCatalogState`, `EffectMenuItem` (the Presenter's row) (the effects catalog's contracts, epic #42); `EffectPickerCell`, `EffectArtwork` (`placeholder`, or `image` with the thumbnail and the tile to fall back on) and `EffectPlaceholder` (the picker's cell, #12); `EffectParameterSpec` (with its `EffectParameterKind`), `EffectParameterValue`, `EffectParameterState`, `EffectParameterLayout` (the field list that drives both the generated `Parameters` struct and `ParameterPacker`) and `EffectParameterBlock` (the packed bytes bound at buffer 1) (MVP-C); `EffectFingerprint`, `EffectPassOutcome`, `EffectFailureKind`, `EffectDisableReason` and `DisabledEffectRecord` (the health policy's contracts, MVP-D); `CameraDevice`, `CameraFormat`, `CameraResolution`, `CameraCapture`, `CameraSelection`, `CameraAvailability`, `CameraState` and `CameraMenuOption` (the camera selection's contracts); `PreviewMode`, `PreviewRefusal` and `PreviewAttachResult` (the preview pane's); `HotkeyAction`, `HotkeyBinding` and `HotkeyRegistration`; `ParameterPanelRow` (with `ParameterPanelControl` and `ParameterPanelSlider`); `ControlsState`, `SettingsState` and `LaunchAtLoginStatus` (`off`, `on`, `needsApproval`, `unavailable`); `StoredSchemaVersion` (`missing`, `version(Int)`, `unreadable`); `HostEnvironmentInfo` (`appVersion` and `buildNumber`, both optional, and `systemVersion: SystemVersion`); `SupportLogEntry` (`timestamp` in seconds since 1970, `category`, `message`), `SupportLogSnapshot` (`environment`, `entries`, optional `logError`), `SupportReportContext` (`install`, optional `effectStatus`, optional `compilerMessage`) and `SupportLogExportOutcome` (`saved(path:lineCount:logError:)` / `failed(description:)`) (the support report's contracts); `StillImage` (`width`, `height`, `bgra`: 8 bit, premultiplied, rows packed), `StillImageSize` and `StillImageProblem` (`unreadable`, `tooLarge`, `notAnImage`, `dimensionsOutOfRange`, `unwritable`); `EffectReference` (`bundled(name:)` or `package(path:)`), `LensCommand` (`validate`, `scaffold`, `render`, `help`) and `LensUsageProblem` (closed), `AuthoringFailure` (closed) with `ScaffoldProblem` (closed) (the authoring command line's contracts) |
 | Test | `Tests/TestSupport`, `Tests/TestDoubles` | Waiting primitives (Foundation + Combine only; `Result.failure` for results whose success is not `Equatable`) and shared fakes (`FakeCaptureSessionGateway`, `FakeGPUGateway`, `FakeShaderLibraryGateway`, `FakeTextureCacheGateway`, `FakeEffectRuntimeRepository`, `FakeGPURenderer`, `FakeShaderCompiler`, `InMemoryPreviewSink`, `FakePreviewGateway`, `ManualFrameExecutor`, `RecordingFrameExecutor` (records every enqueue, for subjects that hop from their own task: `GPURenderDataSource`, `EffectRuntimeStateDataSource`), `ManualFrameScheduler`, `FakeSurfacePool`, `FakeFrameTransport`, `FakeMachBootstrapGateway`, `FakeMachMessageGateway`, `InMemoryFrameTransport`, `FakeStreamOutput`, `InMemoryFileSystemGateway`, `FakeFileWatchGateway`, `FakeWorkspaceGateway`, `InMemoryKeyValueStore` (`values`, `writes`, and `resets`, one entry per `removeAll()`), `FakeStoreMaintenance` (`stamps`, `resets`), `FixedAppDirectories`, `FixedHostEnvironment`, `FakeHotkeyGateway`, `FakeHotkeys`, `FakeLoginItemGateway`, `FakeLoginItem`, `FakeImageIOGateway`, `FakeStillImages`, `FakeStillImageRepository`, `FakeLogStoreGateway`, `FakeSupportLogs`, `FakeSupportLogRepository`, `FakeCameraDeviceGateway`, `FakeCameraDevices`, `FakeCameraPreferences`, `FakeEffectPackages`, `FakeEffectWatch`, `FakeEffectPackageRepository`, `FakeSettingsRepository`, `FakeEffectCatalogUseCase`, `FakeEffectAuthoringUseCase`, `FakeEffectInteractor`, `FakeControlsInteractor`, `FakeSettingsInteractor`, `FakeOnboardingInteractor`, `FakeEffectAuthoringInteractor`, `FakeCameraSelectionRepository`, `FakeCameraSelectionUseCase`, `FakeCameraSelectionInteractor`, `FakePreviewInteractor`, `FakeSupportLogUseCase`, `ScriptedCameraAuthorization`, `FakeCameraControlUseCase`, `FakeSystemExtensionGateway`, `RecordingLog`, `RecordingConsole` (`lines` and `errorLines`: one `Collector` per stream), `FixedHostTime`, `GatedClock` (cancellation-aware, like `ContinuousClock`), `RecordingWorkRunner`, `FakeFramePipelineUseCase`, `ZeroRandomSource` and `SequenceRandomSource` (`draws`); `Seeds.range` for seed sets; `HashNoiseReference`, the Swift twin of the prelude's `hash` / `noise`). `InMemoryFrameTransport` is the in-process Mach kernel (bootstrap table, per-port queue cap, presence ports, dead-name delivery, `killHost()`); `Tests/FramePathIntegrationTests/LoopbackRig.swift` builds the host and extension sides on it with separate surface pools per side; its host side runs a `FakeEffectRuntimeRepository` by default and, with `effects: .real`, the real effect runtime (`EffectRuntimeRepositoryImpl` over the live DataSources) over the fake GPU layer (`RealEffectRuntimeIntegrationTests`) and, with `catalog: .real` on top of it, the effects menu's real catalog (`EffectCatalogUseCaseImpl` over the real Repository, DataSources and settings chain, on the same runtime, with only the effects folder, the file events, the defaults and Finder faked and a `GatedClock` of its own for the watch's quiet period; `EffectCatalogIntegrationTests`) |
 
-The graph and the table show the target architecture. The one module of the graph that has no target yet is `ExtensionInteractor`; each such module arrives with the issue that needs it, and `Package.swift` is the list of what exists. Every OS-boundary port of the catalog has its live in `HostDependencyInjection`: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and `AppDirectoriesProvider` since #44 (*The file gateways* below), and `KeyValueStoreGateway` as `UserDefaultsGateway` since #51 (*The chosen effect is kept as one string in the user's defaults* below); nothing above them resolved one until the real DataSource / DataStore replaced its pass-through (*The effect catalog follows the same rule* below).
+The table shows the target architecture, and the diagrams above show what exists. The one module of the table that has no target yet is `ExtensionInteractor`, so no diagram draws it; each such module arrives with the issue that needs it, and `Package.swift` is the list of what exists. Every OS-boundary port of the catalog has its live in `HostDependencyInjection`: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and `AppDirectoriesProvider` since #44 (*The file gateways* below), and `KeyValueStoreGateway` as `UserDefaultsGateway` since #51 (*The chosen effect is kept as one string in the user's defaults* below); nothing above them resolved one until the real DataSource / DataStore replaced its pass-through (*The effect catalog follows the same rule* below).
 
 Delivery stages: **M0** spike (pass-through to Zoom via the real extension) → **MVP-A** one bundled effect end-to-end in the dev harness and the loopback (camera → GPU → preview; the extension path is M0's) → **MVP-B** runtime `.lens` loading + hot reload + menu switching (epic #42, landed; the timed run on a device is Lane 1's) → the **effect picker** (#12, landed: a thumbnail grid opened from the menu; the live preview pane in it, #68, has landed with an After / Split choice) → **MVP-C** effect parameters (typed manifest `parameters`, the generated `Parameters` struct, the parameter panel; landed) → **MVP-D** pass-through on failure + auto-disable (landed: the circuit breaker in `EffectCatalogUseCase`) → **menu bar and settings** (landed: bypass, the frame-rate readout, the Camera submenu, global hotkeys, launch at login, reset all) → **onboarding** (landed: the set-up window, the approval buttons, the support log) → **authoring** (landed: `lens-tool`, the guides and the examples). Later: Vision face landmarks / person segmentation inputs, GLSL (Shadertoy) import, URL/Git import, gallery.
 
