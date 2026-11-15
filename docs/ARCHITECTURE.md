@@ -32,8 +32,8 @@ graph TD
     GW["Gateway (OS boundary)"]:::gw
     Sup["Support"]:::sup
   end
-  Domain["Domain<br/>ports and dependency keys"]:::core
-  Entity["Entity<br/>data types"]:::core
+  Domain["Domain<br/>ports and dependency keys"]:::domain
+  Entity["Entity<br/>data types"]:::entity
 
   Entry --> View
   Entry --> Pres
@@ -64,32 +64,32 @@ graph TD
   Repo -.->|"workRunner (EffectRuntimeRepository)"| GW
   DS -.->|"surfacePool (GPURender, Preview)"| DS
 
-  classDef entry fill:#e8eaf6,stroke:#3f51b5,color:#111
-  classDef view fill:#e8eaf6,stroke:#3f51b5,color:#111
-  classDef pres fill:#e0f7fa,stroke:#00838f,color:#111
-  classDef di fill:#fff3e0,stroke:#ef6c00,color:#111
-  classDef int fill:#e8f5e9,stroke:#2e7d32,color:#111
-  classDef uc fill:#f3e5f5,stroke:#7b1fa2,color:#111
-  classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
-  classDef ds fill:#fffde7,stroke:#f9a825,color:#111
-  classDef gw fill:#eceff1,stroke:#455a64,color:#111
-  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
-  classDef core fill:#fff,stroke:#111,color:#111,stroke-width:2px
+  classDef entry fill:#4c78a8,stroke:#333,color:#fff
+  classDef view fill:#6a5,stroke:#333,color:#fff
+  classDef pres fill:#6a5,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef di fill:#c44,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef domain fill:#38b,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef entity fill:#4a9,stroke:#E9B84C,stroke-width:3px,color:#fff
   linkStyle 23,24,25,26 stroke:#d32f2f,stroke-width:2px
 ```
 
-Implementation targets import `Domain` only, and the three DI targets are the only importers of implementation targets. Each lane resolves the layer right below it plus Support (`.claude/rules/architecture-boundaries.md` → Key-Path Allow-List). The four red edges leave their lane; they are the per-key exceptions of the key-path lint: the execution-context ports the frame path runs on, which a UseCase resolves; the `workRunner` of `EffectRuntimeRepository`; the `surfacePool` that `GPURenderDataSource` and `PreviewDataSource` lease surfaces through; and `extensionRelayUseCase`, which `ExtensionApp` resolves because the extension process has no Interactor lane.
+Implementation targets import `Domain` only, and the three DI targets are the only importers of implementation targets. Each lane resolves the layer right below it plus Support (`.claude/rules/architecture-boundaries.md` → Key-Path Allow-List). The four red edges leave their lane; they are the per-key exceptions of the key-path lint: the execution-context ports the frame path runs on, which a UseCase resolves; the `workRunner` of `EffectRuntimeRepository`; the `surfacePool` that `GPURenderDataSource` and `PreviewDataSource` lease surfaces through; and `extensionRelayUseCase`, which `ExtensionApp` resolves because the extension process has no Interactor lane. The colours are lyra's, one per layer, and the diagrams below reuse them; a gold border marks the modules outside the implementation chain that other lanes compile against: `Presenters`, the DI targets, `Domain` and `Entity`.
 
 ### Implementation Modules
 
-In each diagram but *Dependency injection*, columns are layers, and a label leaves out the layer suffix its column already names: `FrameTransport` under DataSource is `FrameTransportDataSource` (a DataStore keeps its suffix, since that column holds both). A dotted edge runs from a module to the module whose live value its `@Dependency(\.key)` resolves (the key's `liveValue` registration names the type, and the type names the module); a red one is a per-key exception from the overview. A node with a dashed border is drawn in another diagram and appears only as a target. Every target also depends on `Domain`, and many modules resolve `UnifiedLog`; those edges, and swift-dependencies' `continuousClock`, are left out.
+In each diagram but *Dependency injection*, columns are layers, and a label leaves out the layer suffix its column already names: `FrameTransport` under DataSource is `FrameTransportDataSource` (a DataStore keeps its suffix, since that column holds both, and is drawn a darker shade of the DataSource colour). A dotted edge runs from a module to the module whose live value its `@Dependency(\.key)` resolves (the key's `liveValue` registration names the type, and the type names the module); a red one is a per-key exception from the overview. A node with a dashed border is drawn in another diagram and appears only as a target. Every target also depends on `Domain`, and many modules resolve `UnifiedLog`; those edges, and swift-dependencies' `continuousClock`, are left out.
 
 #### Entry points and the view lane
 
 Solid edges are compile-time dependencies: the entry points' on the view lane, and the view lane's own. Which DI target each entry point links is in the next diagram.
 
 ```mermaid
-%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph Entry_entry["Entry"]
     App:::entry
@@ -143,13 +143,13 @@ graph LR
   Presenters -.-> HostEnvironment
   Presenters -.-> OnboardingInteractor
   Presenters -.-> SettingsInteractor
-  classDef entry fill:#e8eaf6,stroke:#3f51b5,color:#111
-  classDef intx fill:#e8f5e9,stroke:#2e7d32,color:#111,stroke-dasharray:5 3
-  classDef pres fill:#e0f7fa,stroke:#00838f,color:#111
-  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
-  classDef supx fill:#f1f8e9,stroke:#558b2f,color:#111,stroke-dasharray:5 3
-  classDef ucx fill:#f3e5f5,stroke:#7b1fa2,color:#111,stroke-dasharray:5 3
-  classDef view fill:#e8eaf6,stroke:#3f51b5,color:#111
+  classDef entry fill:#4c78a8,stroke:#333,color:#fff
+  classDef intx fill:#7b5,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef pres fill:#6a5,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef supx fill:#d57,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef ucx fill:#59c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef view fill:#6a5,stroke:#333,color:#fff
   linkStyle 15 stroke:#d32f2f,stroke-width:2px
 ```
 
@@ -158,7 +158,6 @@ graph LR
 This one is grouped by registration rather than by layer, and every module in it also appears in a layered diagram. The host's entry points link `HostDependencyInjection`, the extension links `ExtensionDependencyInjection`, and both link `CommonDependencyInjection`; `ViewGallery` links none, so no live value reaches it. Every implementation module is registered by exactly one of the three.
 
 ```mermaid
-%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph DI_entry["Entry"]
     App:::entry
@@ -198,13 +197,13 @@ graph LR
   CommonDependencyInjection --> DI_common
   ExtensionDependencyInjection --> DI_ext
   HostDependencyInjection --> HostRegistered
-  classDef di fill:#fff3e0,stroke:#ef6c00,color:#111
-  classDef ds fill:#fffde7,stroke:#f9a825,color:#111
-  classDef entry fill:#e8eaf6,stroke:#3f51b5,color:#111
-  classDef gw fill:#eceff1,stroke:#455a64,color:#111
-  classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
-  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
-  classDef uc fill:#f3e5f5,stroke:#7b1fa2,color:#111
+  classDef di fill:#c44,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef entry fill:#4c78a8,stroke:#333,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
 ```
 
 #### Frame path: capture, preview and transport
@@ -212,7 +211,6 @@ graph LR
 The host's frame path around the effect: the camera's frames into the pipeline, out to the preview and to the transport that feeds the virtual camera.
 
 ```mermaid
-%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph Area0_int["Interactor"]
     CameraInteractor["Camera"]:::int
@@ -236,7 +234,7 @@ graph LR
     PreviewDataSource["Preview"]:::ds
     FrameTransportDataSource["FrameTransport"]:::ds
     SurfacePoolDataSource["SurfacePool"]:::ds
-    PreferencesDataStore:::dsx
+    PreferencesDataStore:::dstorex
   end
   subgraph Area0_gw["Gateway (OS boundary)"]
     AVFoundationGateway["AVFoundation"]:::gw
@@ -277,15 +275,15 @@ graph LR
   FrameTransportDataSource -.-> IOSurfaceGateway
   FrameTransportDataSource -.-> MachGateway
   SurfacePoolDataSource -.-> IOSurfaceGateway
-  classDef ds fill:#fffde7,stroke:#f9a825,color:#111
-  classDef dsx fill:#fffde7,stroke:#f9a825,color:#111,stroke-dasharray:5 3
-  classDef gw fill:#eceff1,stroke:#455a64,color:#111
-  classDef gwx fill:#eceff1,stroke:#455a64,color:#111,stroke-dasharray:5 3
-  classDef int fill:#e8f5e9,stroke:#2e7d32,color:#111
-  classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
-  classDef repox fill:#fce4ec,stroke:#c2185b,color:#111,stroke-dasharray:5 3
-  classDef uc fill:#f3e5f5,stroke:#7b1fa2,color:#111
-  classDef ucx fill:#f3e5f5,stroke:#7b1fa2,color:#111,stroke-dasharray:5 3
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dstorex fill:#a75,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef repox fill:#86c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  classDef ucx fill:#59c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   linkStyle 7 stroke:#d32f2f,stroke-width:2px
   linkStyle 26 stroke:#d32f2f,stroke-width:2px
 ```
@@ -295,7 +293,6 @@ graph LR
 The effect the pipeline runs on each frame: compiled shaders, per-effect state, and one command buffer per effect.
 
 ```mermaid
-%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph Area1_repo["Repository"]
     EffectRuntimeRepository["EffectRuntime"]:::repo
@@ -326,11 +323,11 @@ graph LR
   ShaderCompilationDataSource -.-> MetalGateway
   EffectRuntimeStateDataSource -.-> DispatchExecutorGateway
   EffectRuntimeStateDataSource -.-> RandomSource
-  classDef ds fill:#fffde7,stroke:#f9a825,color:#111
-  classDef dsx fill:#fffde7,stroke:#f9a825,color:#111,stroke-dasharray:5 3
-  classDef gw fill:#eceff1,stroke:#455a64,color:#111
-  classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
-  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dsx fill:#c84,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
   linkStyle 1 stroke:#d32f2f,stroke-width:2px
   linkStyle 7 stroke:#d32f2f,stroke-width:2px
 ```
@@ -340,7 +337,6 @@ graph LR
 The effect catalog behind the Effects menu, `.lens` packages on disk, and the still-image render of the authoring tool.
 
 ```mermaid
-%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph Area2_int["Interactor"]
     EffectInteractor["Effect"]:::int
@@ -395,15 +391,15 @@ graph LR
   EffectWatchDataSource -.-> FileWatchGateway
   StillImageDataSource -.-> FileSystemGateway
   StillImageDataSource -.-> ImageIOGateway
-  classDef ds fill:#fffde7,stroke:#f9a825,color:#111
-  classDef dsx fill:#fffde7,stroke:#f9a825,color:#111,stroke-dasharray:5 3
-  classDef gw fill:#eceff1,stroke:#455a64,color:#111
-  classDef gwx fill:#eceff1,stroke:#455a64,color:#111,stroke-dasharray:5 3
-  classDef int fill:#e8f5e9,stroke:#2e7d32,color:#111
-  classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
-  classDef repox fill:#fce4ec,stroke:#c2185b,color:#111,stroke-dasharray:5 3
-  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
-  classDef uc fill:#f3e5f5,stroke:#7b1fa2,color:#111
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dsx fill:#c84,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef repox fill:#86c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
   linkStyle 5 stroke:#d32f2f,stroke-width:2px
 ```
 
@@ -412,7 +408,6 @@ graph LR
 The controls, the settings, the onboarding flow with the extension install, and the support log.
 
 ```mermaid
-%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph Area3_int["Interactor"]
     ControlsInteractor["Controls"]:::int
@@ -434,8 +429,8 @@ graph LR
   subgraph Area3_ds["DataSource / DataStore"]
     HotkeyDataSource["Hotkey"]:::ds
     LoginItemDataSource["LoginItem"]:::ds
-    PreferencesDataStore:::ds
-    StoreMaintenanceDataStore:::ds
+    PreferencesDataStore:::dstore
+    StoreMaintenanceDataStore:::dstore
     ExtensionInstallDataSource["ExtensionInstall"]:::ds
     SupportLogDataSource["SupportLog"]:::ds
   end
@@ -478,15 +473,16 @@ graph LR
   SupportLogDataSource -.-> FileSystemGateway
   SupportLogDataSource -.-> LogStoreGateway
   SupportLogDataSource -.-> WorkspaceGateway
-  classDef ds fill:#fffde7,stroke:#f9a825,color:#111
-  classDef gw fill:#eceff1,stroke:#455a64,color:#111
-  classDef gwx fill:#eceff1,stroke:#455a64,color:#111,stroke-dasharray:5 3
-  classDef int fill:#e8f5e9,stroke:#2e7d32,color:#111
-  classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
-  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
-  classDef supx fill:#f1f8e9,stroke:#558b2f,color:#111,stroke-dasharray:5 3
-  classDef uc fill:#f3e5f5,stroke:#7b1fa2,color:#111
-  classDef ucx fill:#f3e5f5,stroke:#7b1fa2,color:#111,stroke-dasharray:5 3
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dstore fill:#a75,stroke:#333,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef supx fill:#d57,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  classDef ucx fill:#59c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
 ```
 
 #### Extension process
@@ -494,7 +490,6 @@ graph LR
 The Camera Extension: frames received over Mach and served as the CMIO stream.
 
 ```mermaid
-%%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 graph LR
   subgraph Area4_entry["Entry"]
     ExtensionApp:::entry
@@ -536,15 +531,15 @@ graph LR
   FrameReceiverDataSource -.-> MachGateway
   StreamOutputDataSource -.-> CMIOExtensionGateway
   StreamOutputDataSource -.-> DispatchExecutorGateway
-  classDef ds fill:#fffde7,stroke:#f9a825,color:#111
-  classDef dsx fill:#fffde7,stroke:#f9a825,color:#111,stroke-dasharray:5 3
-  classDef entry fill:#e8eaf6,stroke:#3f51b5,color:#111
-  classDef gw fill:#eceff1,stroke:#455a64,color:#111
-  classDef gwx fill:#eceff1,stroke:#455a64,color:#111,stroke-dasharray:5 3
-  classDef repo fill:#fce4ec,stroke:#c2185b,color:#111
-  classDef repox fill:#fce4ec,stroke:#c2185b,color:#111,stroke-dasharray:5 3
-  classDef sup fill:#f1f8e9,stroke:#558b2f,color:#111
-  classDef uc fill:#f3e5f5,stroke:#7b1fa2,color:#111
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dsx fill:#c84,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef entry fill:#4c78a8,stroke:#333,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef repox fill:#86c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
   linkStyle 0 stroke:#d32f2f,stroke-width:2px
   linkStyle 1 stroke:#d32f2f,stroke-width:2px
 ```
