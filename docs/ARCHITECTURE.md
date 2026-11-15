@@ -144,11 +144,11 @@ graph LR
   Presenters -.-> OnboardingInteractor
   Presenters -.-> SettingsInteractor
   classDef entry fill:#4c78a8,stroke:#333,color:#fff
-  classDef intx fill:#7b5,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef intx fill:#7b5,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef pres fill:#6a5,stroke:#E9B84C,stroke-width:3px,color:#fff
   classDef sup fill:#d57,stroke:#333,color:#fff
-  classDef supx fill:#d57,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
-  classDef ucx fill:#59c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef supx fill:#d57,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef view fill:#6a5,stroke:#333,color:#fff
   linkStyle 15 stroke:#d32f2f,stroke-width:2px
 ```
@@ -276,14 +276,14 @@ graph LR
   FrameTransportDataSource -.-> MachGateway
   SurfacePoolDataSource -.-> IOSurfaceGateway
   classDef ds fill:#c84,stroke:#333,color:#fff
-  classDef dstorex fill:#a75,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef dstorex fill:#a75,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
-  classDef gwx fill:#678,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef int fill:#7b5,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
-  classDef repox fill:#86c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
-  classDef ucx fill:#59c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   linkStyle 7 stroke:#d32f2f,stroke-width:2px
   linkStyle 26 stroke:#d32f2f,stroke-width:2px
 ```
@@ -324,7 +324,7 @@ graph LR
   EffectRuntimeStateDataSource -.-> DispatchExecutorGateway
   EffectRuntimeStateDataSource -.-> RandomSource
   classDef ds fill:#c84,stroke:#333,color:#fff
-  classDef dsx fill:#c84,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
   classDef sup fill:#d57,stroke:#333,color:#fff
@@ -392,12 +392,12 @@ graph LR
   StillImageDataSource -.-> FileSystemGateway
   StillImageDataSource -.-> ImageIOGateway
   classDef ds fill:#c84,stroke:#333,color:#fff
-  classDef dsx fill:#c84,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
-  classDef gwx fill:#678,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef int fill:#7b5,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
-  classDef repox fill:#86c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef sup fill:#d57,stroke:#333,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
   linkStyle 5 stroke:#d32f2f,stroke-width:2px
@@ -476,13 +476,13 @@ graph LR
   classDef ds fill:#c84,stroke:#333,color:#fff
   classDef dstore fill:#a75,stroke:#333,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
-  classDef gwx fill:#678,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef int fill:#7b5,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
   classDef sup fill:#d57,stroke:#333,color:#fff
-  classDef supx fill:#d57,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef supx fill:#d57,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
-  classDef ucx fill:#59c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
 ```
 
 #### Extension process
@@ -532,12 +532,12 @@ graph LR
   StreamOutputDataSource -.-> CMIOExtensionGateway
   StreamOutputDataSource -.-> DispatchExecutorGateway
   classDef ds fill:#c84,stroke:#333,color:#fff
-  classDef dsx fill:#c84,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef entry fill:#4c78a8,stroke:#333,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
-  classDef gwx fill:#678,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
-  classDef repox fill:#86c,stroke:#333,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef sup fill:#d57,stroke:#333,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
   linkStyle 0 stroke:#d32f2f,stroke-width:2px
