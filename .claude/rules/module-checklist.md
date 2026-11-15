@@ -37,9 +37,11 @@ When adding a new module (UseCase, Repository, DataSource, Gateway, …):
 7. **codecov.yml** — if the module is a CI-unreachable Gateway, add it to
    `ignore` and make it obey the thin-live rule.
 8. **Documentation**:
-   - `docs/ARCHITECTURE.md` — dependency graph node + edges, Layer Summary
-     row, Physical Abstraction Table row (for a port), Key Design Decisions
-     entry if the module embodies a decision.
+   - `docs/ARCHITECTURE.md` — the node and its edges in its area's diagram
+     under *Implementation Modules* (the *Layer Overview* changes only with
+     a new lane or a new key-path exception), Layer Summary row, Physical
+     Abstraction Table row (for a port), Key Design Decisions entry if the
+     module embodies a decision.
    - `AGENTS.md` — update the summary or guardrails when they change.
    - `.claude/CLAUDE.md` — only when Build & Test commands or the layer chain
      itself change.

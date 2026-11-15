@@ -4,7 +4,11 @@
 
 # mirage
 
-<img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+"> <img src="https://img.shields.io/badge/Swift-6.0-orange" alt="Swift 6.0"> <img src="https://img.shields.io/badge/virtual%20camera-CMIO%20Camera%20Extension-blue" alt="CMIO Camera Extension"> <img src="https://img.shields.io/badge/effects-Metal%20(.lens)-purple" alt="Metal .lens"> <img src="https://img.shields.io/badge/status-pre--alpha-red" alt="pre-alpha"> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+<img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+"> <img src="https://img.shields.io/badge/Swift-6.0-orange" alt="Swift 6.0"> <img src="https://img.shields.io/badge/virtual%20camera-CMIO%20Camera%20Extension-blue" alt="CMIO Camera Extension"> <img src="https://img.shields.io/badge/effects-Metal%20(.lens)-purple" alt="Metal .lens"> <img src="https://img.shields.io/badge/status-pre--alpha-red" alt="pre-alpha"> <a href="https://codecov.io/gh/GeneralD/mirage"><img src="https://codecov.io/gh/GeneralD/mirage/graph/badge.svg" alt="Coverage"></a> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+
+<p align="center">
+  <a href="https://codecov.io/gh/GeneralD/mirage"><img src="https://codecov.io/gh/GeneralD/mirage/graphs/sunburst.svg" alt="Coverage Sunburst" width="200"></a>
+</p>
 
 Real-time Metal shader effects for your webcam, served to Zoom, Meet, OBS — any app — as a
 virtual camera. The lens experience Snap Camera left behind when it shut down, rebuilt for

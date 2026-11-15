@@ -14,153 +14,534 @@ macOS menu-bar app: webcam → real-time Metal shader effects → virtual camera
 
 ## Module Dependency Graph
 
-Solid edges are compile-time dependencies (`Package.swift`); dotted edges are `@Dependency` resolutions through `Domain`. Implementation targets depend on `Domain` only; the three DI targets are the only importers of implementation targets. The dotted edges below the lane edges (from `L_UC -.-> DispatchExecutorGateway` down) leave their lane; they are the per-key exceptions of the key-path lint (`.claude/rules/architecture-boundaries.md` → Key-Path Allow-List); every other resolution follows the lane edges.
+Two levels, as in lyra: the **Layer Overview** draws each layer as one box and shows which way the dependencies run; the **Implementation Modules** diagrams below it draw every module, one area at a time, so each stays readable at page width. Solid edges are compile-time dependencies (`Package.swift`); dotted edges are `@Dependency` resolutions through `Domain`.
+
+### Layer Overview
 
 ```mermaid
-flowchart TD
-  subgraph L_Entry["Entry / Router / View"]
-    DevHarness["DevHarness (executable)"]
-    LensTool["LensTool (executable)"]
-    ViewGallery["ViewGallery (executable)"]
-    App["App"]
-    AppRouter["AppRouter"]
-    Views["Views"]
-    ExtensionApp["ExtensionApp"]
+graph TD
+  Entry["Entry points<br/>App · DevHarness · LensTool · ViewGallery · ExtensionApp"]:::entry
+  View["View / Router<br/>Views · AppRouter"]:::view
+  Pres["Presenter<br/>Presenters"]:::pres
+  DI["Dependency injection<br/>Host · Extension · Common"]:::di
+  subgraph Impl["Implementation targets: each imports Domain only"]
+    Inter["Interactor"]:::int
+    UC["UseCase"]:::uc
+    Repo["Repository"]:::repo
+    DS["DataSource / DataStore"]:::ds
+    GW["Gateway (OS boundary)"]:::gw
+    Sup["Support"]:::sup
   end
-  subgraph L_DI["DependencyInjection"]
-    HostDI["HostDependencyInjection"]
-    ExtDI["ExtensionDependencyInjection"]
-    CommonDI["CommonDependencyInjection"]
-  end
-  subgraph L_Pres["Presenter"]
-    Presenters["Presenters"]
-  end
-  subgraph L_Inter["Interactor"]
-    CameraInteractor
-    ExtensionInteractor
-    EffectInteractor
-    HarnessInteractor
-    ControlsInteractor
-    SettingsInteractor
-    OnboardingInteractor
-    EffectAuthoringInteractor
-  end
-  subgraph L_UC["UseCase"]
-    FramePipelineUseCase
-    CameraControlUseCase
-    ExtensionInstallUseCase
-    EffectCatalogUseCase
-    SettingsUseCase
-    ExtensionRelayUseCase
-    SupportLogUseCase
-    EffectAuthoringUseCase
-  end
-  subgraph L_Repo["Repository"]
-    CameraRepository
-    VirtualCameraRepository
-    EffectRuntimeRepository
-    PreviewRepository
-    EffectPackageRepository
-    SettingsRepository
-    SurfaceRepository
-    FrameReceiverRepository
-    StreamOutputRepository
-    ExtensionInstallRepository
-    SupportLogRepository
-    StillImageRepository
-  end
-  subgraph L_DS["DataSource / DataStore"]
-    CameraDataSource
-    CameraPermissionDataSource
-    ShaderCompilationDataSource
-    GPURenderDataSource
-    BundledEffectDataSource
-    EffectRuntimeStateDataSource
-    SurfacePoolDataSource
-    FrameTransportDataSource
-    FrameReceiverDataSource
-    StreamOutputDataSource
-    ExtensionInstallDataSource
-    PreviewDataSource
-    EffectPackageDataSource
-    EffectWatchDataSource
-    HotkeyDataSource
-    LoginItemDataSource
-    SupportLogDataSource
-    StillImageDataSource
-    PreferencesDataStore
-    StoreMaintenanceDataStore
-  end
-  subgraph L_GW["Gateway (OS boundary)"]
-    AVFoundationGateway
-    MetalGateway
-    MetalKitPreviewGateway
-    IOSurfaceGateway
-    MachGateway
-    SystemExtensionGateway
-    CMIOExtensionGateway
-    FileSystemGateway
-    FileWatchGateway
-    UserDefaultsGateway
-    WorkspaceGateway
-    DispatchExecutorGateway
-    HotkeyGateway
-    LoginItemGateway
-    LogStoreGateway
-    ImageIOGateway
-  end
-  subgraph L_Sup["Provider / Support"]
-    RandomSource
-    UnifiedLog
-    HostTime
-    AppDirectories
-    HostEnvironment
-    StandardStreams
-  end
-  subgraph L_Core["Contract / Model"]
-    Domain
-    Entity
-  end
+  Domain["Domain<br/>ports and dependency keys"]:::domain
+  Entity["Entity<br/>data types"]:::entity
 
+  Entry --> View
+  Entry --> Pres
+  Entry --> DI
+  View --> Pres
+  DI --> Impl
+  Entry --> Domain
+  View --> Domain
+  Pres --> Domain
+  DI --> Domain
+  Impl --> Domain
   Domain --> Entity
-  App --> AppRouter & Views & HostDI
-  DevHarness --> AppRouter & Views & HostDI
-  LensTool --> Presenters & HostDI
-  ViewGallery --> AppRouter & Views & Presenters
-  AppRouter --> Presenters & Views & Domain
-  Views --> Presenters & Domain
-  ExtensionApp --> ExtDI
-  HostDI --> CommonDI
-  ExtDI --> CommonDI
-  HostDI --> L_Inter & L_UC & L_Repo & L_DS
-  HostDI --> AVFoundationGateway & MetalGateway & MetalKitPreviewGateway & SystemExtensionGateway & FileSystemGateway & FileWatchGateway & UserDefaultsGateway & WorkspaceGateway & HotkeyGateway & LoginItemGateway & LogStoreGateway & ImageIOGateway
-  HostDI --> RandomSource & AppDirectories & HostEnvironment & StandardStreams
-  ExtDI --> ExtensionRelayUseCase & FrameReceiverRepository & StreamOutputRepository & FrameReceiverDataSource & StreamOutputDataSource & CMIOExtensionGateway
-  CommonDI --> SurfaceRepository & SurfacePoolDataSource & IOSurfaceGateway & MachGateway & DispatchExecutorGateway & UnifiedLog & HostTime
-  L_Pres & L_Inter & L_UC & L_Repo & L_DS & L_GW & L_Sup --> Domain
 
-  Presenters -.-> L_Inter
+  Entry -.-> Inter
+  Pres -.-> Inter
+  Inter -.-> UC
+  UC -.-> Repo
+  Repo -.-> DS
+  DS -.-> GW
+  Entry -.-> Sup
+  Pres -.-> Sup
+  Inter -.-> Sup
+  UC -.-> Sup
+  Repo -.-> Sup
+  DS -.-> Sup
+  Entry -.->|"extensionRelayUseCase (ExtensionApp)"| UC
+  UC -.->|"frameExecutor · frameScheduler · workRunner"| GW
+  Repo -.->|"workRunner (EffectRuntimeRepository)"| GW
+  DS -.->|"surfacePool (GPURender, Preview)"| DS
+
+  classDef entry fill:#4c78a8,stroke:#333,color:#fff
+  classDef view fill:#6a5,stroke:#333,color:#fff
+  classDef pres fill:#6a5,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef di fill:#c44,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef domain fill:#38b,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef entity fill:#4a9,stroke:#E9B84C,stroke-width:3px,color:#fff
+  linkStyle 23,24,25,26 stroke:#d32f2f,stroke-width:2px
+```
+
+Implementation targets import `Domain` only, and the three DI targets are the only importers of implementation targets. Each lane resolves the layer right below it plus Support (`.claude/rules/architecture-boundaries.md` → Key-Path Allow-List). The four red edges leave their lane; they are the per-key exceptions of the key-path lint: the execution-context ports the frame path runs on, which a UseCase resolves; the `workRunner` of `EffectRuntimeRepository`; the `surfacePool` that `GPURenderDataSource` and `PreviewDataSource` lease surfaces through; and `extensionRelayUseCase`, which `ExtensionApp` resolves because the extension process has no Interactor lane. The colours are lyra's, one per layer, and the diagrams below reuse them; a gold border marks the modules outside the implementation chain that other lanes compile against: `Presenters`, the DI targets, `Domain` and `Entity`.
+
+### Implementation Modules
+
+In each diagram but *Dependency injection*, columns are layers, and a label leaves out the layer suffix its column already names: `FrameTransport` under DataSource is `FrameTransportDataSource` (a DataStore keeps its suffix, since that column holds both, and is drawn a darker shade of the DataSource colour). A dotted edge runs from a module to the module whose live value its `@Dependency(\.key)` resolves (the key's `liveValue` registration names the type, and the type names the module); a red one is a per-key exception from the overview. A node with a dashed border is drawn in another diagram and appears only as a target. Every target also depends on `Domain`, and many modules resolve `UnifiedLog`; those edges, and swift-dependencies' `continuousClock`, are left out.
+
+#### Entry points and the view lane
+
+Solid edges are compile-time dependencies: the entry points' on the view lane, and the view lane's own. Which DI target each entry point links is in the next diagram.
+
+```mermaid
+graph LR
+  subgraph Entry_entry["Entry"]
+    App:::entry
+    DevHarness:::entry
+    LensTool:::entry
+    ViewGallery:::entry
+    ExtensionApp:::entry
+  end
+  subgraph Entry_view["View / Router"]
+    AppRouter:::view
+    Views:::view
+  end
+  subgraph Entry_pres["Presenter"]
+    Presenters:::pres
+  end
+  subgraph Entry_int["Interactor"]
+    CameraInteractor["Camera"]:::intx
+    ControlsInteractor["Controls"]:::intx
+    EffectAuthoringInteractor["EffectAuthoring"]:::intx
+    EffectInteractor["Effect"]:::intx
+    HarnessInteractor["Harness"]:::intx
+    OnboardingInteractor["Onboarding"]:::intx
+    SettingsInteractor["Settings"]:::intx
+  end
+  subgraph Entry_uc["UseCase"]
+    ExtensionRelayUseCase["ExtensionRelay"]:::ucx
+  end
+  subgraph Entry_sup["Support"]
+    StandardStreams:::sup
+    HostEnvironment:::supx
+  end
+  App --> AppRouter
+  App --> Views
+  DevHarness --> AppRouter
+  DevHarness --> Views
+  LensTool --> Presenters
+  ViewGallery --> AppRouter
+  ViewGallery --> Presenters
+  ViewGallery --> Views
+  AppRouter --> Presenters
+  AppRouter --> Views
+  Views --> Presenters
+  App -.-> CameraInteractor
   DevHarness -.-> HarnessInteractor
-  LensTool -.-> EffectAuthoringInteractor & StandardStreams
-  L_Inter -.-> L_UC
-  L_UC -.-> L_Repo & L_Sup
-  L_Repo -.-> L_DS & L_Sup
-  L_DS -.-> L_GW & L_Sup
-  L_UC -.-> DispatchExecutorGateway
-  EffectRuntimeRepository -.-> DispatchExecutorGateway
-  GPURenderDataSource & PreviewDataSource -.-> SurfacePoolDataSource
+  LensTool -.-> EffectAuthoringInteractor
+  LensTool -.-> StandardStreams
   ExtensionApp -.-> ExtensionRelayUseCase
+  Presenters -.-> CameraInteractor
+  Presenters -.-> ControlsInteractor
+  Presenters -.-> EffectInteractor
+  Presenters -.-> HostEnvironment
+  Presenters -.-> OnboardingInteractor
+  Presenters -.-> SettingsInteractor
+  classDef entry fill:#4c78a8,stroke:#333,color:#fff
+  classDef intx fill:#7b5,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef pres fill:#6a5,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef supx fill:#d57,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef view fill:#6a5,stroke:#333,color:#fff
+  linkStyle 15 stroke:#d32f2f,stroke-width:2px
+```
 
-  style L_Entry fill:#e8eaf6,stroke:#3f51b5,color:#111
-  style L_DI fill:#fff3e0,stroke:#ef6c00,color:#111
-  style L_Pres fill:#e0f7fa,stroke:#00838f,color:#111
-  style L_Inter fill:#e8f5e9,stroke:#2e7d32,color:#111
-  style L_UC fill:#f3e5f5,stroke:#7b1fa2,color:#111
-  style L_Repo fill:#fce4ec,stroke:#c2185b,color:#111
-  style L_DS fill:#fffde7,stroke:#f9a825,color:#111
-  style L_GW fill:#eceff1,stroke:#455a64,color:#111
-  style L_Sup fill:#f1f8e9,stroke:#558b2f,color:#111
-  style L_Core fill:#fff,stroke:#111,stroke-width:2px,color:#111
+#### Dependency injection
+
+This one is grouped by registration rather than by layer, and every module in it also appears in a layered diagram. The host's entry points link `HostDependencyInjection`, the extension links `ExtensionDependencyInjection`, and both link `CommonDependencyInjection`; `ViewGallery` links none, so no live value reaches it. Every implementation module is registered by exactly one of the three.
+
+```mermaid
+graph LR
+  subgraph DI_entry["Entry"]
+    App:::entry
+    DevHarness:::entry
+    LensTool:::entry
+    ExtensionApp:::entry
+  end
+  subgraph DI_di["Dependency injection"]
+    HostDependencyInjection:::di
+    ExtensionDependencyInjection:::di
+    CommonDependencyInjection:::di
+  end
+  subgraph DI_common["Registered by CommonDependencyInjection: both processes"]
+    SurfaceRepository:::repo
+    SurfacePoolDataSource:::ds
+    DispatchExecutorGateway:::gw
+    IOSurfaceGateway:::gw
+    MachGateway:::gw
+    HostTime:::sup
+    UnifiedLog:::sup
+  end
+  subgraph DI_ext["Registered by ExtensionDependencyInjection"]
+    ExtensionRelayUseCase:::uc
+    FrameReceiverRepository:::repo
+    StreamOutputRepository:::repo
+    FrameReceiverDataSource:::ds
+    StreamOutputDataSource:::ds
+    CMIOExtensionGateway:::gw
+  end
+  HostRegistered["the other 56 implementation modules<br/>(every Interactor; the host's UseCases, Repositories,<br/>DataSources, DataStores, Gateways and Support)"]:::di
+  App --> HostDependencyInjection
+  DevHarness --> HostDependencyInjection
+  LensTool --> HostDependencyInjection
+  ExtensionApp --> ExtensionDependencyInjection
+  HostDependencyInjection --> CommonDependencyInjection
+  ExtensionDependencyInjection --> CommonDependencyInjection
+  CommonDependencyInjection --> DI_common
+  ExtensionDependencyInjection --> DI_ext
+  HostDependencyInjection --> HostRegistered
+  classDef di fill:#c44,stroke:#E9B84C,stroke-width:3px,color:#fff
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef entry fill:#4c78a8,stroke:#333,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+```
+
+#### Frame path: capture, preview and transport
+
+The host's frame path around the effect: the camera's frames into the pipeline, out to the preview and to the transport that feeds the virtual camera.
+
+```mermaid
+graph LR
+  subgraph Area0_int["Interactor"]
+    CameraInteractor["Camera"]:::int
+    HarnessInteractor["Harness"]:::int
+  end
+  subgraph Area0_uc["UseCase"]
+    CameraControlUseCase["CameraControl"]:::uc
+    FramePipelineUseCase["FramePipeline"]:::uc
+    ExtensionInstallUseCase["ExtensionInstall"]:::ucx
+  end
+  subgraph Area0_repo["Repository"]
+    CameraRepository["Camera"]:::repo
+    PreviewRepository["Preview"]:::repo
+    VirtualCameraRepository["VirtualCamera"]:::repo
+    SurfaceRepository["Surface"]:::repo
+    EffectRuntimeRepository["EffectRuntime"]:::repox
+  end
+  subgraph Area0_ds["DataSource / DataStore"]
+    CameraDataSource["Camera"]:::ds
+    CameraPermissionDataSource["CameraPermission"]:::ds
+    PreviewDataSource["Preview"]:::ds
+    FrameTransportDataSource["FrameTransport"]:::ds
+    SurfacePoolDataSource["SurfacePool"]:::ds
+    PreferencesDataStore:::dstorex
+  end
+  subgraph Area0_gw["Gateway (OS boundary)"]
+    AVFoundationGateway["AVFoundation"]:::gw
+    MetalKitPreviewGateway["MetalKitPreview"]:::gw
+    IOSurfaceGateway["IOSurface"]:::gw
+    MachGateway["Mach"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gwx
+    MetalGateway["Metal"]:::gwx
+  end
+  CameraInteractor -.-> CameraControlUseCase
+  CameraInteractor -.-> ExtensionInstallUseCase
+  CameraInteractor -.-> FramePipelineUseCase
+  HarnessInteractor -.-> CameraControlUseCase
+  HarnessInteractor -.-> FramePipelineUseCase
+  CameraControlUseCase -.-> CameraRepository
+  FramePipelineUseCase -.-> CameraRepository
+  FramePipelineUseCase -.-> DispatchExecutorGateway
+  FramePipelineUseCase -.-> EffectRuntimeRepository
+  FramePipelineUseCase -.-> PreviewRepository
+  FramePipelineUseCase -.-> SurfaceRepository
+  FramePipelineUseCase -.-> VirtualCameraRepository
+  CameraRepository -.-> CameraDataSource
+  CameraRepository -.-> CameraPermissionDataSource
+  CameraRepository -.-> PreferencesDataStore
+  CameraRepository -.-> SurfacePoolDataSource
+  PreviewRepository -.-> PreviewDataSource
+  VirtualCameraRepository -.-> FrameTransportDataSource
+  VirtualCameraRepository -.-> SurfacePoolDataSource
+  SurfaceRepository -.-> SurfacePoolDataSource
+  CameraDataSource -.-> AVFoundationGateway
+  CameraDataSource -.-> DispatchExecutorGateway
+  CameraPermissionDataSource -.-> AVFoundationGateway
+  PreviewDataSource -.-> DispatchExecutorGateway
+  PreviewDataSource -.-> MetalGateway
+  PreviewDataSource -.-> MetalKitPreviewGateway
+  PreviewDataSource -.-> SurfacePoolDataSource
+  FrameTransportDataSource -.-> DispatchExecutorGateway
+  FrameTransportDataSource -.-> IOSurfaceGateway
+  FrameTransportDataSource -.-> MachGateway
+  SurfacePoolDataSource -.-> IOSurfaceGateway
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dstorex fill:#a75,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  linkStyle 7 stroke:#d32f2f,stroke-width:2px
+  linkStyle 26 stroke:#d32f2f,stroke-width:2px
+```
+
+#### Frame path: effect runtime
+
+The effect the pipeline runs on each frame: compiled shaders, per-effect state, and one command buffer per effect.
+
+```mermaid
+graph LR
+  subgraph Area1_repo["Repository"]
+    EffectRuntimeRepository["EffectRuntime"]:::repo
+  end
+  subgraph Area1_ds["DataSource / DataStore"]
+    GPURenderDataSource["GPURender"]:::ds
+    ShaderCompilationDataSource["ShaderCompilation"]:::ds
+    BundledEffectDataSource["BundledEffect"]:::ds
+    EffectRuntimeStateDataSource["EffectRuntimeState"]:::ds
+    SurfacePoolDataSource["SurfacePool"]:::dsx
+  end
+  subgraph Area1_gw["Gateway (OS boundary)"]
+    MetalGateway["Metal"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gw
+  end
+  subgraph Area1_sup["Support"]
+    RandomSource:::sup
+  end
+  EffectRuntimeRepository -.-> BundledEffectDataSource
+  EffectRuntimeRepository -.-> DispatchExecutorGateway
+  EffectRuntimeRepository -.-> EffectRuntimeStateDataSource
+  EffectRuntimeRepository -.-> GPURenderDataSource
+  EffectRuntimeRepository -.-> ShaderCompilationDataSource
+  GPURenderDataSource -.-> DispatchExecutorGateway
+  GPURenderDataSource -.-> MetalGateway
+  GPURenderDataSource -.-> SurfacePoolDataSource
+  ShaderCompilationDataSource -.-> DispatchExecutorGateway
+  ShaderCompilationDataSource -.-> MetalGateway
+  EffectRuntimeStateDataSource -.-> DispatchExecutorGateway
+  EffectRuntimeStateDataSource -.-> RandomSource
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  linkStyle 1 stroke:#d32f2f,stroke-width:2px
+  linkStyle 7 stroke:#d32f2f,stroke-width:2px
+```
+
+#### Effects: catalog and authoring
+
+The effect catalog behind the Effects menu, `.lens` packages on disk, and the still-image render of the authoring tool.
+
+```mermaid
+graph LR
+  subgraph Area2_int["Interactor"]
+    EffectInteractor["Effect"]:::int
+    EffectAuthoringInteractor["EffectAuthoring"]:::int
+  end
+  subgraph Area2_uc["UseCase"]
+    EffectCatalogUseCase["EffectCatalog"]:::uc
+    EffectAuthoringUseCase["EffectAuthoring"]:::uc
+  end
+  subgraph Area2_repo["Repository"]
+    EffectPackageRepository["EffectPackage"]:::repo
+    StillImageRepository["StillImage"]:::repo
+    EffectRuntimeRepository["EffectRuntime"]:::repox
+    SettingsRepository["Settings"]:::repox
+    SurfaceRepository["Surface"]:::repox
+  end
+  subgraph Area2_ds["DataSource / DataStore"]
+    EffectPackageDataSource["EffectPackage"]:::ds
+    EffectWatchDataSource["EffectWatch"]:::ds
+    StillImageDataSource["StillImage"]:::ds
+    BundledEffectDataSource["BundledEffect"]:::dsx
+    ShaderCompilationDataSource["ShaderCompilation"]:::dsx
+  end
+  subgraph Area2_gw["Gateway (OS boundary)"]
+    FileSystemGateway["FileSystem"]:::gw
+    FileWatchGateway["FileWatch"]:::gw
+    WorkspaceGateway["Workspace"]:::gw
+    ImageIOGateway["ImageIO"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gwx
+  end
+  subgraph Area2_sup["Support"]
+    AppDirectories:::sup
+  end
+  EffectInteractor -.-> EffectCatalogUseCase
+  EffectAuthoringInteractor -.-> EffectAuthoringUseCase
+  EffectCatalogUseCase -.-> EffectPackageRepository
+  EffectCatalogUseCase -.-> EffectRuntimeRepository
+  EffectCatalogUseCase -.-> SettingsRepository
+  EffectAuthoringUseCase -.-> DispatchExecutorGateway
+  EffectAuthoringUseCase -.-> EffectPackageRepository
+  EffectAuthoringUseCase -.-> EffectRuntimeRepository
+  EffectAuthoringUseCase -.-> StillImageRepository
+  EffectAuthoringUseCase -.-> SurfaceRepository
+  EffectPackageRepository -.-> BundledEffectDataSource
+  EffectPackageRepository -.-> EffectPackageDataSource
+  EffectPackageRepository -.-> EffectWatchDataSource
+  EffectPackageRepository -.-> ShaderCompilationDataSource
+  StillImageRepository -.-> StillImageDataSource
+  EffectPackageDataSource -.-> AppDirectories
+  EffectPackageDataSource -.-> FileSystemGateway
+  EffectPackageDataSource -.-> WorkspaceGateway
+  EffectWatchDataSource -.-> FileWatchGateway
+  StillImageDataSource -.-> FileSystemGateway
+  StillImageDataSource -.-> ImageIOGateway
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  linkStyle 5 stroke:#d32f2f,stroke-width:2px
+```
+
+#### App services: controls, settings, onboarding, support
+
+The controls, the settings, the onboarding flow with the extension install, and the support log.
+
+```mermaid
+graph LR
+  subgraph Area3_int["Interactor"]
+    ControlsInteractor["Controls"]:::int
+    SettingsInteractor["Settings"]:::int
+    OnboardingInteractor["Onboarding"]:::int
+  end
+  subgraph Area3_uc["UseCase"]
+    SettingsUseCase["Settings"]:::uc
+    ExtensionInstallUseCase["ExtensionInstall"]:::uc
+    SupportLogUseCase["SupportLog"]:::uc
+    EffectCatalogUseCase["EffectCatalog"]:::ucx
+    FramePipelineUseCase["FramePipeline"]:::ucx
+  end
+  subgraph Area3_repo["Repository"]
+    SettingsRepository["Settings"]:::repo
+    ExtensionInstallRepository["ExtensionInstall"]:::repo
+    SupportLogRepository["SupportLog"]:::repo
+  end
+  subgraph Area3_ds["DataSource / DataStore"]
+    HotkeyDataSource["Hotkey"]:::ds
+    LoginItemDataSource["LoginItem"]:::ds
+    PreferencesDataStore:::dstore
+    StoreMaintenanceDataStore:::dstore
+    ExtensionInstallDataSource["ExtensionInstall"]:::ds
+    SupportLogDataSource["SupportLog"]:::ds
+  end
+  subgraph Area3_gw["Gateway (OS boundary)"]
+    HotkeyGateway["Hotkey"]:::gw
+    LoginItemGateway["LoginItem"]:::gw
+    UserDefaultsGateway["UserDefaults"]:::gw
+    SystemExtensionGateway["SystemExtension"]:::gw
+    LogStoreGateway["LogStore"]:::gw
+    FileSystemGateway["FileSystem"]:::gwx
+    WorkspaceGateway["Workspace"]:::gwx
+  end
+  subgraph Area3_sup["Support"]
+    HostEnvironment:::sup
+    AppDirectories:::supx
+  end
+  ControlsInteractor -.-> EffectCatalogUseCase
+  ControlsInteractor -.-> FramePipelineUseCase
+  ControlsInteractor -.-> SettingsUseCase
+  SettingsInteractor -.-> SettingsUseCase
+  OnboardingInteractor -.-> ExtensionInstallUseCase
+  OnboardingInteractor -.-> SupportLogUseCase
+  SettingsUseCase -.-> SettingsRepository
+  ExtensionInstallUseCase -.-> ExtensionInstallRepository
+  SupportLogUseCase -.-> SupportLogRepository
+  SettingsRepository -.-> HotkeyDataSource
+  SettingsRepository -.-> LoginItemDataSource
+  SettingsRepository -.-> PreferencesDataStore
+  SettingsRepository -.-> StoreMaintenanceDataStore
+  ExtensionInstallRepository -.-> ExtensionInstallDataSource
+  SupportLogRepository -.-> HostEnvironment
+  SupportLogRepository -.-> SupportLogDataSource
+  HotkeyDataSource -.-> HotkeyGateway
+  LoginItemDataSource -.-> LoginItemGateway
+  PreferencesDataStore -.-> UserDefaultsGateway
+  StoreMaintenanceDataStore -.-> UserDefaultsGateway
+  ExtensionInstallDataSource -.-> SystemExtensionGateway
+  ExtensionInstallDataSource -.-> WorkspaceGateway
+  SupportLogDataSource -.-> AppDirectories
+  SupportLogDataSource -.-> FileSystemGateway
+  SupportLogDataSource -.-> LogStoreGateway
+  SupportLogDataSource -.-> WorkspaceGateway
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dstore fill:#a75,stroke:#333,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef supx fill:#d57,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+```
+
+#### Extension process
+
+The Camera Extension: frames received over Mach and served as the CMIO stream.
+
+```mermaid
+graph LR
+  subgraph Area4_entry["Entry"]
+    ExtensionApp:::entry
+  end
+  subgraph Area4_uc["UseCase"]
+    ExtensionRelayUseCase["ExtensionRelay"]:::uc
+  end
+  subgraph Area4_repo["Repository"]
+    FrameReceiverRepository["FrameReceiver"]:::repo
+    StreamOutputRepository["StreamOutput"]:::repo
+    SurfaceRepository["Surface"]:::repox
+  end
+  subgraph Area4_ds["DataSource / DataStore"]
+    FrameReceiverDataSource["FrameReceiver"]:::ds
+    StreamOutputDataSource["StreamOutput"]:::ds
+    SurfacePoolDataSource["SurfacePool"]:::dsx
+  end
+  subgraph Area4_gw["Gateway (OS boundary)"]
+    CMIOExtensionGateway["CMIOExtension"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gwx
+    IOSurfaceGateway["IOSurface"]:::gwx
+    MachGateway["Mach"]:::gwx
+  end
+  subgraph Area4_sup["Support"]
+    HostTime:::sup
+  end
+  ExtensionApp -.-> ExtensionRelayUseCase
+  ExtensionRelayUseCase -.-> DispatchExecutorGateway
+  ExtensionRelayUseCase -.-> FrameReceiverRepository
+  ExtensionRelayUseCase -.-> HostTime
+  ExtensionRelayUseCase -.-> StreamOutputRepository
+  ExtensionRelayUseCase -.-> SurfaceRepository
+  FrameReceiverRepository -.-> FrameReceiverDataSource
+  FrameReceiverRepository -.-> SurfacePoolDataSource
+  StreamOutputRepository -.-> StreamOutputDataSource
+  StreamOutputRepository -.-> SurfacePoolDataSource
+  FrameReceiverDataSource -.-> DispatchExecutorGateway
+  FrameReceiverDataSource -.-> IOSurfaceGateway
+  FrameReceiverDataSource -.-> MachGateway
+  StreamOutputDataSource -.-> CMIOExtensionGateway
+  StreamOutputDataSource -.-> DispatchExecutorGateway
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef entry fill:#4c78a8,stroke:#333,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  linkStyle 0 stroke:#d32f2f,stroke-width:2px
+  linkStyle 1 stroke:#d32f2f,stroke-width:2px
 ```
 
 ## Frame Path
@@ -205,7 +586,7 @@ The host also keeps a presence port alive toward the extension and reconnects on
 | Entity | `Entity` | Pure data: `FrameRef`, `FrameContext`, `SurfaceToken`, `SurfaceDescriptor`, `EffectSource`, `EffectFailure` (closed), `EffectUniforms`, `DispatchGrid`, `ShaderCompileOptions`, `ShaderDiagnostics`, `GPUCompletion`, `RawGPUError`, `GPUTiming`, `GPUError`, `PreviewError`, `InstallStatus`, `CameraAuthorizationStatus`, `LaunchReport`, `PixelFormat`, `EffectTicket`, `EffectBegin`, `EffectSettlement`, `ProductIdentity` (M0 / MVP-A); `EffectID` (`EffectOrigin` × key), `EffectManifest` (`formatVersion`, `name`, optional `author` / `description` / `thumbnail`, and `parameters`, the typed `EffectParameterSpec` list, empty by default; unknown keys ignored; decoded by `EffectManifestDecoding`), `EffectPackage` (with the `EffectThumbnail` it was read with, if any), `EffectThumbnail` (`data`, `EffectThumbnailFormat` `png` / `jpeg`; #12), `EffectPackageProblem` (closed), `EffectPackageListing` (`ready` / `broken`), `EffectWatchSet`, `EffectPackageInventory`, `EffectCatalogEntry` (`displayName`, stored `origin`, `EffectAvailability`, optional `author`, optional `thumbnail`, optional `description`), `EffectSelectionOutcome`, `EffectCatalogState`, `EffectMenuItem` (the Presenter's row) (the effects catalog's contracts, epic #42); `EffectPickerCell`, `EffectArtwork` (`placeholder`, or `image` with the thumbnail and the tile to fall back on) and `EffectPlaceholder` (the picker's cell, #12); `EffectParameterSpec` (with its `EffectParameterKind`), `EffectParameterValue`, `EffectParameterState`, `EffectParameterLayout` (the field list that drives both the generated `Parameters` struct and `ParameterPacker`) and `EffectParameterBlock` (the packed bytes bound at buffer 1) (MVP-C); `EffectFingerprint`, `EffectPassOutcome`, `EffectFailureKind`, `EffectDisableReason` and `DisabledEffectRecord` (the health policy's contracts, MVP-D); `CameraDevice`, `CameraFormat`, `CameraResolution`, `CameraCapture`, `CameraSelection`, `CameraAvailability`, `CameraState` and `CameraMenuOption` (the camera selection's contracts); `PreviewMode`, `PreviewRefusal` and `PreviewAttachResult` (the preview pane's); `HotkeyAction`, `HotkeyBinding` and `HotkeyRegistration`; `ParameterPanelRow` (with `ParameterPanelControl` and `ParameterPanelSlider`); `ControlsState`, `SettingsState` and `LaunchAtLoginStatus` (`off`, `on`, `needsApproval`, `unavailable`); `StoredSchemaVersion` (`missing`, `version(Int)`, `unreadable`); `HostEnvironmentInfo` (`appVersion` and `buildNumber`, both optional, and `systemVersion: SystemVersion`); `SupportLogEntry` (`timestamp` in seconds since 1970, `category`, `message`), `SupportLogSnapshot` (`environment`, `entries`, optional `logError`), `SupportReportContext` (`install`, optional `effectStatus`, optional `compilerMessage`) and `SupportLogExportOutcome` (`saved(path:lineCount:logError:)` / `failed(description:)`) (the support report's contracts); `StillImage` (`width`, `height`, `bgra`: 8 bit, premultiplied, rows packed), `StillImageSize` and `StillImageProblem` (`unreadable`, `tooLarge`, `notAnImage`, `dimensionsOutOfRange`, `unwritable`); `EffectReference` (`bundled(name:)` or `package(path:)`), `LensCommand` (`validate`, `scaffold`, `render`, `help`) and `LensUsageProblem` (closed), `AuthoringFailure` (closed) with `ScaffoldProblem` (closed) (the authoring command line's contracts) |
 | Test | `Tests/TestSupport`, `Tests/TestDoubles` | Waiting primitives (Foundation + Combine only; `Result.failure` for results whose success is not `Equatable`) and shared fakes (`FakeCaptureSessionGateway`, `FakeGPUGateway`, `FakeShaderLibraryGateway`, `FakeTextureCacheGateway`, `FakeEffectRuntimeRepository`, `FakeGPURenderer`, `FakeShaderCompiler`, `InMemoryPreviewSink`, `FakePreviewGateway`, `ManualFrameExecutor`, `RecordingFrameExecutor` (records every enqueue, for subjects that hop from their own task: `GPURenderDataSource`, `EffectRuntimeStateDataSource`), `ManualFrameScheduler`, `FakeSurfacePool`, `FakeFrameTransport`, `FakeMachBootstrapGateway`, `FakeMachMessageGateway`, `InMemoryFrameTransport`, `FakeStreamOutput`, `InMemoryFileSystemGateway`, `FakeFileWatchGateway`, `FakeWorkspaceGateway`, `InMemoryKeyValueStore` (`values`, `writes`, and `resets`, one entry per `removeAll()`), `FakeStoreMaintenance` (`stamps`, `resets`), `FixedAppDirectories`, `FixedHostEnvironment`, `FakeHotkeyGateway`, `FakeHotkeys`, `FakeLoginItemGateway`, `FakeLoginItem`, `FakeImageIOGateway`, `FakeStillImages`, `FakeStillImageRepository`, `FakeLogStoreGateway`, `FakeSupportLogs`, `FakeSupportLogRepository`, `FakeCameraDeviceGateway`, `FakeCameraDevices`, `FakeCameraPreferences`, `FakeEffectPackages`, `FakeEffectWatch`, `FakeEffectPackageRepository`, `FakeSettingsRepository`, `FakeEffectCatalogUseCase`, `FakeEffectAuthoringUseCase`, `FakeEffectInteractor`, `FakeControlsInteractor`, `FakeSettingsInteractor`, `FakeOnboardingInteractor`, `FakeEffectAuthoringInteractor`, `FakeCameraSelectionRepository`, `FakeCameraSelectionUseCase`, `FakeCameraSelectionInteractor`, `FakePreviewInteractor`, `FakeSupportLogUseCase`, `ScriptedCameraAuthorization`, `FakeCameraControlUseCase`, `FakeSystemExtensionGateway`, `RecordingLog`, `RecordingConsole` (`lines` and `errorLines`: one `Collector` per stream), `FixedHostTime`, `GatedClock` (cancellation-aware, like `ContinuousClock`), `RecordingWorkRunner`, `FakeFramePipelineUseCase`, `ZeroRandomSource` and `SequenceRandomSource` (`draws`); `Seeds.range` for seed sets; `HashNoiseReference`, the Swift twin of the prelude's `hash` / `noise`). `InMemoryFrameTransport` is the in-process Mach kernel (bootstrap table, per-port queue cap, presence ports, dead-name delivery, `killHost()`); `Tests/FramePathIntegrationTests/LoopbackRig.swift` builds the host and extension sides on it with separate surface pools per side; its host side runs a `FakeEffectRuntimeRepository` by default and, with `effects: .real`, the real effect runtime (`EffectRuntimeRepositoryImpl` over the live DataSources) over the fake GPU layer (`RealEffectRuntimeIntegrationTests`) and, with `catalog: .real` on top of it, the effects menu's real catalog (`EffectCatalogUseCaseImpl` over the real Repository, DataSources and settings chain, on the same runtime, with only the effects folder, the file events, the defaults and Finder faked and a `GatedClock` of its own for the watch's quiet period; `EffectCatalogIntegrationTests`) |
 
-The graph and the table show the target architecture. The one module of the graph that has no target yet is `ExtensionInteractor`; each such module arrives with the issue that needs it, and `Package.swift` is the list of what exists. Every OS-boundary port of the catalog has its live in `HostDependencyInjection`: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and `AppDirectoriesProvider` since #44 (*The file gateways* below), and `KeyValueStoreGateway` as `UserDefaultsGateway` since #51 (*The chosen effect is kept as one string in the user's defaults* below); nothing above them resolved one until the real DataSource / DataStore replaced its pass-through (*The effect catalog follows the same rule* below).
+The table shows the target architecture, and the diagrams above show what exists. The one module of the table that has no target yet is `ExtensionInteractor`, so no diagram draws it; each such module arrives with the issue that needs it, and `Package.swift` is the list of what exists. Every OS-boundary port of the catalog has its live in `HostDependencyInjection`: `FileSystemGateway`, `FileWatchGateway`, `WorkspaceGateway` and `AppDirectoriesProvider` since #44 (*The file gateways* below), and `KeyValueStoreGateway` as `UserDefaultsGateway` since #51 (*The chosen effect is kept as one string in the user's defaults* below); nothing above them resolved one until the real DataSource / DataStore replaced its pass-through (*The effect catalog follows the same rule* below).
 
 Delivery stages: **M0** spike (pass-through to Zoom via the real extension) → **MVP-A** one bundled effect end-to-end in the dev harness and the loopback (camera → GPU → preview; the extension path is M0's) → **MVP-B** runtime `.lens` loading + hot reload + menu switching (epic #42, landed; the timed run on a device is Lane 1's) → the **effect picker** (#12, landed: a thumbnail grid opened from the menu; the live preview pane in it, #68, has landed with an After / Split choice) → **MVP-C** effect parameters (typed manifest `parameters`, the generated `Parameters` struct, the parameter panel; landed) → **MVP-D** pass-through on failure + auto-disable (landed: the circuit breaker in `EffectCatalogUseCase`) → **menu bar and settings** (landed: bypass, the frame-rate readout, the Camera submenu, global hotkeys, launch at login, reset all) → **onboarding** (landed: the set-up window, the approval buttons, the support log) → **authoring** (landed: `lens-tool`, the guides and the examples). Later: Vision face landmarks / person segmentation inputs, GLSL (Shadertoy) import, URL/Git import, gallery.
 
