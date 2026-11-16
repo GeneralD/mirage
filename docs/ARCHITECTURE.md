@@ -208,7 +208,7 @@ graph LR
 
 #### Frame path: capture
 
-The host's camera ingestion path: device selection, permissions, settings storage, and camera frames feeding into the repository.
+The host's camera ingestion path: device authorization, stream configuration, and camera frames feeding into the repository and surface pool.
 
 ```mermaid
 graph LR
@@ -226,7 +226,6 @@ graph LR
   subgraph Area0a_ds["DataSource / DataStore"]
     CameraDataSource["Camera"]:::ds
     CameraPermissionDataSource["CameraPermission"]:::ds
-    PreferencesDataStore:::dstorex
     SurfacePoolDataSource["SurfacePool"]:::dsx
   end
   subgraph Area0a_gw["Gateway (OS boundary)"]
@@ -239,14 +238,12 @@ graph LR
   CameraControlUseCase -.-> CameraRepository
   CameraRepository -.-> CameraDataSource
   CameraRepository -.-> CameraPermissionDataSource
-  CameraRepository -.-> PreferencesDataStore
   CameraRepository -.-> SurfacePoolDataSource
   CameraDataSource -.-> AVFoundationGateway
   CameraDataSource -.-> DispatchExecutorGateway
   CameraPermissionDataSource -.-> AVFoundationGateway
   classDef ds fill:#c84,stroke:#333,color:#fff
   classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
-  classDef dstorex fill:#a75,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
   classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef int fill:#7b5,stroke:#333,color:#fff
@@ -262,8 +259,8 @@ The host's frame processing and delivery path: frames through the pipeline, rend
 ```mermaid
 graph LR
   subgraph Area0b_int["Interactor"]
-    CameraInteractor["Camera"]:::intx
-    HarnessInteractor["Harness"]:::intx
+    CameraInteractor["Camera"]:::int
+    HarnessInteractor["Harness"]:::int
   end
   subgraph Area0b_uc["UseCase"]
     FramePipelineUseCase["FramePipeline"]:::uc
@@ -310,7 +307,7 @@ graph LR
   classDef ds fill:#c84,stroke:#333,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
   classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
-  classDef intx fill:#7b5,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
   classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
