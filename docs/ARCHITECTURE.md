@@ -206,67 +206,99 @@ graph LR
   classDef uc fill:#59c,stroke:#333,color:#fff
 ```
 
-#### Frame path: capture, preview and transport
+#### Frame path: capture
 
-The host's frame path around the effect: the camera's frames into the pipeline, out to the preview and to the transport that feeds the virtual camera.
+The host's camera ingestion path: device selection, permissions, settings storage, and camera frames feeding into the repository.
 
 ```mermaid
 graph LR
-  subgraph Area0_int["Interactor"]
+  subgraph Area0a_int["Interactor"]
     CameraInteractor["Camera"]:::int
     HarnessInteractor["Harness"]:::int
   end
-  subgraph Area0_uc["UseCase"]
+  subgraph Area0a_uc["UseCase"]
     CameraControlUseCase["CameraControl"]:::uc
-    FramePipelineUseCase["FramePipeline"]:::uc
     ExtensionInstallUseCase["ExtensionInstall"]:::ucx
   end
-  subgraph Area0_repo["Repository"]
+  subgraph Area0a_repo["Repository"]
     CameraRepository["Camera"]:::repo
+  end
+  subgraph Area0a_ds["DataSource / DataStore"]
+    CameraDataSource["Camera"]:::ds
+    CameraPermissionDataSource["CameraPermission"]:::ds
+    PreferencesDataStore:::dstorex
+    SurfacePoolDataSource["SurfacePool"]:::dsx
+  end
+  subgraph Area0a_gw["Gateway (OS boundary)"]
+    AVFoundationGateway["AVFoundation"]:::gw
+    DispatchExecutorGateway["DispatchExecutor"]:::gwx
+  end
+  CameraInteractor -.-> CameraControlUseCase
+  CameraInteractor -.-> ExtensionInstallUseCase
+  HarnessInteractor -.-> CameraControlUseCase
+  CameraControlUseCase -.-> CameraRepository
+  CameraRepository -.-> CameraDataSource
+  CameraRepository -.-> CameraPermissionDataSource
+  CameraRepository -.-> PreferencesDataStore
+  CameraRepository -.-> SurfacePoolDataSource
+  CameraDataSource -.-> AVFoundationGateway
+  CameraDataSource -.-> DispatchExecutorGateway
+  CameraPermissionDataSource -.-> AVFoundationGateway
+  classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef dstorex fill:#a75,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef gw fill:#678,stroke:#333,color:#fff
+  classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef repo fill:#86c,stroke:#333,color:#fff
+  classDef uc fill:#59c,stroke:#333,color:#fff
+  classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
+```
+
+#### Frame path: pipeline, preview and transport
+
+The host's frame processing and delivery path: frames through the pipeline, rendered onto surfaces, and delivered to the preview window and the virtual camera transport. Red edges mark architectural keypath lint exceptions (`FramePipelineUseCase` on `DispatchExecutorGateway`, `PreviewDataSource` on `SurfacePoolDataSource`).
+
+```mermaid
+graph LR
+  subgraph Area0b_int["Interactor"]
+    CameraInteractor["Camera"]:::intx
+    HarnessInteractor["Harness"]:::intx
+  end
+  subgraph Area0b_uc["UseCase"]
+    FramePipelineUseCase["FramePipeline"]:::uc
+  end
+  subgraph Area0b_repo["Repository"]
+    CameraRepository["Camera"]:::repox
     PreviewRepository["Preview"]:::repo
     VirtualCameraRepository["VirtualCamera"]:::repo
     SurfaceRepository["Surface"]:::repo
     EffectRuntimeRepository["EffectRuntime"]:::repox
   end
-  subgraph Area0_ds["DataSource / DataStore"]
-    CameraDataSource["Camera"]:::ds
-    CameraPermissionDataSource["CameraPermission"]:::ds
+  subgraph Area0b_ds["DataSource / DataStore"]
     PreviewDataSource["Preview"]:::ds
     FrameTransportDataSource["FrameTransport"]:::ds
     SurfacePoolDataSource["SurfacePool"]:::ds
-    PreferencesDataStore:::dstorex
   end
-  subgraph Area0_gw["Gateway (OS boundary)"]
-    AVFoundationGateway["AVFoundation"]:::gw
+  subgraph Area0b_gw["Gateway (OS boundary)"]
     MetalKitPreviewGateway["MetalKitPreview"]:::gw
     IOSurfaceGateway["IOSurface"]:::gw
     MachGateway["Mach"]:::gw
     DispatchExecutorGateway["DispatchExecutor"]:::gwx
     MetalGateway["Metal"]:::gwx
   end
-  CameraInteractor -.-> CameraControlUseCase
-  CameraInteractor -.-> ExtensionInstallUseCase
   CameraInteractor -.-> FramePipelineUseCase
-  HarnessInteractor -.-> CameraControlUseCase
   HarnessInteractor -.-> FramePipelineUseCase
-  CameraControlUseCase -.-> CameraRepository
   FramePipelineUseCase -.-> CameraRepository
   FramePipelineUseCase -.-> DispatchExecutorGateway
   FramePipelineUseCase -.-> EffectRuntimeRepository
   FramePipelineUseCase -.-> PreviewRepository
   FramePipelineUseCase -.-> SurfaceRepository
   FramePipelineUseCase -.-> VirtualCameraRepository
-  CameraRepository -.-> CameraDataSource
-  CameraRepository -.-> CameraPermissionDataSource
-  CameraRepository -.-> PreferencesDataStore
-  CameraRepository -.-> SurfacePoolDataSource
   PreviewRepository -.-> PreviewDataSource
   VirtualCameraRepository -.-> FrameTransportDataSource
   VirtualCameraRepository -.-> SurfacePoolDataSource
   SurfaceRepository -.-> SurfacePoolDataSource
-  CameraDataSource -.-> AVFoundationGateway
-  CameraDataSource -.-> DispatchExecutorGateway
-  CameraPermissionDataSource -.-> AVFoundationGateway
   PreviewDataSource -.-> DispatchExecutorGateway
   PreviewDataSource -.-> MetalGateway
   PreviewDataSource -.-> MetalKitPreviewGateway
@@ -276,16 +308,14 @@ graph LR
   FrameTransportDataSource -.-> MachGateway
   SurfacePoolDataSource -.-> IOSurfaceGateway
   classDef ds fill:#c84,stroke:#333,color:#fff
-  classDef dstorex fill:#a75,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
   classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
-  classDef int fill:#7b5,stroke:#333,color:#fff
+  classDef intx fill:#7b5,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
   classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
-  classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
-  linkStyle 7 stroke:#d32f2f,stroke-width:2px
-  linkStyle 26 stroke:#d32f2f,stroke-width:2px
+  linkStyle 3 stroke:#d32f2f,stroke-width:2px
+  linkStyle 15 stroke:#d32f2f,stroke-width:2px
 ```
 
 #### Frame path: effect runtime
