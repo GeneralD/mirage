@@ -138,6 +138,10 @@ undrawn = [m for m in modules if m not in owner and m not in ENTRY_MEMBERS and m
            and m not in {"UnifiedLog", "Domain", "Entity"}]
 if undrawn:
     fail(f"modules in no diagram: {undrawn}")
+# The other direction: a member that is no module any more (deleted or renamed) would be drawn as a phantom node.
+gone = sorted(m for m in [*owner, *ENTRY_MEMBERS, *DI, *(m for area in ONLY.values() for m in area)] if m not in modules)
+if gone:
+    fail(f"diagram members that are no module under Sources/: {gone}")
 
 
 def kind(module):
