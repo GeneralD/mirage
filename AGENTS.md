@@ -86,8 +86,8 @@ Shared conventions:
 - Product name appears only in `README.md`, `project.yml` and
   `Sources/Entity/ProductIdentity.swift`. Everything else is role-named.
 - A `.lens` package is a directory `<id>.lens/` in the effects folder
-  (`~/Library/Application Support/<host bundle id>/Effects`, the path comes from
-  `AppDirectoriesProvider`) holding `manifest.json` (`formatVersion` 1 and
+  (`~/Library/Application Support/<host bundle id>/Effects`: `AppDirectoriesProvider`
+  answers the Application Support folder, `EffectPackageDataSource` names the rest) holding `manifest.json` (`formatVersion` 1 and
   `name`; optional `author` / `description` / `thumbnail`, the picker's hover
   shows the description after the author, and the last is a path to a PNG or
   JPEG of at most 1 MiB inside the package and of at most 2048 × 2048 pixels in all (4,194,304) once decoded, which costs the package only its

@@ -7,8 +7,9 @@ import Domain
 public struct RandomSourceImpl: RandomSource {
     public init() {}
 
+    /// The closed range `0...upperBound - 1`, with a bound of 0 read as 1, so the port's "a bound of 0
+    /// draws 0" needs no branch: the empty range `0..<0` that would trap is never formed.
     public func next(below upperBound: UInt64) -> UInt64 {
-        guard upperBound != 0 else { return 0 }
-        return UInt64.random(in: 0..<upperBound)
+        UInt64.random(in: 0...(max(upperBound, 1) - 1))
     }
 }

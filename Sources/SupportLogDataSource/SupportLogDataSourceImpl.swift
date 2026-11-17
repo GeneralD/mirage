@@ -3,9 +3,10 @@ import Domain
 import Foundation
 
 /// The support log's DataSource (`SupportLogs`): the lines the log store holds for this process, in time
-/// order and capped to the newest, and the report written to the diagnostics folder. The order, the cap
-/// and the file name are persistence-shaped knowledge, so they live here; the gateways it calls stay thin
-/// and are proven against their fakes.
+/// order and capped to the newest, and the report written to the diagnostics folder. The order, the cap,
+/// the file name and the folder (`Diagnostics` in the host bundle id's folder under the Application Support
+/// directory `AppDirectoriesProvider` answers) are persistence-shaped knowledge, so they live here; the
+/// gateways it calls stay thin and are proven against their fakes.
 public struct SupportLogDataSourceImpl: Sendable {
     @Dependency(\.logStoreGateway) private var logStore
     @Dependency(\.fileSystemGateway) private var fileSystem
@@ -18,6 +19,9 @@ public struct SupportLogDataSourceImpl: Sendable {
 
 /// The most lines `entries()` answers with: the newest ones, so a long-running process does not fill the report.
 private let maximumEntries = 500
+
+/// The folder reports are written to, in the host bundle id's folder under Application Support.
+private let diagnosticsFolderName = "Diagnostics"
 
 /// The file a report is written to inside the diagnostics folder. A fixed name, so a second save replaces the first.
 private let reportFileName = "support-log.txt"
@@ -34,7 +38,10 @@ extension SupportLogDataSourceImpl: SupportLogs {
     }
 
     public func save(_ report: String) throws -> String {
-        let directory = appDirectories.diagnosticsDirectory
+        let directory = URL(fileURLWithPath: appDirectories.applicationSupportDirectory, isDirectory: true)
+            .appending(path: ProductIdentity.hostBundleID, directoryHint: .isDirectory)
+            .appending(path: diagnosticsFolderName, directoryHint: .isDirectory)
+            .path
         try fileSystem.createDirectory(directory)
         let path = URL(fileURLWithPath: directory, isDirectory: true).appending(path: reportFileName).path
         try fileSystem.writeString(report, to: path)

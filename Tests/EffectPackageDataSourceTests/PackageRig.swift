@@ -9,7 +9,10 @@ import TestDoubles
 /// developer line. The subject is built inside `withDependencies`, so it resolves these and
 /// not the unimplemented defaults.
 struct PackageRig {
-    static let folder = "/Users/test/Library/Application Support/host/Effects"
+    /// The Application Support directory the provider answers.
+    static let applicationSupport = "/Users/test/Library/Application Support"
+    /// The effects folder the subject is specified to use under it, spelt out rather than taken from a double.
+    static let folder = "\(applicationSupport)/\(ProductIdentity.hostBundleID)/Effects"
 
     let files: InMemoryFileSystemGateway
     let workspace = FakeWorkspaceGateway()
@@ -24,7 +27,7 @@ struct PackageRig {
         let developer = developer
         subject = withDependencies {
             $0.fileSystemGateway = listing ?? files
-            $0.appDirectories = FixedAppDirectories(effectsDirectory: Self.folder)
+            $0.appDirectories = FixedAppDirectories(applicationSupportDirectory: Self.applicationSupport)
             $0.workspaceGateway = workspace
             $0.errorLog = errors
             $0.developerLog = developer
@@ -77,7 +80,7 @@ struct ReversingFileSystemGateway: FileSystemGateway {
     func writeData(_ data: Data, to path: String) throws { try base.writeData(data, to: path) }
 }
 
-/// An `AppDirectoriesProvider` whose folder the test moves between two calls.
+/// An `AppDirectoriesProvider` whose Application Support directory the test moves between two calls.
 final class MovableDirectories: AppDirectoriesProvider, Sendable {
     private let path: Locked<String>
 
@@ -85,8 +88,7 @@ final class MovableDirectories: AppDirectoriesProvider, Sendable {
         self.path = Locked(path)
     }
 
-    var effectsDirectory: String { path.current }
-    var diagnosticsDirectory: String { "/diagnostics" }
+    var applicationSupportDirectory: String { path.current }
 
     func move(to newPath: String) {
         path.set(newPath)

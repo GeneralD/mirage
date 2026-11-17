@@ -1,17 +1,14 @@
 import Dependencies
 
-/// Where the app keeps its files. The only module that resolves these paths is the
-/// live one (it alone touches `FileManager`); everything else asks this port, so a
-/// test hands its subject a fixed path and no environment variable or home directory
-/// is ever read.
+/// Where the OS keeps an app's files. The port answers the base directory only and knows no folder of the
+/// app's own: the DataSource that keeps files joins the host bundle id and its folder's name below it
+/// (`EffectPackageDataSourceImpl` the effects folder, `SupportLogDataSourceImpl` the diagnostics folder), as
+/// path resolution lives in DataSources. The live value alone touches the OS's directory lookup; a test
+/// hands its subject a fixed path, so no environment variable or home directory is ever read.
 public protocol AppDirectoriesProvider: Sendable {
-    /// The folder `.lens` packages are dropped into: `~/Library/Application Support/<host
-    /// bundle id>/Effects` (epic #42, D2). It need not exist yet; the first listing creates it.
-    var effectsDirectory: String { get }
-
-    /// The folder the app writes support reports into: `~/Library/Application Support/<host
-    /// bundle id>/Diagnostics`, a sibling of the effects folder. It need not exist yet; the writer creates it.
-    var diagnosticsDirectory: String { get }
+    /// The user's Application Support folder, `~/Library/Application Support`, as a plain absolute path
+    /// with no trailing slash.
+    var applicationSupportDirectory: String { get }
 }
 
 public enum AppDirectoriesProviderKey: TestDependencyKey {
@@ -26,13 +23,8 @@ extension DependencyValues {
 }
 
 private struct UnimplementedAppDirectoriesProvider: AppDirectoriesProvider {
-    var effectsDirectory: String {
-        reportIssue("AppDirectoriesProvider.effectsDirectory not implemented")
-        return ""
-    }
-
-    var diagnosticsDirectory: String {
-        reportIssue("AppDirectoriesProvider.diagnosticsDirectory not implemented")
+    var applicationSupportDirectory: String {
+        reportIssue("AppDirectoriesProvider.applicationSupportDirectory not implemented")
         return ""
     }
 }

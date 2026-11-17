@@ -6,8 +6,11 @@ import TestDoubles
 import TestSupport
 import Testing
 
-private let diagnostics = "/Users/test/Library/Application Support/host/Diagnostics"
-private let reportPath = "/Users/test/Library/Application Support/host/Diagnostics/support-log.txt"
+/// The Application Support directory the provider answers.
+private let applicationSupport = "/Users/test/Library/Application Support"
+/// The diagnostics folder the subject is specified to use under it, spelt out rather than taken from a double.
+private let diagnostics = "\(applicationSupport)/\(ProductIdentity.hostBundleID)/Diagnostics"
+private let reportPath = "\(diagnostics)/support-log.txt"
 
 private func line(_ timestamp: Double, _ message: String) -> SupportLogEntry {
     SupportLogEntry(timestamp: timestamp, category: "app", message: message)
@@ -43,7 +46,7 @@ private struct Rig {
             $0.logStoreGateway = store
             $0.fileSystemGateway = files
             $0.workspaceGateway = workspace
-            $0.appDirectories = FixedAppDirectories(effectsDirectory: "/effects", diagnosticsDirectory: diagnostics)
+            $0.appDirectories = FixedAppDirectories(applicationSupportDirectory: applicationSupport)
             $0.developerLog = developer
         } operation: {
             SupportLogDataSourceImpl()

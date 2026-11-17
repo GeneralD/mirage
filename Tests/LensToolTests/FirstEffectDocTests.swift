@@ -75,7 +75,7 @@ struct FirstEffectDocTests {
         files.write("\(swapFolder)/effect.metal", kernel)
         let subject = withDependencies {
             $0.fileSystemGateway = files
-            $0.appDirectories = FixedAppDirectories(effectsDirectory: "/work/effects")
+            $0.appDirectories = FixedAppDirectories(applicationSupportDirectory: "/work")
             $0.workspaceGateway = FakeWorkspaceGateway()
             $0.errorLog = RecordingLog()
             $0.developerLog = RecordingLog()

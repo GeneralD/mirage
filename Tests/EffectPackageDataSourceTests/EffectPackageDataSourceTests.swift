@@ -81,16 +81,18 @@ struct EffectPackageDataSourceTests {
         } operation: {
             EffectPackageDataSourceImpl()
         }
-        files.write("/first/a.lens/manifest.json", Rig.validManifest)
-        files.write("/second/b.lens/manifest.json", Rig.validManifest)
+        let first = "/first/\(ProductIdentity.hostBundleID)/Effects"
+        let second = "/second/\(ProductIdentity.hostBundleID)/Effects"
+        files.write("\(first)/a.lens/manifest.json", Rig.validManifest)
+        files.write("\(second)/b.lens/manifest.json", Rig.validManifest)
 
-        let first = await subject.packages()
+        let before = await subject.packages()
         directories.move(to: "/second")
-        let second = await subject.packages()
+        let after = await subject.packages()
 
-        #expect(first.listings.map(\.id) == [.package("a")])
-        #expect(second.listings.map(\.id) == [.package("b")])
-        #expect(second.watchSet.directories == ["/second", "/second/b.lens"])
+        #expect(before.listings.map(\.id) == [.package("a")])
+        #expect(after.listings.map(\.id) == [.package("b")])
+        #expect(after.watchSet.directories == [second, "\(second)/b.lens"])
     }
 
     // MARK: Which entries are packages

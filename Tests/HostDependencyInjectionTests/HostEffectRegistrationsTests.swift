@@ -157,7 +157,8 @@ struct HostEffectRegistrationsTests {
 /// The fakes one test hands the live graph in place of the machine's file system, app directories, file events,
 /// key-value store and Finder, and the logs: kept, so a test can read back what the graph asked of them.
 private struct Fakes {
-    static let effectsDirectory = "/effects"
+    static let directories = FixedAppDirectories()
+    static let effectsDirectory = directories.effectsDirectory
     static let glitchShader = "kernel void effect() {}\n"
 
     let files = InMemoryFileSystemGateway()
@@ -176,7 +177,7 @@ private struct Fakes {
         try await withDependencies {
             $0.context = .live
             $0.fileSystemGateway = files
-            $0.appDirectories = FixedAppDirectories(effectsDirectory: Self.effectsDirectory)
+            $0.appDirectories = Self.directories
             $0.fileWatchGateway = fileWatch
             $0.keyValueStoreGateway = store
             $0.workspaceGateway = workspace
