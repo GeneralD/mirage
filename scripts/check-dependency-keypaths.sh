@@ -231,11 +231,12 @@ exception_keys_for() {
 # (.claude/rules/architecture-boundaries.md → Ambient admission): its contract decides no product
 # behaviour (it knows nothing of how cameras, effects, frames or packages are handled; taking a
 # classification label such as LogSubsystem is fine; no lint can judge this, review does), it hands
-# out no resource with a lifetime (a port that does is a Gateway), and it is time, logging or a fact
-# about the host that belongs to no one step of the chain. Being used by several lanes is not a
-# criterion: a port one lane uses may still be ambient (`hostTime`). Four failures keep the list honest, all but the first checked after the resolutions:
+# out no resource with a lifetime (a port that does is a Gateway), and it is time, logging, a fact
+# about the host or the process's own console, and belongs to no one step of the chain. Being used by several lanes is not a
+# criterion: a port one lane uses may still be ambient (`hostTime`). These failures keep the list honest, all but the first checked after the resolutions:
 #   - a module resolves an Ambient key its owners do not match;
-#   - a key declared under Sources/Domain/Ambient/ is not listed (reported at its file);
+#   - a key declared under Sources/Domain/Ambient/, or continuousClock, is not listed;
+#   - a key is listed twice;
 #   - a listed key is no Ambient port any more (it moved, or its port is gone);
 #   - no module matching a listed key's owners resolves it any more.
 #
@@ -377,8 +378,17 @@ while IFS=' ' read -r key kind file; do
     [ -n "$key" ] || continue
     [ "$kind" = "Ambient" ] || continue
     [ -z "$(ambient_owners "$key")" ] || continue
+    if [ "$file" = "-" ]; then
+        fail "scripts/check-dependency-keypaths.sh:1" "\\.$key, swift-dependencies' own Ambient key, is not in AMBIENT; list it there with its owners"
+        continue
+    fi
     fail "$file:1" "\\.$key is declared under Sources/Domain/Ambient/ but AMBIENT does not list it; add it there with its reason if it meets the admission criteria, or give the port the kind of the layer that uses it"
 done <<< "$KEY_TABLE"
+
+while IFS= read -r duplicate; do
+    [ -n "$duplicate" ] || continue
+    fail "scripts/check-dependency-keypaths.sh:1" "AMBIENT lists \\.$duplicate more than once; keep one line, with every owner on it"
+done <<< "$(awk 'NF { seen[$1]++ } END { for (key in seen) if (seen[key] > 1) print key }' <<< "$AMBIENT")"
 
 while IFS=' ' read -r key owners; do
     [ -n "$key" ] || continue

@@ -111,14 +111,18 @@ it meets all three:
    label such as `LogSubsystem` is fine. No lint can judge this; review does.
 2. **It hands out no resource with a lifetime.** A port that issues a handle is
    a Gateway.
-3. **It is time, logging or a fact about the host** that belongs to no one step
-   of the chain.
+3. **It is time, logging, a fact about the host or the process's own console**,
+   and belongs to no one step of the chain. A port only one process has a use
+   for is pinned to that process's entry point by its `AMBIENT` line: the
+   console is the command-line tool's (`consoleWriter LensTool`), since the host
+   and the extension report through the logs.
 
 Being used by several lanes is not a criterion: `hostTime` is used by one
 UseCase and is still ambient. A port that fails one moves to the kind of the
 layer that uses it, as `AppDirectoriesProvider` and `RandomSource` moved to the
 Gateway kind (DataSources resolve them). The lint fails when an unlisted port
-appears under `Sources/Domain/Ambient/`, when a listed key is no Ambient port,
+appears under `Sources/Domain/Ambient/`, when a key is listed twice, when a
+listed key is no Ambient port,
 when a module outside a key's owners resolves it, and when no owner resolves a
 listed key any more, so the list cannot outlive its reason.
 

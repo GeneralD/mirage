@@ -57,7 +57,8 @@ STYLE = {
     "gw": ("#678", ""), "amb": ("#d57", ""),
 }
 ORDER = ["entry", "view", "pres", "int", "uc", "repo", "ds", "gw", "amb"]
-# The kinds each lane may resolve (key-path lint); anything else is a per-key exception, drawn red.
+# The kinds each lane may resolve; anything else is a per-key exception, drawn red. A copy of
+# `allowed_kinds` in scripts/check-dependency-keypaths.sh (lane names as layer ids): change both together.
 ALLOWED = {"entry": {"int", "amb"}, "view": {"pres", "amb"}, "pres": {"int", "amb"}, "int": {"uc", "amb"},
            "uc": {"repo", "amb"}, "repo": {"ds", "amb"}, "ds": {"gw", "amb"}}
 EXCEPTION = "stroke:#d32f2f,stroke-width:2px"
