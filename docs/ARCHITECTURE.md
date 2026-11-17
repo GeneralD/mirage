@@ -30,7 +30,7 @@ graph TD
     Repo["Repository"]:::repo
     DS["DataSource / DataStore"]:::ds
     GW["Gateway (OS boundary)"]:::gw
-    Sup["Support"]:::sup
+    Amb["Ambient"]:::amb
   end
   Domain["Domain<br/>ports and dependency keys"]:::domain
   Entity["Entity<br/>data types"]:::entity
@@ -53,16 +53,17 @@ graph TD
   UC -.-> Repo
   Repo -.-> DS
   DS -.-> GW
-  Entry -.-> Sup
-  Pres -.-> Sup
-  Inter -.-> Sup
-  UC -.-> Sup
-  Repo -.-> Sup
-  DS -.-> Sup
+  Entry -.-> Amb
+  Pres -.-> Amb
+  Inter -.-> Amb
+  UC -.-> Amb
+  Repo -.-> Amb
+  DS -.-> Amb
   Entry -.->|"extensionRelayUseCase (ExtensionApp)"| UC
   UC -.->|"frameExecutor · frameScheduler · workRunner"| GW
   Repo -.->|"workRunner (EffectRuntimeRepository)"| GW
   DS -.->|"surfacePool (GPURender, Preview)"| DS
+  Entry -.->|"consoleWriter (LensTool only)"| Amb
 
   classDef entry fill:#4c78a8,stroke:#333,color:#fff
   classDef view fill:#6a5,stroke:#333,color:#fff
@@ -73,17 +74,17 @@ graph TD
   classDef repo fill:#86c,stroke:#333,color:#fff
   classDef ds fill:#c84,stroke:#333,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
-  classDef sup fill:#d57,stroke:#333,color:#fff
+  classDef amb fill:#d57,stroke:#333,color:#fff
   classDef domain fill:#38b,stroke:#E9B84C,stroke-width:3px,color:#fff
   classDef entity fill:#4a9,stroke:#E9B84C,stroke-width:3px,color:#fff
-  linkStyle 23,24,25,26 stroke:#d32f2f,stroke-width:2px
+  linkStyle 23,24,25,26,27 stroke:#d32f2f,stroke-width:2px
 ```
 
-Implementation targets import `Domain` only, and the three DI targets are the only importers of implementation targets. Each lane resolves the layer right below it plus Support (`.claude/rules/architecture-boundaries.md` → Key-Path Allow-List). The four red edges leave their lane; they are the per-key exceptions of the key-path lint: the execution-context ports the frame path runs on, which a UseCase resolves; the `workRunner` of `EffectRuntimeRepository`; the `surfacePool` that `GPURenderDataSource` and `PreviewDataSource` lease surfaces through; and `extensionRelayUseCase`, which `ExtensionApp` resolves because the extension process has no Interactor lane. The colours are lyra's, one per layer, and the diagrams below reuse them; a gold border marks the modules outside the implementation chain that other lanes compile against: `Presenters`, the DI targets, `Domain` and `Entity`.
+Implementation targets import `Domain` only, and the three DI targets are the only importers of implementation targets. Each lane resolves the layer right below it plus Ambient (`.claude/rules/architecture-boundaries.md` → Key-Path Allow-List), the cross-cutting ports every lane may use; a port enters Ambient only by a line of the lint's closed `AMBIENT` list (→ Ambient admission). The five red edges are the per-key exceptions of the key-path lint. Four leave their lane: the execution-context ports the frame path runs on, which a UseCase resolves; the `workRunner` of `EffectRuntimeRepository`; the `surfacePool` that `GPURenderDataSource` and `PreviewDataSource` lease surfaces through; and `extensionRelayUseCase`, which `ExtensionApp` resolves because the extension process has no Interactor lane. The fifth stays inside its lane but is narrower than it: `consoleWriter`, which the `AMBIENT` list gives to `LensTool` alone, since the command-line tool is the one process with a console to write to. The colours are lyra's, one per layer, and the diagrams below reuse them; a gold border marks the modules outside the implementation chain that other lanes compile against: `Presenters`, the DI targets, `Domain` and `Entity`.
 
 ### Implementation Modules
 
-In each diagram but *Dependency injection*, columns are layers, and a label leaves out the layer suffix its column already names: `FrameTransport` under DataSource is `FrameTransportDataSource` (a DataStore keeps its suffix, since that column holds both, and is drawn a darker shade of the DataSource colour). A dotted edge runs from a module to the module whose live value its `@Dependency(\.key)` resolves (the key's `liveValue` registration names the type, and the type names the module); a red one is a per-key exception from the overview. A node with a dashed border is drawn in another diagram and appears only as a target. Every target also depends on `Domain`, and many modules resolve `UnifiedLog`; those edges, and swift-dependencies' `continuousClock`, are left out.
+In each diagram but *Dependency injection*, columns are layers, and a label leaves out the layer suffix its column already names: `FrameTransport` under DataSource is `FrameTransportDataSource` (a DataStore keeps its suffix, since that column holds both, and is drawn a darker shade of the DataSource colour). A dotted edge runs from a module to the module whose live value its `@Dependency(\.key)` resolves (the key's `liveValue` registration names the type, and the type names the module); a red one is a per-key exception from the overview. A node with a dashed border is drawn in another diagram and appears only as a target. This section is generated: `scripts/architecture-diagrams/regenerate` redraws it from `Package.swift` and the resolutions under `Sources/`, and fails when a module is in no diagram or an edge is drawn twice or not at all; the text above the diagrams lives in `scripts/architecture-diagrams/section-head.md`, so edit it there. Every target also depends on `Domain`, and many modules resolve `UnifiedLog`; those edges, and swift-dependencies' `continuousClock`, are left out.
 
 #### Entry points and the view lane
 
@@ -117,9 +118,9 @@ graph LR
   subgraph Entry_uc["UseCase"]
     ExtensionRelayUseCase["ExtensionRelay"]:::ucx
   end
-  subgraph Entry_sup["Support"]
-    StandardStreams:::sup
-    HostEnvironment:::supx
+  subgraph Entry_amb["Ambient"]
+    StandardStreams:::amb
+    HostEnvironment:::ambx
   end
   App --> AppRouter
   App --> Views
@@ -143,14 +144,14 @@ graph LR
   Presenters -.-> HostEnvironment
   Presenters -.-> OnboardingInteractor
   Presenters -.-> SettingsInteractor
+  classDef amb fill:#d57,stroke:#333,color:#fff
+  classDef ambx fill:#d57,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef entry fill:#4c78a8,stroke:#333,color:#fff
   classDef intx fill:#7b5,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef pres fill:#6a5,stroke:#E9B84C,stroke-width:3px,color:#fff
-  classDef sup fill:#d57,stroke:#333,color:#fff
-  classDef supx fill:#d57,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef view fill:#6a5,stroke:#333,color:#fff
-  linkStyle 15 stroke:#d32f2f,stroke-width:2px
+  linkStyle 14,15 stroke:#d32f2f,stroke-width:2px
 ```
 
 #### Dependency injection
@@ -176,8 +177,8 @@ graph LR
     DispatchExecutorGateway:::gw
     IOSurfaceGateway:::gw
     MachGateway:::gw
-    HostTime:::sup
-    UnifiedLog:::sup
+    HostTime:::amb
+    UnifiedLog:::amb
   end
   subgraph DI_ext["Registered by ExtensionDependencyInjection"]
     ExtensionRelayUseCase:::uc
@@ -187,7 +188,7 @@ graph LR
     StreamOutputDataSource:::ds
     CMIOExtensionGateway:::gw
   end
-  HostRegistered["the other 56 implementation modules<br/>(every Interactor; the host's UseCases, Repositories,<br/>DataSources, DataStores, Gateways and Support)"]:::di
+  HostRegistered["the other 56 implementation modules<br/>(every Interactor; the host's UseCases, Repositories,<br/>DataSources, DataStores, Gateways and Ambient lives)"]:::di
   App --> HostDependencyInjection
   DevHarness --> HostDependencyInjection
   LensTool --> HostDependencyInjection
@@ -197,12 +198,12 @@ graph LR
   CommonDependencyInjection --> DI_common
   ExtensionDependencyInjection --> DI_ext
   HostDependencyInjection --> HostRegistered
+  classDef amb fill:#d57,stroke:#333,color:#fff
   classDef di fill:#c44,stroke:#E9B84C,stroke-width:3px,color:#fff
   classDef ds fill:#c84,stroke:#333,color:#fff
   classDef entry fill:#4c78a8,stroke:#333,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
-  classDef sup fill:#d57,stroke:#333,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
 ```
 
@@ -226,6 +227,7 @@ graph LR
   subgraph Area0a_ds["DataSource / DataStore"]
     CameraDataSource["Camera"]:::ds
     CameraPermissionDataSource["CameraPermission"]:::ds
+    PreferencesDataStore:::dstorex
     SurfacePoolDataSource["SurfacePool"]:::dsx
   end
   subgraph Area0a_gw["Gateway (OS boundary)"]
@@ -238,11 +240,13 @@ graph LR
   CameraControlUseCase -.-> CameraRepository
   CameraRepository -.-> CameraDataSource
   CameraRepository -.-> CameraPermissionDataSource
+  CameraRepository -.-> PreferencesDataStore
   CameraRepository -.-> SurfacePoolDataSource
   CameraDataSource -.-> AVFoundationGateway
   CameraDataSource -.-> DispatchExecutorGateway
   CameraPermissionDataSource -.-> AVFoundationGateway
   classDef ds fill:#c84,stroke:#333,color:#fff
+  classDef dstorex fill:#a75,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
   classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
@@ -266,10 +270,10 @@ graph LR
     FramePipelineUseCase["FramePipeline"]:::uc
   end
   subgraph Area0b_repo["Repository"]
-    CameraRepository["Camera"]:::repox
     PreviewRepository["Preview"]:::repo
     VirtualCameraRepository["VirtualCamera"]:::repo
     SurfaceRepository["Surface"]:::repo
+    CameraRepository["Camera"]:::repox
     EffectRuntimeRepository["EffectRuntime"]:::repox
   end
   subgraph Area0b_ds["DataSource / DataStore"]
@@ -311,8 +315,7 @@ graph LR
   classDef repo fill:#86c,stroke:#333,color:#fff
   classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
-  linkStyle 3 stroke:#d32f2f,stroke-width:2px
-  linkStyle 15 stroke:#d32f2f,stroke-width:2px
+  linkStyle 3,15 stroke:#d32f2f,stroke-width:2px
 ```
 
 #### Frame path: effect runtime
@@ -334,9 +337,7 @@ graph LR
   subgraph Area1_gw["Gateway (OS boundary)"]
     MetalGateway["Metal"]:::gw
     DispatchExecutorGateway["DispatchExecutor"]:::gw
-  end
-  subgraph Area1_sup["Support"]
-    RandomSource:::sup
+    RandomSource:::gw
   end
   EffectRuntimeRepository -.-> BundledEffectDataSource
   EffectRuntimeRepository -.-> DispatchExecutorGateway
@@ -354,9 +355,7 @@ graph LR
   classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
-  classDef sup fill:#d57,stroke:#333,color:#fff
-  linkStyle 1 stroke:#d32f2f,stroke-width:2px
-  linkStyle 7 stroke:#d32f2f,stroke-width:2px
+  linkStyle 1,7 stroke:#d32f2f,stroke-width:2px
 ```
 
 #### Effects: catalog and authoring
@@ -392,10 +391,8 @@ graph LR
     FileWatchGateway["FileWatch"]:::gw
     WorkspaceGateway["Workspace"]:::gw
     ImageIOGateway["ImageIO"]:::gw
+    AppDirectories:::gw
     DispatchExecutorGateway["DispatchExecutor"]:::gwx
-  end
-  subgraph Area2_sup["Support"]
-    AppDirectories:::sup
   end
   EffectInteractor -.-> EffectCatalogUseCase
   EffectAuthoringInteractor -.-> EffectAuthoringUseCase
@@ -425,7 +422,6 @@ graph LR
   classDef int fill:#7b5,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
   classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
-  classDef sup fill:#d57,stroke:#333,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
   linkStyle 5 stroke:#d32f2f,stroke-width:2px
 ```
@@ -467,12 +463,12 @@ graph LR
     UserDefaultsGateway["UserDefaults"]:::gw
     SystemExtensionGateway["SystemExtension"]:::gw
     LogStoreGateway["LogStore"]:::gw
+    AppDirectories:::gwx
     FileSystemGateway["FileSystem"]:::gwx
     WorkspaceGateway["Workspace"]:::gwx
   end
-  subgraph Area3_sup["Support"]
-    HostEnvironment:::sup
-    AppDirectories:::supx
+  subgraph Area3_amb["Ambient"]
+    HostEnvironment:::amb
   end
   ControlsInteractor -.-> EffectCatalogUseCase
   ControlsInteractor -.-> FramePipelineUseCase
@@ -500,14 +496,13 @@ graph LR
   SupportLogDataSource -.-> FileSystemGateway
   SupportLogDataSource -.-> LogStoreGateway
   SupportLogDataSource -.-> WorkspaceGateway
+  classDef amb fill:#d57,stroke:#333,color:#fff
   classDef ds fill:#c84,stroke:#333,color:#fff
   classDef dstore fill:#a75,stroke:#333,color:#fff
   classDef gw fill:#678,stroke:#333,color:#fff
   classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef int fill:#7b5,stroke:#333,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
-  classDef sup fill:#d57,stroke:#333,color:#fff
-  classDef supx fill:#d57,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
   classDef ucx fill:#59c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
 ```
@@ -540,8 +535,8 @@ graph LR
     IOSurfaceGateway["IOSurface"]:::gwx
     MachGateway["Mach"]:::gwx
   end
-  subgraph Area4_sup["Support"]
-    HostTime:::sup
+  subgraph Area4_amb["Ambient"]
+    HostTime:::amb
   end
   ExtensionApp -.-> ExtensionRelayUseCase
   ExtensionRelayUseCase -.-> DispatchExecutorGateway
@@ -558,6 +553,7 @@ graph LR
   FrameReceiverDataSource -.-> MachGateway
   StreamOutputDataSource -.-> CMIOExtensionGateway
   StreamOutputDataSource -.-> DispatchExecutorGateway
+  classDef amb fill:#d57,stroke:#333,color:#fff
   classDef ds fill:#c84,stroke:#333,color:#fff
   classDef dsx fill:#c84,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef entry fill:#4c78a8,stroke:#333,color:#fff
@@ -565,10 +561,8 @@ graph LR
   classDef gwx fill:#678,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
   classDef repo fill:#86c,stroke:#333,color:#fff
   classDef repox fill:#86c,stroke:#bbb,stroke-width:2px,stroke-dasharray:5 3,color:#fff
-  classDef sup fill:#d57,stroke:#333,color:#fff
   classDef uc fill:#59c,stroke:#333,color:#fff
-  linkStyle 0 stroke:#d32f2f,stroke-width:2px
-  linkStyle 1 stroke:#d32f2f,stroke-width:2px
+  linkStyle 0,1 stroke:#d32f2f,stroke-width:2px
 ```
 
 ## Frame Path

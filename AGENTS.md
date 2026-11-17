@@ -49,6 +49,7 @@ swift run view-gallery <screen>   # one of the app's windows over fixture data, 
 scripts/shot <out.png>  # screenshot one window (the dev harness by default; --owner, --title, --pid, --list); the terminal needs Screen Recording
 swift run lens-tool new <name> [--in <folder>] | validate <package> | render <effect> --input <in.png> --output <out.png>   # author a `.lens` package
 scripts/gate            # lint, check, build, build-dev-harness, test and test-gpu behind a slot shared by every worktree of the checkout
+scripts/architecture-diagrams/regenerate   # redraw the module diagrams of docs/ARCHITECTURE.md from Package.swift and the @Dependency resolutions
 ```
 
 ## Project Summary
