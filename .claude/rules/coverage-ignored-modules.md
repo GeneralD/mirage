@@ -8,7 +8,11 @@ bugs hide behind the ignore rule.
 The ignore list is `codecov.yml` → `ignore:`. Before adding code to a module,
 confirm it is not on that list. If it is, the module may contain only:
 
-- Protocol / `TestDependencyKey` definitions (`Domain`)
+- Protocol / `TestDependencyKey` definitions (`Domain`), plus one exception:
+  the two `orThrow` helpers of `Sources/Domain/Unwrap.swift`, each a single
+  expression, which the thin-live Gateways need to stay branch-free and which
+  sit in `Domain` because it is the one module every Gateway imports. Nothing
+  else that executes goes into `Domain`
 - In the three DI targets: `liveValue = Foo()` one-liners, and `DependencyValues`
   extensions (dev-only substitutions) whose members each only assign one value —
   no branch, no `var`, at most 50 lines per file, which `scripts/check-live-thin.sh`
