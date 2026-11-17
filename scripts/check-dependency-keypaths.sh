@@ -15,8 +15,11 @@
 # are listed per key, each with the decision it rests on, and an exception nothing resolves any
 # more fails, so the list cannot outlive its reason. The other way round, a key of a kind the
 # lane may resolve can still be denied to a module (DENIALS below): the kind rule cannot say
-# "this Interactor and not that one". Only the plain `\.key` form is understood: a key-path
-# chain, `Key.self` or `\DependencyValues.key` fails instead of passing unchecked.
+# "this Interactor and not that one". Ambient is the one kind every lane resolves, so it is the
+# one the lane rule cannot bound; a closed list (AMBIENT below) bounds it instead: a port enters
+# `Sources/Domain/Ambient/` by a line there, and a line may pin its key to the modules that own it.
+# Only the plain `\.key` form is understood: a key-path chain, `Key.self` or
+# `\DependencyValues.key` fails instead of passing unchecked.
 
 # shellcheck source=scripts/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -63,9 +66,9 @@ rule:
         regex: ^DependencyValues$
 '
 
-# KEY_TABLE — one "<key> <kind>" line per member under Sources/Domain/<Kind>/, plus the
-# swift-dependencies built-ins this codebase treats as Ambient ports. A member declared at the
-# root of Sources/Domain has no kind and fails.
+# KEY_TABLE — one "<key> <kind> <file>" line per member under Sources/Domain/<Kind>/, plus the
+# swift-dependencies built-ins this codebase treats as Ambient ports (their file is `-`). A member
+# declared at the root of Sources/Domain has no kind and fails.
 MEMBERS=$(run_sg "listing the DependencyValues members under Sources/Domain" \
     scan --inline-rules "$MEMBER_RULE" --json=compact Sources/Domain) || exit 1
 KEY_TABLE=""
@@ -79,14 +82,14 @@ while IFS="$(printf '\t')" read -r file key; do
             continue
             ;;
     esac
-    KEY_TABLE="$KEY_TABLE$key $kind
+    KEY_TABLE="$KEY_TABLE$key $kind $file
 "
 done < <(jq -r '.[] | "\(.file)\t\(.metaVariables.single.NAME.text)"' <<< "$MEMBERS")
 if [ -z "$KEY_TABLE" ]; then
     echo "check-dependency-keypaths: no DependencyValues member found under Sources/Domain/<Kind>/ (did the ports move, or did ast-grep not run?)" >&2
     exit 1
 fi
-KEY_TABLE="${KEY_TABLE}continuousClock Ambient"
+KEY_TABLE="${KEY_TABLE}continuousClock Ambient -"
 
 # kind_of_key <key> — the port kind of a key, empty when no Domain subdirectory declares it.
 kind_of_key() {
@@ -222,6 +225,53 @@ exception_keys_for() {
     printf '%s\n' "${keys# }"
 }
 
+# AMBIENT — "<key> <owners>": the closed list of Ambient ports. <owners> is `*` (every lane may
+# resolve the key, as the kind rule says) or `|`-separated module globs (`case` patterns over module
+# names), when only those modules may. A port is Ambient when it meets all three criteria
+# (.claude/rules/architecture-boundaries.md → Ambient admission): it knows no business (no camera,
+# effect, frame or package), it hands out no resource with a lifetime (a port that does is a
+# Gateway), and it is time, logging or a fact about the host that belongs to no one step of the
+# chain. Being used by several lanes is not a criterion: a port one lane uses may still be ambient
+# (`hostTime`). Four failures keep the list honest, all but the first checked after the resolutions:
+#   - a module resolves an Ambient key its owners do not match;
+#   - a key declared under Sources/Domain/Ambient/ is not listed (reported at its file);
+#   - a listed key is no Ambient port any more (it moved, or its port is gone);
+#   - no module matching a listed key's owners resolves it any more.
+#
+#   consoleWriter LensTool — the command-line tool's one exit to standard output and standard error
+#                 (docs/ARCHITECTURE.md → Physical Abstraction Table, the "Standard output / standard
+#                 error" row). The host and the extension report through ErrorLog / DeveloperLog and
+#                 never write a console, so no other module may reach for it.
+AMBIENT='
+errorLog *
+developerLog *
+continuousClock *
+hostTime *
+hostEnvironment *
+consoleWriter LensTool
+'
+USED_AMBIENT=""
+
+# ambient_owners <key> — the owners column of the key's AMBIENT line, empty when it is not listed.
+ambient_owners() {
+    awk -v key="$1" '$1 == key { print $2; exit }' <<< "$AMBIENT"
+}
+
+# owned_by <module> <owners> — 0 when the module matches one of the `|`-separated globs.
+owned_by() {
+    local module="$1" owners="$2" glob
+    local -a globs
+    IFS='|' read -ra globs <<< "$owners"
+    for glob in "${globs[@]}"; do
+        # The glob is the pattern.
+        # shellcheck disable=SC2254
+        case "$module" in
+            $glob) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 # RESOLUTIONS — "<file>\t<line>\t<arguments>" for every resolution under Sources/: the
 # `@Dependency` attribute (whatever its layout) and the wrapper's initializer in each spelling
 # ast-grep can name. The argument list is joined and its whitespace collapsed, so a second
@@ -261,6 +311,15 @@ while IFS="$(printf '\t')" read -r file line_no arg; do
     if reason=$(denial_reason "$module" "$key"); then
         fail "$file:$line_no" "module $module may not resolve \\.$key: $reason"
         continue
+    fi
+    if [ "$kind" = "Ambient" ]; then
+        owners=$(ambient_owners "$key")
+        if [ -n "$owners" ] && ! owned_by "$module" "$owners"; then
+            fail "$file:$line_no" "module $module may not resolve \\.$key: AMBIENT gives it to $owners only"
+            continue
+        fi
+        USED_AMBIENT="$USED_AMBIENT$key $module
+"
     fi
     excepted "$module" "$key" && continue
     case " $kinds " in
@@ -312,5 +371,26 @@ while IFS=' ' read -r glob entry_key _; do
         fail "scripts/check-dependency-keypaths.sh:1" "no module matching $glob is in a lane that resolves port kind $kind (\\.$entry_key) anyway; remove the denial with its reason"
     fi
 done <<< "$DENIALS"
+
+while IFS=' ' read -r key kind file; do
+    [ -n "$key" ] || continue
+    [ "$kind" = "Ambient" ] || continue
+    [ -z "$(ambient_owners "$key")" ] || continue
+    fail "$file:1" "\\.$key is declared under Sources/Domain/Ambient/ but AMBIENT does not list it; add it there with its reason if it meets the admission criteria, or give the port the kind of the layer that uses it"
+done <<< "$KEY_TABLE"
+
+while IFS=' ' read -r key owners; do
+    [ -n "$key" ] || continue
+    if [ "$(kind_of_key "$key")" != "Ambient" ]; then
+        fail "scripts/check-dependency-keypaths.sh:1" "AMBIENT lists \\.$key, which is no port declared under Sources/Domain/Ambient/ any more; remove the entry with its reason"
+        continue
+    fi
+    used=""
+    while IFS=' ' read -r used_key used_module; do
+        [ "$used_key" = "$key" ] || continue
+        owned_by "$used_module" "$owners" && used=1
+    done <<< "$USED_AMBIENT"
+    [ -n "$used" ] || fail "scripts/check-dependency-keypaths.sh:1" "no module matching $owners resolves \\.$key any more; remove the AMBIENT entry with its reason"
+done <<< "$AMBIENT"
 
 finish "check-dependency-keypaths"
