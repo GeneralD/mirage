@@ -11,7 +11,7 @@
 # (any other type named `Dependency` would be reported as a non-plain form; none exists). A key's
 # port kind is the `Sources/Domain/<Kind>/` directory that declares its `DependencyValues`
 # member, so a new port needs no entry here: its directory is its kind. A lane may resolve the
-# kind of the layer right below it plus Support; the few keys a lane may resolve beyond that
+# kind of the layer right below it plus Ambient; the few keys a lane may resolve beyond that
 # are listed per key, each with the decision it rests on, and an exception nothing resolves any
 # more fails, so the list cannot outlive its reason. The other way round, a key of a kind the
 # lane may resolve can still be denied to a module (DENIALS below): the kind rule cannot say
@@ -64,7 +64,7 @@ rule:
 '
 
 # KEY_TABLE — one "<key> <kind>" line per member under Sources/Domain/<Kind>/, plus the
-# swift-dependencies built-ins this codebase treats as Support ports. A member declared at the
+# swift-dependencies built-ins this codebase treats as Ambient ports. A member declared at the
 # root of Sources/Domain has no kind and fails.
 MEMBERS=$(run_sg "listing the DependencyValues members under Sources/Domain" \
     scan --inline-rules "$MEMBER_RULE" --json=compact Sources/Domain) || exit 1
@@ -86,7 +86,7 @@ if [ -z "$KEY_TABLE" ]; then
     echo "check-dependency-keypaths: no DependencyValues member found under Sources/Domain/<Kind>/ (did the ports move, or did ast-grep not run?)" >&2
     exit 1
 fi
-KEY_TABLE="${KEY_TABLE}continuousClock Support"
+KEY_TABLE="${KEY_TABLE}continuousClock Ambient"
 
 # kind_of_key <key> — the port kind of a key, empty when no Domain subdirectory declares it.
 kind_of_key() {
@@ -94,7 +94,7 @@ kind_of_key() {
 }
 
 # lane_of <module> — the layer a module belongs to, by name. `None` resolves nothing: Entity,
-# Domain, the Gateway and Support lives, and the DI targets have no ports to pull.
+# Domain, the Gateway and Ambient lives, and the DI targets have no ports to pull.
 lane_of() {
     case "$1" in
         App | DevHarness | ExtensionApp | LensTool) echo "Entry" ;;
@@ -108,16 +108,16 @@ lane_of() {
     esac
 }
 
-# allowed_kinds <lane> — the port kinds a lane may resolve: the layer right below it, and Support.
+# allowed_kinds <lane> — the port kinds a lane may resolve: the layer right below it, and Ambient.
 allowed_kinds() {
     case "$1" in
-        Entry)      echo "Interactor Support" ;;
-        View)       echo "Presenter Support" ;;
-        Presenter)  echo "Interactor Support" ;;
-        Interactor) echo "UseCase Support" ;;
-        UseCase)    echo "Repository Support" ;;
-        Repository) echo "DataSource DataStore Support" ;;
-        DataSource) echo "Gateway Support" ;;
+        Entry)      echo "Interactor Ambient" ;;
+        View)       echo "Presenter Ambient" ;;
+        Presenter)  echo "Interactor Ambient" ;;
+        Interactor) echo "UseCase Ambient" ;;
+        UseCase)    echo "Repository Ambient" ;;
+        Repository) echo "DataSource DataStore Ambient" ;;
+        DataSource) echo "Gateway Ambient" ;;
         *)          echo "" ;;
     esac
 }
@@ -267,7 +267,7 @@ while IFS="$(printf '\t')" read -r file line_no arg; do
         *" $kind "*) ;;
         *)
             if [ "$lane" = "None" ]; then
-                fail "$file:$line_no" "module $module resolves \\.$key, but a module outside the layer chain (Entity, Domain, Gateway and Support lives, DI targets) resolves nothing"
+                fail "$file:$line_no" "module $module resolves \\.$key, but a module outside the layer chain (Entity, Domain, Gateway and Ambient lives, DI targets) resolves nothing"
             else
                 granted=$(exception_keys_for "$module")
                 fail "$file:$line_no" "module $module may not resolve \\.$key (port kind $kind); the $lane lane resolves: $kinds${granted:+, plus by exception: $granted}"
