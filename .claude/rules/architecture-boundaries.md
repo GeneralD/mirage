@@ -10,7 +10,7 @@
 | **Repository** | Orchestration of DataSources/DataStores, cache strategy, surface lifetime (`SurfaceRepository`) | Gateways other than `workRunner`; the `FrameExecutor`; OS frameworks |
 | **DataSource / DataStore** | Real work against Gateways plus persistence-shaped knowledge (paths, manifests, source assembly, IPC state machines, receive loops, pool bookkeeping, the effect runtime's executor-confined state) | Business policy; OS frameworks (those stay in the Gateway) |
 | **Gateway** | 1:1 thin pass-through to one OS API | Branching, timing, ordering, retries, loops — anything that needs a test |
-| **Support** | Cross-cutting seams (random, log, console, host time, host environment, app directories) | Business logic |
+| **Ambient** | The cross-cutting ports every lane may resolve (logs, the clock, host time, host environment, the console), each admitted by the *Ambient admission* below | Business logic; a resource with a lifetime |
 | **Interactor** | Combine state pipelines over UseCases for the GUI (the `state` streams a Presenter observes and the start / stop lifecycle), and stateless Interactors with no `state` (`CameraInteractor`, `HarnessInteractor` and `EffectAuthoringInteractor`, called by an entry lane, and `PreviewInteractor`, called by `PreviewPresenter`): a launch sequence or one call per command | Another Interactor; a Repository, DataSource or Gateway; display wording; AppKit / SwiftUI imports |
 | **Presenter** | `@Published` display state | AppKit / SwiftUI / MetalKit imports; business logic |
 | **Views / Router / App** | Declarative rendering, wiring, lifecycle; in `AppRouter` also the picker's thumbnail decode (`EffectThumbnailDecoding`: one AppKit call and the pixel limit that guards it, which stay covered and tested because `Views` is not) | Other business logic; direct UseCase/Gateway access (`ExtensionApp` → `extensionRelayUseCase` excepted: Key-Path table) |
@@ -46,8 +46,8 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 |---|---|
 | Entity | Foundation |
 | Domain | Foundation, Combine, Dependencies, Entity |
-| UseCase / Repository / DataSource / DataStore / Interactor / Presenters / Support (non-live) | Foundation, Combine, Dependencies, Domain, Entity |
-| Gateway live, Support live | the one OS framework the module wraps (+ Foundation, Combine, Dependencies, Domain, Entity) |
+| UseCase / Repository / DataSource / DataStore / Interactor / Presenters | Foundation, Combine, Dependencies, Domain, Entity |
+| Gateway live, Ambient live | the one OS framework the module wraps (+ Foundation, Combine, Dependencies, Domain, Entity) |
 | Views / AppRouter | AppKit, SwiftUI, MetalKit (only the preview view files use it; the lint allows it module-wide), Foundation, Combine, Dependencies, Domain, Entity, Presenters; `AppRouter` also takes `Views`, for the views of the windows it opens |
 | App / ExtensionApp / DevHarness (composition roots) | the above plus the process's DI target (`HostDependencyInjection` / `ExtensionDependencyInjection`), so the `liveValue` registrations are linked into the shell; `App` also takes the `AppRouter` and `Views` modules of the menu bar; `DevHarness` takes only AppKit and SwiftUI from the row above, plus `Views` (`PreviewView`, `EffectMenu`) and `AppRouter` (its Effects menu) |
 | ViewGallery (executable: the app's windows over fixture data) | Foundation, Combine, Dependencies, Domain, Entity, AppKit, SwiftUI, Presenters, `Views` and `AppRouter`; no DI target, so no live value is linked |
@@ -58,10 +58,10 @@ View → Presenter → Interactor → UseCase → Repository → DataSource/Data
 ## Key-Path Allow-List (enforced by `scripts/check-dependency-keypaths.sh`)
 
 A key's port kind is the `Sources/Domain/<Kind>/` directory that declares its
-`DependencyValues` member, so a new port needs no lint entry; a module's lane
+`DependencyValues` member, so a new port needs no lint entry (an Ambient one excepted: *Ambient admission*); a module's lane
 is derived from its name (the layer suffix, or the entry and view names). Each
-lane may resolve the kind of the layer right below it plus Support (the ports
-under `Sources/Domain/Support/` and swift-dependencies' `continuousClock`),
+lane may resolve the kind of the layer right below it plus Ambient (the ports
+under `Sources/Domain/Ambient/` and swift-dependencies' `continuousClock`),
 and nothing else. A key outside those kinds is a per-key exception in the
 script, each citing the decision it rests on; an exception nothing resolves any
 more fails, so the list cannot outlive its reason. The
@@ -76,14 +76,14 @@ overrides, which assign rather than resolve.
 
 | Lane (modules) | May resolve | Per-key exceptions |
 |---|---|---|
-| Entry (`App`, `DevHarness`, `ExtensionApp`, `LensTool`) | Interactor, Support; but `App` and `DevHarness` never `effectInteractor` (*Per-key denials* below) | `ExtensionApp`: `extensionRelayUseCase` — the extension process has no GUI and so no Interactor lane; its entry point resolves the relay UseCase (Key Design Decisions) |
-| View (`Views`, `AppRouter`) | Presenter, Support | |
-| Presenter (`Presenters`, `*Presenter`) | Interactor, Support | |
-| `*Interactor` | UseCase, Support | |
-| `*UseCase` | Repository, Support | `frameExecutor`, `frameScheduler`, `workRunner` — the execution context the frame path runs on (Physical Abstraction Table: *Frame execution context*, *Frame pacing*; → *Effect runtime*) |
-| `*Repository` | DataSource, DataStore, Support | `workRunner` only; never `frameExecutor` or `frameScheduler` (→ *Effect runtime*, epic #14 D14; the decision of #36) |
-| `*DataSource` / `*DataStore` | Gateway, Support | `GPURenderDataSource`, `PreviewDataSource`: `surfacePool` — leases resolve through the executor-confined pool (→ *One effect, one command buffer*, epic #14 D4; Physical Abstraction Table: *Texture binding*) |
-| Everything else (Entity, Domain, Gateway and Support lives, DI targets, `ViewGallery`) | nothing | |
+| Entry (`App`, `DevHarness`, `ExtensionApp`, `LensTool`) | Interactor, Ambient; but `App` and `DevHarness` never `effectInteractor` (*Per-key denials* below) | `LensTool` alone: `consoleWriter` — the command-line tool's one exit to standard output and standard error; the host and the extension report through the logs (`AMBIENT`; Physical Abstraction Table: *Standard output / standard error*). `ExtensionApp`: `extensionRelayUseCase` — the extension process has no GUI and so no Interactor lane; its entry point resolves the relay UseCase (Key Design Decisions) |
+| View (`Views`, `AppRouter`) | Presenter, Ambient | |
+| Presenter (`Presenters`, `*Presenter`) | Interactor, Ambient | |
+| `*Interactor` | UseCase, Ambient | |
+| `*UseCase` | Repository, Ambient | `frameExecutor`, `frameScheduler`, `workRunner` — the execution context the frame path runs on (Physical Abstraction Table: *Frame execution context*, *Frame pacing*; → *Effect runtime*) |
+| `*Repository` | DataSource, DataStore, Ambient | `workRunner` only; never `frameExecutor` or `frameScheduler` (→ *Effect runtime*, epic #14 D14; the decision of #36) |
+| `*DataSource` / `*DataStore` | Gateway, Ambient | `GPURenderDataSource`, `PreviewDataSource`: `surfacePool` — leases resolve through the executor-confined pool (→ *One effect, one command buffer*, epic #14 D4; Physical Abstraction Table: *Texture binding*) |
+| Everything else (Entity, Domain, Gateway and Ambient lives, DI targets, `ViewGallery`) | nothing | |
 
 **Per-key denials.** The kind rule cannot say "this Interactor and not that one": the Entry lane
 resolves Interactors (`cameraInteractor`, `harnessInteractor`, `effectAuthoringInteractor`), yet `App` and `DevHarness` may not
@@ -95,6 +95,32 @@ exception. A denial that works is never matched by a resolution, so the stalenes
 an entry fails when its key is no longer a declared port, when no module matches its glob, or when
 the lane of every module matching it already keeps it from the key, so the list cannot outlive its
 reason.
+
+## Ambient admission
+
+Ambient is an open layer: every lane may resolve it, because closing it would
+add layers that only pass a call down (the architecture sinkhole). That makes
+it the one kind the lane rule cannot bound, so the key-path lint holds it to a
+closed list instead: a port enters `Sources/Domain/Ambient/` only by a line of
+`AMBIENT` in `scripts/check-dependency-keypaths.sh`, and a line may pin its key
+to the modules that own it (`consoleWriter LensTool`). A port is Ambient when
+it meets all three:
+
+1. **Its contract decides no product behaviour.** It knows nothing of how
+   cameras, effects, frames or packages are handled; taking a classification
+   label such as `LogSubsystem` is fine. No lint can judge this; review does.
+2. **It hands out no resource with a lifetime.** A port that issues a handle is
+   a Gateway.
+3. **It is time, logging or a fact about the host** that belongs to no one step
+   of the chain.
+
+Being used by several lanes is not a criterion: `hostTime` is used by one
+UseCase and is still ambient. A port that fails one moves to the kind of the
+layer that uses it, as `AppDirectoriesProvider` and `RandomSource` moved to the
+Gateway kind (DataSources resolve them). The lint fails when an unlisted port
+appears under `Sources/Domain/Ambient/`, when a listed key is no Ambient port,
+when a module outside a key's owners resolves it, and when no owner resolves a
+listed key any more, so the list cannot outlive its reason.
 
 ## Protocol API Design
 

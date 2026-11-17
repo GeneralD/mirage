@@ -228,11 +228,12 @@ exception_keys_for() {
 # AMBIENT — "<key> <owners>": the closed list of Ambient ports. <owners> is `*` (every lane may
 # resolve the key, as the kind rule says) or `|`-separated module globs (`case` patterns over module
 # names), when only those modules may. A port is Ambient when it meets all three criteria
-# (.claude/rules/architecture-boundaries.md → Ambient admission): it knows no business (no camera,
-# effect, frame or package), it hands out no resource with a lifetime (a port that does is a
-# Gateway), and it is time, logging or a fact about the host that belongs to no one step of the
-# chain. Being used by several lanes is not a criterion: a port one lane uses may still be ambient
-# (`hostTime`). Four failures keep the list honest, all but the first checked after the resolutions:
+# (.claude/rules/architecture-boundaries.md → Ambient admission): its contract decides no product
+# behaviour (it knows nothing of how cameras, effects, frames or packages are handled; taking a
+# classification label such as LogSubsystem is fine; no lint can judge this, review does), it hands
+# out no resource with a lifetime (a port that does is a Gateway), and it is time, logging or a fact
+# about the host that belongs to no one step of the chain. Being used by several lanes is not a
+# criterion: a port one lane uses may still be ambient (`hostTime`). Four failures keep the list honest, all but the first checked after the resolutions:
 #   - a module resolves an Ambient key its owners do not match;
 #   - a key declared under Sources/Domain/Ambient/ is not listed (reported at its file);
 #   - a listed key is no Ambient port any more (it moved, or its port is gone);

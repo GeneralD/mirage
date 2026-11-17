@@ -77,9 +77,14 @@ Shared conventions:
 - OS boundaries are `*Gateway` modules consumed at the DataSource layer (the
   execution-context ports — `frameExecutor`, `frameScheduler`, `workRunner` —
   are the exception: UseCases run the frame path on them).
-  Cross-cutting seams (`RandomSource`, `UnifiedLog`, `HostTime`,
-  `AppDirectories`, the live `AppDirectoriesProvider`, `HostEnvironment`,
-  `StandardStreams`) are Support modules.
+  `RandomSource` and `AppDirectories` (the live `AppDirectoriesProvider`,
+  which answers the Application Support folder only) are Gateway-kind lives
+  without the suffix, resolved by DataSources. The Ambient lives (`UnifiedLog`,
+  `HostTime`, `HostEnvironment`, `StandardStreams`) serve the cross-cutting
+  ports every lane may resolve; a port is Ambient only by a line of the
+  `AMBIENT` list in `scripts/check-dependency-keypaths.sh`, and only when it
+  meets the three conditions of *Ambient admission* in
+  `.claude/rules/architecture-boundaries.md`.
 - Frames travel as `FrameRef` (dimensions, format, PTS) + `SurfaceToken`
   (a generation-tagged index into the surface pool; a stale token resolves
   to nothing) — never as `Data` copies and never as raw `IOSurface` across
@@ -110,7 +115,7 @@ Shared conventions:
   and the View/Router/App lane. `scripts/check-imports.sh` holds the allow-list
   per module, and `make check` fails otherwise.
 - No layer skipping through `@Dependency`: a module resolves only the ports of
-  the layer right below it, plus Support (`scripts/check-dependency-keypaths.sh`,
+  the layer right below it, plus Ambient (`scripts/check-dependency-keypaths.sh`,
   run by `make check`; a port's kind is its `Sources/Domain/<Kind>/` directory).
   One key is denied to a lane that would otherwise allow it: `App` and `DevHarness`
   never resolve `\.effectInteractor` (the Router alone starts the Presenter that owns it).
@@ -118,13 +123,14 @@ Shared conventions:
   frame path's execution context for UseCases, `workRunner` for Repositories,
   `surfacePool` for `GPURenderDataSource` and `PreviewDataSource`, and
   `extensionRelayUseCase` for `ExtensionApp`, whose process has no GUI and so
-  no Interactor lane.
+  no Interactor lane. One Ambient key is narrower than its lane: `consoleWriter`
+  belongs to `LensTool` alone (its `AMBIENT` line names the owner).
 - The extension process never links Metal: `MetalGateway` and
   `MetalKitPreviewGateway` are registered in `HostDependencyInjection` only,
   and `scripts/check-extension-no-metal.sh` (in `make check`) walks the
   package graph from `ExtensionApp` / `ExtensionDependencyInjection` and fails
   when a Metal module, `PreviewDataSource` or `Views` is reachable.
-- No physical symbol outside Gateway/Support live modules: `Date()`,
+- No physical symbol outside Gateway/Ambient live modules: `Date()`,
   `Date.now`, `ContinuousClock()`, `Task.sleep`, `DispatchQueue`,
   `DispatchSource`, `Thread`, `UUID()`, `.random(in:)`,
   `SystemRandomNumberGenerator`, `FileManager`, `UserDefaults`,

@@ -17,10 +17,12 @@ When adding a new module (UseCase, Repository, DataSource, Gateway, …):
 4. **DI** — register `liveValue` in the right target: `CommonDependencyInjection`
    (both processes), `HostDependencyInjection` or `ExtensionDependencyInjection`.
 5. **TestDoubles** — add the fake if more than one suite will use it.
-6. **Lint allow-lists** — if the module is a Gateway or Support live, add it
+6. **Lint allow-lists** — if the module is a Gateway or Ambient live, add it
    to `scripts/check-imports.sh` (framework allow) and
    `scripts/check-physical-symbols.sh` (live-module allow). A new port needs
-   no key-path entry (its `Sources/Domain/<Kind>/` directory is its kind). A
+   no key-path entry (its `Sources/Domain/<Kind>/` directory is its kind),
+   except an Ambient port, which needs an `AMBIENT` line with its owners and
+   must meet *Ambient admission* in `architecture-boundaries.md`. A
    module whose name carries no layer suffix (an entry point, a view or
    presenter module) needs its own `allowed_for` case in
    `scripts/check-imports.sh` (without one it may import only Foundation,

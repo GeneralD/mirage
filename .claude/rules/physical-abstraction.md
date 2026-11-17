@@ -15,11 +15,12 @@ Domain port with a fake in `Tests/TestDoubles`. The full table is
 `docs/ARCHITECTURE.md` → *Physical Abstraction Table*; add a row there when you
 add a port.
 
-## Forbidden symbols (outside Gateway / Support live modules)
+## Forbidden symbols (outside Gateway / Ambient live modules)
 
 `scripts/check-physical-symbols.sh` (AST-based via `sg`, run by `make check`)
 fails on any of these in every module under `Sources/` except its
-`LIVE_MODULES` (the Gateway and Support live modules). The modules it checks
+`LIVE_MODULES` (the Gateway and Ambient live modules, `StandardStreams` excepted:
+it spells no forbidden symbol, so the lint keeps watching it). The modules it checks
 are the UseCase, Repository, DataSource, DataStore, Interactor, Presenters,
 Domain, Entity, Views and AppRouter modules, the entry points and the DI
 targets:

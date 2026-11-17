@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Physical symbols are forbidden outside Gateway / Support live modules
+# Physical symbols are forbidden outside Gateway / Ambient live modules
 # (.claude/rules/physical-abstraction.md).
 #
 # Uses ast-grep (`sg`) so string literals and comments never false-match; the
@@ -16,7 +16,10 @@ for tool in sg jq; do
     fi
 done
 
-# Modules allowed to touch the physical world directly.
+# Modules allowed to touch the physical world directly: the Gateway lives (AppDirectories and
+# RandomSource among them, which carry no suffix) and the Ambient lives that need a forbidden symbol.
+# StandardStreams, the live ConsoleWriter, is left out on purpose: it writes through two FileHandles it is
+# handed and spells nothing on the list, so leaving it under the lint keeps it that way.
 LIVE_MODULES="AVFoundationGateway MetalGateway MetalKitPreviewGateway IOSurfaceGateway MachGateway SystemExtensionGateway CMIOExtensionGateway FileSystemGateway FileWatchGateway UserDefaultsGateway WorkspaceGateway DispatchExecutorGateway UnifiedLog HostTime RandomSource AppDirectories HostEnvironment HotkeyGateway LoginItemGateway LogStoreGateway ImageIOGateway"
 
 # ast-grep patterns (Swift). One per line: <pattern>|<label>

@@ -35,7 +35,7 @@ func slice(_ name: String, extraTests: [Target.Dependency] = []) -> [Target] {
     ]
 }
 
-/// A Gateway / Support live target. CI-unreachable Gateways get no test target
+/// A Gateway / Ambient live target. CI-unreachable Gateways get no test target
 /// here; the ones that can run anywhere get a smoke suite.
 func live(_ name: String, smoke: Bool) -> [Target] {
     let target = Target.target(name: name, dependencies: dependencies)
@@ -75,17 +75,11 @@ let package = Package(
             ]
         ),
 
-        // ── Provider / Support ──
+        // ── Ambient ──
         .target(name: "HostTime", dependencies: dependencies),
         .testTarget(name: "HostTimeTests", dependencies: ["HostTime"] + testDependencies),
         .target(name: "UnifiedLog", dependencies: dependencies),
         .testTarget(name: "UnifiedLogTests", dependencies: ["UnifiedLog"] + testDependencies),
-        // Host only: the effects folder's path under Application Support. Builds a path, reads no environment variable.
-        .target(name: "AppDirectories", dependencies: dependencies),
-        .testTarget(name: "AppDirectoriesTests", dependencies: ["AppDirectories"] + testDependencies),
-        // Host only: the seeded random source (`RandomSourceImpl`).
-        .target(name: "RandomSource", dependencies: dependencies),
-        .testTarget(name: "RandomSourceTests", dependencies: ["RandomSource"] + testDependencies),
         // Host only: the app and macOS versions (`HostEnvironmentProviderImpl`), the one place that reads `ProcessInfo` and `Bundle`.
         .target(name: "HostEnvironment", dependencies: dependencies),
         .testTarget(name: "HostEnvironmentTests", dependencies: ["HostEnvironment"] + testDependencies),
@@ -94,6 +88,13 @@ let package = Package(
         .testTarget(name: "StandardStreamsTests", dependencies: ["StandardStreams"] + testDependencies),
 
         // ── Gateway (OS boundary) ──
+        // Host only: the user's Application Support folder, as the OS answers it (`AppDirectoriesProviderImpl`). Reads no environment variable;
+        // a Gateway-kind live with no suffix, covered and tested.
+        .target(name: "AppDirectories", dependencies: dependencies),
+        .testTarget(name: "AppDirectoriesTests", dependencies: ["AppDirectories"] + testDependencies),
+        // Host only: the system's random generator behind the `RandomSource` port (`RandomSourceImpl`); a Gateway-kind live with no suffix.
+        .target(name: "RandomSource", dependencies: dependencies),
+        .testTarget(name: "RandomSourceTests", dependencies: ["RandomSource"] + testDependencies),
         .target(name: "AVFoundationGateway", dependencies: dependencies),
         .target(name: "IOSurfaceGateway", dependencies: dependencies),
         .testTarget(name: "IOSurfaceGatewayTests", dependencies: ["IOSurfaceGateway"] + testDependencies),

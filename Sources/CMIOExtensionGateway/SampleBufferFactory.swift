@@ -3,7 +3,7 @@ import CoreVideo
 import Domain
 import IOSurface
 
-/// Support for `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
+/// Part of `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
 /// Wraps an `IOSurface` into a `CMSampleBuffer` (CoreVideo + CoreMedia) with
 /// no pixel copy; the decision to send at all lives in the DataSource.
 enum SampleBufferFactory {

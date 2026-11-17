@@ -2,7 +2,7 @@ import CoreMedia
 import CoreMediaIO
 import Domain
 
-/// Support for `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
+/// Part of `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
 /// Builds the one declared stream format (CoreMedia `CMVideoFormatDescription`
 /// and CoreMediaIO `CMIOExtensionStreamFormat`) plus its frame duration.
 struct StreamFormatSet {
