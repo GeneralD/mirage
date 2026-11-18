@@ -1,4 +1,4 @@
-/// Support for `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
+/// Part of `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
 /// Wraps the C "out parameter" calling convention of CoreVideo without a `var`,
 /// which the thin-live lint forbids; the status stays the caller's to check.
 enum OutParam {

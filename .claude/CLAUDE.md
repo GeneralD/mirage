@@ -32,6 +32,7 @@ swift run lens-tool new <name> [--in <folder>]                          # scaffo
 swift run lens-tool validate <package>                                  # validate a `.lens` package
 swift run lens-tool render <effect> --input <in.png> --output <out.png>   # run an effect over a still image; <effect> is a `.lens` path or a bundled effect name
 scripts/gate               # lint, check, build, build-dev-harness, test and test-gpu behind a slot shared by every worktree of the checkout (what a worker runs before a push)
+scripts/architecture-diagrams/regenerate   # redraw the Module Dependency Graph of docs/ARCHITECTURE.md (after a module is added, renamed or split, a liveValue moves, or AMBIENT changes); the Layer Overview is section-head.md, edited by hand
 ```
 
 The System Extension (virtual camera) cannot be exercised from `swift run`;

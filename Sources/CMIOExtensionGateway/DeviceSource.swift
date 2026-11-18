@@ -1,6 +1,6 @@
 import CoreMediaIO
 
-/// Support for `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
+/// Part of `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
 /// The `CMIOExtensionDeviceSource` (CoreMediaIO) that reports a virtual
 /// transport ('virt', the value of `kIOAudioDeviceTransportTypeVirtual`).
 final class DeviceSource: NSObject, CMIOExtensionDeviceSource, @unchecked Sendable {

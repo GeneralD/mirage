@@ -1,7 +1,7 @@
 import CoreMediaIO
 import Domain
 
-/// Support for `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
+/// Part of `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
 /// Wraps `CMIOExtensionProviderSource` (CoreMediaIO), the provider-level callbacks;
 /// it only answers the manufacturer property and ignores client connections.
 final class ProviderSource: NSObject, CMIOExtensionProviderSource, @unchecked Sendable {

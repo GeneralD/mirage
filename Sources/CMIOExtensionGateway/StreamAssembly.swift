@@ -2,7 +2,7 @@ import CoreMedia
 import CoreMediaIO
 import Domain
 
-/// Support for `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
+/// Part of `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
 /// Builds provider, device and stream for `CMIOExtensionProvider.startService`;
 /// the stream id is the device id with its last hex digit changed.
 enum StreamAssembly {

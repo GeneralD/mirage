@@ -7,8 +7,9 @@ import Foundation
 /// answers `.ready` with the shader as an `EffectSource` (default compile options, and the
 /// parameters its manifest declares), or `.broken` with the reason; a package it cannot use is
 /// never left out. Everything it touches comes through `FileSystemGateway`, `WorkspaceGateway` and
-/// `AppDirectoriesProvider`, and the effects folder's path is asked of the provider on each call,
-/// never kept.
+/// `AppDirectoriesProvider`. The effects folder is `Effects` in the host bundle id's folder under the
+/// Application Support directory the provider answers; that layout is this DataSource's knowledge, not the
+/// provider's, and the base is asked of the provider on each call, never kept.
 ///
 /// - **Which entries are packages.** Only a directory whose name ends in `.lens`, under a
 ///   non-empty id; any other file or directory in the folder is ignored. The listing is in id
@@ -58,6 +59,7 @@ public struct EffectPackageDataSourceImpl: Sendable {
     @Dependency(\.errorLog) private var errorLog
     @Dependency(\.developerLog) private var developerLog
 
+    private static let effectsFolderName = "Effects"
     private static let packageSuffix = ".lens"
     private static let manifestFileName = "manifest.json"
     private static let sourceFileName = "effect.metal"
@@ -67,7 +69,7 @@ public struct EffectPackageDataSourceImpl: Sendable {
 
 extension EffectPackageDataSourceImpl: EffectPackages {
     public func packages() async -> EffectPackageInventory {
-        let folder = appDirectories.effectsDirectory
+        let folder = effectsFolder
         guard makeFolderIfAbsent(folder) else { return .empty }
         guard let names = listFolder(folder) else { return Self.inventory(of: [], in: folder) }
         let reads = names.compactMap(Self.key(ofDirectoryNamed:)).sorted()
@@ -78,7 +80,7 @@ extension EffectPackageDataSourceImpl: EffectPackages {
 
     public func package(_ id: EffectID) async -> EffectPackageListing? {
         guard id.origin == .package, Self.isPackageKey(id.key) else { return nil }
-        let folder = appDirectories.effectsDirectory
+        let folder = effectsFolder
         let directory = Self.directory(of: id.key, in: folder)
         guard fileSystem.isDirectory(directory) else { return nil }
         return read(id.key, directory: directory, includingThumbnail: false).listing
@@ -115,7 +117,7 @@ extension EffectPackageDataSourceImpl: EffectPackages {
     }
 
     public func openFolder() {
-        let folder = appDirectories.effectsDirectory
+        let folder = effectsFolder
         guard makeFolderIfAbsent(folder) else { return }
         workspace.open(folder)
     }
@@ -124,6 +126,11 @@ extension EffectPackageDataSourceImpl: EffectPackages {
 // MARK: - The folder
 
 extension EffectPackageDataSourceImpl {
+    /// `<Application Support>/<host bundle id>/Effects`, from the base the provider answers now.
+    private var effectsFolder: String {
+        Self.join(Self.join(appDirectories.applicationSupportDirectory, ProductIdentity.hostBundleID), Self.effectsFolderName)
+    }
+
     /// `true` when the folder is a directory, after making it if it was not there.
     private func makeFolderIfAbsent(_ folder: String) -> Bool {
         guard !fileSystem.isDirectory(folder) else { return true }

@@ -11,7 +11,7 @@ source "$(dirname "$0")/lib.sh"
 COMMON="Foundation Combine Dependencies Domain Entity"
 UI_FRAMEWORKS="AppKit SwiftUI MetalKit Presenters"
 
-# Gateway / Support live modules and the one OS framework (or family) each may import.
+# Gateway / Ambient live modules and the one OS framework (or family) each may import.
 gateway_allow() {
     case "$1" in
         AVFoundationGateway)      echo "AVFoundation CoreMedia CoreVideo" ;;

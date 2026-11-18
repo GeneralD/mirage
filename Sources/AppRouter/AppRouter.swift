@@ -5,7 +5,7 @@ import Views
 /// `EffectPickerPresenter`, the `SettingsPresenter` and the `ParameterPanelPresenter`, decides when the
 /// menu's lifecycle begins and ends, and opens and closes the picker's window, the settings window and
 /// the parameter panel's window. It resolves nothing itself
-/// (the key-path lint gives the View lane Presenters and Support only), and it never touches the
+/// (the key-path lint gives the View lane Presenters and Ambient only), and it never touches the
 /// `EffectInteractor`: the menu's Presenter owns that lifecycle, so `start()` / `stop()` here are the
 /// Presenter's, and the entry lane never calls `effectInteractor.start()` (a second `start()` is a
 /// restart, and the catalog would run twice; `scripts/check-dependency-keypaths.sh` denies `App` and

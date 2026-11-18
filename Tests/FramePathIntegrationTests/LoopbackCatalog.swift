@@ -24,8 +24,10 @@ import Testing
 /// reason). The host's `TestClock` cannot say it, so the watch does not sleep on it: nothing else in
 /// the catalog reads a clock, and the pipeline's reconnect keeps the host's.
 struct CatalogSide {
-    /// The effects folder, as `AppDirectoriesProvider` answers it.
-    static let folder = "/effects"
+    /// The Application Support directory `AppDirectoriesProvider` answers.
+    static let directories = FixedAppDirectories()
+    /// The effects folder `EffectPackageDataSourceImpl` keeps under it.
+    static let folder = directories.effectsDirectory
 
     let fileSystem = InMemoryFileSystemGateway()
     let fileWatch = FakeFileWatchGateway()
@@ -51,7 +53,7 @@ struct CatalogSide {
         // Each layer is built inside the scope of the one below it, as `HostSide` builds its own.
         useCase = withDependencies {
             $0.fileSystemGateway = fileSystem
-            $0.appDirectories = FixedAppDirectories(effectsDirectory: Self.folder)
+            $0.appDirectories = Self.directories
             $0.workspaceGateway = workspace
             $0.fileWatchGateway = fileWatch
             $0.keyValueStoreGateway = store

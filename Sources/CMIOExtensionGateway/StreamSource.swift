@@ -2,7 +2,7 @@ import CoreMedia
 import CoreMediaIO
 import Domain
 
-/// Support for `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
+/// Part of `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
 /// The `CMIOExtensionStreamSource` (CoreMediaIO); start/stop are relayed as
 /// events, the "only send while a client streams" decision is the DataSource's.
 final class StreamSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable {

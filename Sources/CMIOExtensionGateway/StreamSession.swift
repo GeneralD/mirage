@@ -1,7 +1,7 @@
 import CoreMedia
 import CoreMediaIO
 
-/// Support for `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
+/// Part of `StreamOutputGatewayImpl` (port: `StreamOutputGateway`).
 /// Wraps the started CMIO stream (`CMIOExtensionStream`) with the format
 /// description and frame duration its sample buffers must carry. It also owns
 /// the sources: CoreMediaIO declares every `source` property `weak`, so

@@ -4,14 +4,16 @@ import Testing
 
 @Suite("FixedAppDirectories diagnostics")
 struct FixedAppDirectoriesDiagnosticsTests {
-    @Test("FixedAppDirectories answers the diagnostics directory it was given")
-    func diagnosticsDirectoryIsTheOneGiven() {
-        let directories = FixedAppDirectories(effectsDirectory: "/support/app/Effects", diagnosticsDirectory: "/support/app/Diagnostics")
-        #expect(directories.diagnosticsDirectory == "/support/app/Diagnostics")
+    @Test("the diagnostics folder is Diagnostics in the host bundle id's folder under the base")
+    func diagnosticsDirectoryIsUnderTheBase() {
+        let directories = FixedAppDirectories(applicationSupportDirectory: "/base")
+        #expect(directories.diagnosticsDirectory == "/base/\(ProductIdentity.hostBundleID)/Diagnostics")
     }
 
-    @Test("FixedAppDirectories answers /diagnostics for the diagnostics directory when none is given")
-    func diagnosticsDirectoryDefaultsToDiagnostics() {
-        #expect(FixedAppDirectories(effectsDirectory: "/support/app/Effects").diagnosticsDirectory == "/diagnostics")
+    @Test("the diagnostics folder and the effects folder are siblings")
+    func diagnosticsDirectoryIsSiblingOfEffects() {
+        let directories = FixedAppDirectories()
+        #expect(directories.diagnosticsDirectory != directories.effectsDirectory)
+        #expect(directories.diagnosticsDirectory.split(separator: "/").dropLast() == directories.effectsDirectory.split(separator: "/").dropLast())
     }
 }

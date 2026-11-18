@@ -110,7 +110,8 @@ struct HarnessLiveWiringTests {
                 CameraDevice(id: "phone", name: "iPhone Camera"),
             ],
             formats: ["phone": [CameraFormat(index: 0, width: 1280, height: 720, minFramesPerSecond: 1, maxFramesPerSecond: 30)]])
-        let folder = "/effects"
+        let directories = FixedAppDirectories()
+        let folder = directories.effectsDirectory
         // One set of fakes, applied to every scope this test opens (the suite's note says why each call is wrapped).
         let wiring: (inout DependencyValues) -> Void = {
             $0.context = .live
@@ -130,7 +131,7 @@ struct HarnessLiveWiringTests {
             $0.shaderLibraryGateway = shaders
             $0.textureCacheGateway = textures
             $0.fileSystemGateway = fileSystem
-            $0.appDirectories = FixedAppDirectories(effectsDirectory: folder)
+            $0.appDirectories = directories
             $0.fileWatchGateway = fileWatch
             $0.keyValueStoreGateway = store
             $0.workspaceGateway = workspace

@@ -46,9 +46,15 @@ struct FakeWorkspaceGatewayTests {
 
 @Suite("FixedAppDirectories")
 struct FixedAppDirectoriesTests {
-    @Test("the effects directory is the one the test named")
+    @Test("the Application Support directory is the one the test named, /support when none is")
+    func applicationSupportDirectory() {
+        #expect(FixedAppDirectories(applicationSupportDirectory: "/base").applicationSupportDirectory == "/base")
+        #expect(FixedAppDirectories().applicationSupportDirectory == "/support")
+    }
+
+    @Test("the effects folder is Effects in the host bundle id's folder under the base")
     func effectsDirectory() {
-        #expect(FixedAppDirectories(effectsDirectory: "/support/app/Effects").effectsDirectory == "/support/app/Effects")
+        #expect(FixedAppDirectories(applicationSupportDirectory: "/base").effectsDirectory == "/base/\(ProductIdentity.hostBundleID)/Effects")
     }
 }
 

@@ -2,9 +2,9 @@ import Foundation
 import TestSupport
 import Testing
 
-/// Comments and rule documents that said what the code did until the parameter work landed: a manifest's `parameters` was read past, and
-/// the compile cache was keyed by the source and the options alone. Each sentence below is now untrue, and a comment is not compiled, so
-/// only a test keeps it from coming back.
+/// Comments and rule documents that said what the code did before a change landed: until the parameter work, a manifest's `parameters` was
+/// read past and the compile cache was keyed by the source and the options alone; until #551, the open layer every lane resolves was named
+/// Support. Each sentence below is now untrue, and a comment is not compiled, so only a test keeps it from coming back.
 @Suite("Stale statements")
 struct StaleStatementTests {
     struct Statement: CustomTestStringConvertible, Sendable {
@@ -24,6 +24,9 @@ struct StaleStatementTests {
         Statement(
             phrase: "until MVP-C interprets it",
             instead: "`parameters` is read and validated now: it is not one of the keys that are ignored"),
+        Statement(phrase: "plus Support", instead: "plus Ambient: the open layer is Ambient, admitted by the AMBIENT list (#551)"),
+        Statement(phrase: "Support live", instead: "an Ambient live, or a Gateway-kind live such as AppDirectories or RandomSource (#551)"),
+        Statement(phrase: "Support port", instead: "an Ambient port, or a Gateway-kind port (#551)"),
     ]
 
     /// Every Swift file under `Sources/` and `Tests/` and every rule document, with its lines, except this file (which spells the phrases).
@@ -39,7 +42,7 @@ struct StaleStatementTests {
             .filter { $0.hasSuffix(suffix) }.map { "\(directory)/\($0)" }
     }
 
-    @Test("no comment or rule document still says what the parameter work made untrue", arguments: statements)
+    @Test("no comment or rule document still says what a later change made untrue", arguments: statements)
     func isGone(_ statement: Statement) {
         let hits = Self.corpus.flatMap { file in
             file.lines.enumerated().filter { $0.element.contains(statement.phrase) }.map { "\(file.path):\($0.offset + 1)" }
