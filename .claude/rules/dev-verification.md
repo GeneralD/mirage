@@ -68,7 +68,7 @@ log stream --level debug --style compact --predicate 'subsystem == "<log subsyst
 
 A budget below is a target of epic #42 (a step whose budget says *none* has no target, only
 something to record), not a measurement. The last column is one device run: 2026-11-20,
-macOS 26.4.1 (25E253), MacBook Pro M1 Max, the built-in camera. Each time there runs from the
+macOS 26.4.1 (25E253), MacBook Pro M1 Max, the built-in camera. Each measurement runs from the
 action (the start of the shell command, or the click sent to the menu item) to the `effect:` log
 line named, not to the pixels of the window; the menu was read through accessibility, and the
 window and the open menu from one screenshot each. Do not fill the column from the
@@ -98,7 +98,11 @@ What that run adds to the table:
   answered and the only lines were `catalog listed: 5 entries, 0 broken` and
   `effect 'Ripple' reloaded`. Expect `compiled` after a fix only when the fixed source is new.
 - **Both save styles are heard**, in place and atomic, in about the same time (step 3).
-- **Nothing was over a budget**: every timed step ended between 0.2 s and 0.4 s.
+- **No budgeted step was over its budget, as far as the log lines show**: steps 1 to 5 each
+  reached their `effect:` line 0.2 s to 0.4 s after the action, against a budget of 1 s. A budget
+  ends when the window or the menu row changes, and that moment was not timed: the rows and the
+  marks were read after the line, and the window was looked at once (step 2). A screen recording
+  would time it. Finder's window in step 6, which has no budget, took 0.6 s to 0.7 s.
 
 Record, next to the numbers:
 
