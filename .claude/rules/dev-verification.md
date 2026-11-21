@@ -31,10 +31,17 @@ effects menu): the same effect runtime, DataSources and catalog over the fake GP
 layer and an in-memory effects folder. What only the device adds is the Metal compile, the
 command buffer, the camera and the screen.
 
-Not yet run on a device: the camera prompt is a modal dialog on the user's
-screen, so drive it yourself only when the user is at the machine. The numbers
-below are budgets (issue #24), not measurements; record what you see next to
-them once a run exists. The effects menu has its own timed table below (*Effects menu: the timed run*).
+The camera prompt is a modal dialog on the user's screen, so drive this lane
+yourself only when the user is at the machine. The numbers in the table below
+are budgets (issue #24), not measurements. One device run exists (2026-11-20,
+macOS 26.4.1 (25E253), MacBook Pro M1 Max, the built-in camera, camera access
+already granted, so no prompt was shown): the three startup lines appeared with
+`preview window attached` first, the bundled effects compiled in about 130 ms
+each, and over ten minutes `received` rose by about 30 per second with `dropped`
+at 0.13% of it and `maxGapMs` at 67. Its *Broken source* row was run on a package
+(step 4 of the timed table), not on the bundled shader, and its *Occluded
+window* row was not run. The effects menu has its own timed table below
+(*Effects menu: the timed run*).
 
 ```sh
 make build-dev-harness
@@ -59,27 +66,43 @@ log stream --level debug --style compact --predicate 'subsystem == "<log subsyst
 
 ### Effects menu: the timed run (issue #52, epic #42)
 
-Not yet run on a device: a budget below is a target of epic #42 (a step whose budget says
-*none* has no target, only something to record), not a measurement, and
-the last column says **not yet run** until someone does the run. Do not fill it from the
+A budget below is a target of epic #42 (a step whose budget says *none* has no target, only
+something to record), not a measurement. The last column is one device run: 2026-11-20,
+macOS 26.4.1 (25E253), MacBook Pro M1 Max, the built-in camera. Each measurement runs from the
+action (the start of the shell command, or the click sent to the menu item) to the `effect:` log
+line named, not to the pixels of the window; the menu was read through accessibility, and the
+window and the open menu from one screenshot each. Do not fill the column from the
 automated twin (`EffectCatalogIntegrationTests` proves the order of events and the 200 ms quiet
-period under a fake clock; it cannot say how long a Metal compile or a window takes). Run it with
-the user at the machine, on top of the table above (camera granted, harness running, Effects menu
-open at least once). The effects folder is the one *Open Effects Folder…* shows
+period under a fake clock; it cannot say how long a Metal compile or a window takes). Run it again
+with the user at the machine, on top of the table above (camera granted, harness running, Effects
+menu open at least once). The effects folder is the one *Open Effects Folder…* shows
 (`~/Library/Application Support/<host bundle id>/Effects`); `<folder>` below is that path. Time each
 step from the action to the window changing, with a screen recording or the `effect:` log lines
 (`--level debug`), and write the number, the OS version and the Mac in the last column.
 
 | Step | Action | Expected | Budget | Measured |
 |---|---|---|---|---|
-| 1. List | open the Effects menu with `<folder>` empty or absent; then `cp -R Examples/Ripple.lens "<folder>/"` and open the menu again | first: the four bundled effects, `Chromatic Grain` checked. After the copy: `Ripple` below them, unchecked, `Chromatic Grain` still checked and the window unchanged | the row is there within 1 s of the copy (step 5's budget) | not yet run |
-| 2. Choose | choose `Ripple` | the check mark moves; the window shows Ripple's sideways sway (a smooth wave down the frame) instead of the fringing and grain; `effect: effect 'Ripple' compiled` appears once | the window changes within 1 s of the click, with one compile | not yet run |
-| 3. Save | change a constant in `<folder>/Ripple.lens/effect.metal` (the sway amplitude, say) and save | the window shows the change without touching the menu; `effect: effect 'Ripple' compiled` again, once | within 1 s of the save (200 ms quiet period plus the compile) | not yet run |
-| 4. Break and fix | misspell a type name in that `effect.metal` and save; then undo the misspelling and save | broken: the window shows the plain camera video, a disabled line `Ripple: compile failed` sits between the divider that ends the effect rows and *Browse Effects…*, exactly one `effect: effect 'Ripple' did not compile: …` error line. Fixed: the effect is back and the line is gone | each save within 1 s | not yet run |
-| 5. Add and remove | `cp -R Examples/Ripple.lens /tmp/Second.lens`, change `name` in `/tmp/Second.lens/manifest.json` to `Second` (a row is titled by the manifest's name, not its folder), `mv /tmp/Second.lens "<folder>/"`, then `rm -r "<folder>/Second.lens"`. Then move the *chosen* package out, `mv "<folder>/Ripple.lens" /tmp/`, and back, `mv /tmp/Ripple.lens "<folder>/"` | a `Second` row appears below `Ripple`, then disappears. With `Ripple.lens` out, the check mark moves to `Chromatic Grain`, the window to its effect, and `effect: effect 'Ripple' is gone; back to 'Chromatic Grain'` is logged; the stored choice is not rewritten. With it back, the `Ripple` row returns unchecked (listing a package chooses nothing) | each within 1 s | not yet run |
-| 6. Open folder | `rm -r "<folder>"` (`Ripple.lens` goes with it), then choose *Open Effects Folder…* | Finder opens the folder (it is made if it was missing) | none; record whether Finder comes to the front and how long it takes | not yet run |
-| 7. Restart | `cp -R Examples/Ripple.lens "<folder>/"` (step 6 removed it), choose `Ripple`, quit with ⌘Q, run `swift run dev-harness` again | `Ripple` is checked from the first menu opening and the window shows its effect with no click. `defaults read com.generald.dev-harness selectedEffect` is `package:Ripple` (the harness's own defaults domain) | no click needed | not yet run |
-| 8. Second line | with `Ripple` listed, and after `mkdir "<folder>/Broken.lens"` | `Ripple` shows `Example Author` under its title; `Broken` is a disabled row whose second line says `manifest.json is missing` | none; record what is drawn | not yet run |
+| 1. List | open the Effects menu with `<folder>` empty or absent; then `cp -R Examples/Ripple.lens "<folder>/"` and open the menu again | first: the four bundled effects, `Chromatic Grain` checked. After the copy: `Ripple` below them, unchecked, `Chromatic Grain` still checked and the window unchanged | the row is there within 1 s of the copy (step 5's budget) | 226 ms from the copy to `catalog listed: 5 entries`; the row is below `Duotone`, unchecked, and `Chromatic Grain` keeps its mark |
+| 2. Choose | choose `Ripple` | the check mark moves; the window shows Ripple's sideways sway (a smooth wave down the frame) instead of the fringing and grain; `effect: effect 'Ripple' compiled` appears once | the window changes within 1 s of the click, with one compile | `selected` 181 ms after the click, `compiled` 163 ms after that (about 345 ms in all), one compile; the mark moved and the window showed the sway |
+| 3. Save | change a constant in `<folder>/Ripple.lens/effect.metal` (the sway amplitude, say) and save | the window shows the change without touching the menu; `effect: effect 'Ripple' compiled` again, once | within 1 s of the save (200 ms quiet period plus the compile) | in place (the file truncated and rewritten, same inode): 370 ms to `compiled`. Atomic (TextEdit's save, a new inode): 399 ms. One compile each |
+| 4. Break and fix | misspell a type name in that `effect.metal` and save; then undo the misspelling and save | broken: the window shows the plain camera video, a disabled line `Ripple: compile failed` sits between the divider that ends the effect rows and *Browse Effects…*, exactly one `effect: effect 'Ripple' did not compile: …` error line. Fixed: the effect is back and the line is gone | each save within 1 s | break (in place): 352 ms to the one `did not compile` line; the `Ripple: compile failed` line is in the menu, `applied` stops and `compileFailed` rises by about 30 a second (the window itself was not looked at while broken). Fix (in place): 237 ms to `effect 'Ripple' reloaded`, the line is gone and `applied` rises again; no `compiled` line, see the note below |
+| 5. Add and remove | `cp -R Examples/Ripple.lens /tmp/Second.lens`, change `name` in `/tmp/Second.lens/manifest.json` to `Second` (a row is titled by the manifest's name, not its folder), `mv /tmp/Second.lens "<folder>/"`, then `rm -r "<folder>/Second.lens"`. Then move the *chosen* package out, `mv "<folder>/Ripple.lens" /tmp/`, and back, `mv /tmp/Ripple.lens "<folder>/"` | a `Second` row appears below `Ripple`, then disappears. With `Ripple.lens` out, the check mark moves to `Chromatic Grain`, the window to its effect, and `effect: effect 'Ripple' is gone; back to 'Chromatic Grain'` is logged; the stored choice is not rewritten. With it back, the `Ripple` row returns unchecked (listing a package chooses nothing) | each within 1 s | add 223 ms, remove 211 ms (to `catalog listed`). Chosen package out: 215 ms to the `is gone; back to 'Chromatic Grain'` line, the mark on `Chromatic Grain`, the stored choice still `package:Ripple`. Back: 219 ms, the row unchecked |
+| 6. Open folder | `rm -r "<folder>"` (`Ripple.lens` goes with it), then choose *Open Effects Folder…* | Finder opens the folder (it is made if it was missing) | none; record whether Finder comes to the front and how long it takes | Finder comes to the front; its window on the folder is there 576 ms and 693 ms after the click (two runs), and the folder exists again. The `rm -r` itself reached the menu in 212 ms (`catalog listed: 4 entries`) |
+| 7. Restart | `cp -R Examples/Ripple.lens "<folder>/"` (step 6 removed it), choose `Ripple`, quit with ⌘Q, run `swift run dev-harness` again | `Ripple` is checked from the first menu opening and the window shows its effect with no click. `defaults read com.generald.dev-harness selectedEffect` is `package:Ripple` (the harness's own defaults domain) | no click needed | no click: at launch `effect 'Ripple' selected` and `compiled` follow `catalog listed` within 2 ms, 1.3 s before `pipeline started`; `Ripple` is checked at the first menu read and the stored choice reads `package:Ripple`. Quit was the menu's `Quit` item, not the ⌘Q key |
+| 8. Second line | with `Ripple` listed, and after `mkdir "<folder>/Broken.lens"` | `Ripple` shows `Example Author` under its title; `Broken` is a disabled row whose second line says `manifest.json is missing` | none; record what is drawn | both second lines are drawn (macOS 26.4.1): `Example Author` under `Ripple`, `manifest.json is missing` under the dimmed `Broken`, which sorts above `Ripple`. The row was there 209 ms after the `mkdir` (`catalog listed: 6 entries, 1 broken`) |
+
+What that run adds to the table:
+
+- **A fix that restores a source already compiled logs `reloaded`, not `compiled`.** The
+  fixed file of step 4 was byte for byte the file step 3 had saved, so the compile cache
+  answered and the only lines were `catalog listed: 5 entries, 0 broken` and
+  `effect 'Ripple' reloaded`. Expect `compiled` after a fix only when the fixed source is new.
+- **Both save styles are heard**, in place and atomic, in about the same time (step 3).
+- **No budgeted step was over its budget, as far as the log lines show**: steps 1 to 5 each
+  reached their `effect:` line 0.2 s to 0.4 s after the action, against a budget of 1 s. A budget
+  ends when the window or the menu row changes, and that moment was not timed: the rows and the
+  marks were read after the line, and the window was looked at once (step 2). A screen recording
+  would time it. Finder's window in step 6, which has no budget, took 0.6 s to 0.7 s.
 
 Record, next to the numbers:
 
